@@ -1,4 +1,4 @@
-# Vivo Marketing OS
+# MarTech By Vivo
 
 Multi-client marketing intelligence platform by **GoVivo.ai**.
 

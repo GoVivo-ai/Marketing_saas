@@ -43,7 +43,7 @@ export default async function LoginPage({
             V
           </div>
           <div className="leading-tight">
-            <p className="font-semibold">Vivo Marketing OS</p>
+            <p className="font-semibold">MarTech By Vivo</p>
             <p className="text-xs text-muted-foreground">by GoVivo.ai</p>
           </div>
         </div>

@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Vivo Marketing OS",
-    template: "%s · Vivo Marketing OS",
+    default: "MarTech By Vivo",
+    template: "%s · MarTech By Vivo",
   },
   description:
     "Multi-client marketing intelligence platform by GoVivo.ai — unified ad performance, AI insights and lead management.",

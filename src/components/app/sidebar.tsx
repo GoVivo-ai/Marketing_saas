@@ -62,7 +62,7 @@ export function AppSidebar({
           V
         </div>
         <div className="leading-tight">
-          <p className="text-sm font-semibold">Vivo Marketing OS</p>
+          <p className="text-sm font-semibold">MarTech By Vivo</p>
           <p className="text-xs text-muted-foreground">Agency Platform</p>
         </div>
       </div>

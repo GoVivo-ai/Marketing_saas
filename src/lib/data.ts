@@ -59,10 +59,15 @@ export interface LeadRow {
   email: string;
   phone: string;
   campaign: string;
+  platform: string;
+  externalId: string | null;
   status: string;
   aiScore: number | null;
   aiReason: string | null;
+  formData: Record<string, unknown> | null;
+  assignedTo: string | null;
   createdAt: Date;
+  updatedAt: Date;
 }
 
 const dateStr = (d: Date) => d.toISOString().slice(0, 10);
@@ -373,11 +378,17 @@ export async function getLeadRows(workspaceId: string, limit = 200): Promise<Lea
       status: schema.leads.status,
       aiScore: schema.leads.aiScore,
       aiReason: schema.leads.aiScoreReason,
+      formData: schema.leads.formData,
+      platform: schema.leads.platform,
+      externalId: schema.leads.externalId,
       createdAt: schema.leads.createdAt,
+      updatedAt: schema.leads.updatedAt,
       campaign: schema.campaigns.name,
+      assignedTo: schema.users.name,
     })
     .from(schema.leads)
     .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
+    .leftJoin(schema.users, eq(schema.leads.assignedToId, schema.users.id))
     .where(eq(schema.leads.workspaceId, workspaceId))
     .orderBy(desc(schema.leads.createdAt))
     .limit(limit);
@@ -388,10 +399,15 @@ export async function getLeadRows(workspaceId: string, limit = 200): Promise<Lea
     email: r.email ?? "—",
     phone: r.phone ?? "—",
     campaign: r.campaign ?? "—",
+    platform: r.platform,
+    externalId: r.externalId,
     status: r.status,
     aiScore: r.aiScore,
     aiReason: r.aiReason,
+    formData: (r.formData ?? null) as Record<string, unknown> | null,
+    assignedTo: r.assignedTo,
     createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   }));
 }
 

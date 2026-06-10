@@ -20,7 +20,7 @@ const WORKSPACES = [
 ];
 
 const ADMINS = [
-  { name: "Victor Sandoval", email: "atencion@altotrafico.co" },
+  { name: "Victor Sandoval", email: "victor@govivo.ai" },
 ];
 
 async function main() {

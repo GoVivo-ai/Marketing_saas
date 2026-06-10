@@ -4,11 +4,12 @@ import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
 import { metaConnector } from "@/lib/integrations/meta";
-import { getSecret, getSecretPreview } from "@/lib/settings";
+import { getSecretPreview, getWorkspaceMetaToken } from "@/lib/settings";
 import {
   connectMetaAccount,
   disconnectConnection,
   syncConnectionNow,
+  saveWorkspaceMetaToken,
 } from "@/lib/actions/connections";
 import { savePlatformSecret } from "@/lib/actions/settings";
 import { Input } from "@/components/ui/input";
@@ -48,7 +49,14 @@ export default async function ConnectionsPage() {
   }
 
   const isAdmin = role === "agency_admin";
-  const metaToken = isDatabaseConfigured() ? await getSecret("meta_access_token") : null;
+
+  // Each client has its own Meta token; the page works in the context of the
+  // selected client (from the workspace switcher).
+  const { active } = await getWorkspaceContext();
+  const metaToken =
+    isDatabaseConfigured() && active
+      ? await getWorkspaceMetaToken(active.id)
+      : null;
   const metaPreview = metaToken ? `••••••${metaToken.slice(-4)}` : null;
   const aiPreview = isDatabaseConfigured()
     ? await getSecretPreview("anthropic_api_key")
@@ -120,7 +128,6 @@ export default async function ConnectionsPage() {
 
   // Always scoped to the selected client: only this client's accounts plus
   // unlinked ones (so they can still be assigned to it).
-  const { active } = await getWorkspaceContext();
   const filtering = Boolean(active);
   const visibleAccounts = filtering
     ? displayAccounts.filter((acc) => {
@@ -141,6 +148,45 @@ export default async function ConnectionsPage() {
         </p>
       </div>
 
+      {active && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4 text-primary" />
+              Meta token · {active.name}
+            </CardTitle>
+            <CardDescription>
+              Each client uses its own Meta system-user token (encrypted at
+              rest). This token lists and syncs only {active.name}&apos;s ad
+              accounts.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4">
+              <div className="min-w-44">
+                <p className="text-sm font-medium">System-user token</p>
+                {metaPreview ? (
+                  <Badge variant="secondary" className="mt-1">{metaPreview}</Badge>
+                ) : (
+                  <Badge variant="destructive" className="mt-1">Not configured</Badge>
+                )}
+              </div>
+              <form action={saveWorkspaceMetaToken} className="flex flex-1 items-center gap-2">
+                <input type="hidden" name="workspaceId" value={active.id} />
+                <Input
+                  name="value"
+                  type="password"
+                  placeholder={metaPreview ? "Replace token…" : "EAA…"}
+                  className="max-w-md"
+                  required
+                />
+                <Button size="sm" type="submit">Save</Button>
+              </form>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {isAdmin && (
         <Card>
           <CardHeader>
@@ -153,28 +199,7 @@ export default async function ConnectionsPage() {
               them.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4">
-              <div className="min-w-44">
-                <p className="text-sm font-medium">Meta system-user token</p>
-                {metaPreview ? (
-                  <Badge variant="secondary" className="mt-1">{metaPreview}</Badge>
-                ) : (
-                  <Badge variant="destructive" className="mt-1">Not configured</Badge>
-                )}
-              </div>
-              <form action={savePlatformSecret} className="flex flex-1 items-center gap-2">
-                <input type="hidden" name="key" value="meta_access_token" />
-                <Input
-                  name="value"
-                  type="password"
-                  placeholder={metaPreview ? "Replace token…" : "EAA…"}
-                  className="max-w-md"
-                  required
-                />
-                <Button size="sm" type="submit">Save</Button>
-              </form>
-            </div>
+          <CardContent>
             <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4">
               <div className="min-w-44">
                 <p className="text-sm font-medium">Anthropic API key (AI)</p>
@@ -204,11 +229,11 @@ export default async function ConnectionsPage() {
         <CardHeader>
           <CardTitle>Meta ad accounts</CardTitle>
           <CardDescription>
-            Visible to the GoVivo system user. To add a client, ask them to
-            share their ad account and page as partner with the GoVivo
-            portfolio.
+            Visible to {active?.name ?? "this client"}&apos;s Meta token. The ad
+            account (and its Page, for leads) must be assigned to that token&apos;s
+            system user.
           </CardDescription>
-          {filtering && active && (
+          {filtering && active && ready && (
             <p className="text-xs text-muted-foreground">
               Showing accounts for <span className="font-medium">{active.name}</span>{" "}
               and any unlinked account.
@@ -218,8 +243,9 @@ export default async function ConnectionsPage() {
         <CardContent className="space-y-3">
           {!ready && (
             <p className="text-sm text-muted-foreground">
-              Configure DATABASE_URL and META_ACCESS_TOKEN to enable live
-              connections.
+              {active
+                ? `Set ${active.name}'s Meta token above to list its ad accounts.`
+                : "Select a client to manage its Meta connections."}
             </p>
           )}
           {accountsError && (

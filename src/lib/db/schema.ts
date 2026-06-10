@@ -115,6 +115,12 @@ export const workspaces = pgTable("workspaces", {
   qualificationCriteria: text("qualification_criteria"),
   /** Brand color used to theme the client portal. */
   accentColor: text("accent_color"),
+  /**
+   * This client's own Meta system-user token (AES-256-GCM encrypted). Each
+   * client has its own token; the Connections page lists and syncs that
+   * client's ad accounts with it.
+   */
+  metaAccessTokenEnc: text("meta_access_token_enc"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

@@ -6,7 +6,7 @@ import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { encryptSecret } from "@/lib/crypto";
 import { syncConnection } from "@/lib/sync";
-import { getSecret } from "@/lib/settings";
+import { getWorkspaceMetaToken, setWorkspaceMetaToken } from "@/lib/settings";
 
 async function requireAgencyUser() {
   const session = await auth();
@@ -31,9 +31,10 @@ export async function connectMetaAccount(formData: FormData) {
     throw new Error("Missing account or workspace");
   }
 
-  const token = await getSecret("meta_access_token");
+  // Use this client's own Meta token (each workspace has its own).
+  const token = await getWorkspaceMetaToken(workspaceId);
   if (!token) {
-    throw new Error("Meta token is not configured (Settings → Connections)");
+    throw new Error("This client has no Meta token yet (Settings → Connections)");
   }
 
   // One ad account belongs to exactly one client. Look at every row for this
@@ -113,5 +114,16 @@ export async function disconnectConnection(formData: FormData) {
     .update(schema.connections)
     .set({ status: "disconnected" })
     .where(eq(schema.connections.id, connectionId));
+  revalidatePath("/settings");
+}
+
+/** Saves a client's own Meta system-user token (encrypted). Agency users. */
+export async function saveWorkspaceMetaToken(formData: FormData) {
+  await requireAgencyUser();
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const value = String(formData.get("value") ?? "").trim();
+  if (!workspaceId) throw new Error("Missing workspace");
+  if (!value) throw new Error("Token is required");
+  await setWorkspaceMetaToken(workspaceId, value);
   revalidatePath("/settings");
 }

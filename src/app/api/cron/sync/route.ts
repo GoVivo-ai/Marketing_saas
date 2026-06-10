@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
-import { getConnector } from "@/lib/integrations";
+import { syncConnection } from "@/lib/sync";
 
 export const maxDuration = 300;
 
@@ -33,16 +33,12 @@ export async function POST(req: NextRequest) {
       .values({ connectionId: conn.id })
       .returning();
     try {
-      // TODO(victor): decrypt accessTokenEnc with TOKEN_ENCRYPTION_KEY once
-      // the OAuth connect flow stores real tokens.
-      const connector = getConnector(conn.platform);
-      void connector; // sync pipeline lands with the OAuth flow (see ROADMAP)
-
+      const stats = await syncConnection(conn.id, { days: 30 });
       await db()
         .update(schema.syncRuns)
-        .set({ status: "success", finishedAt: new Date(), stats: {} })
+        .set({ status: "success", finishedAt: new Date(), stats })
         .where(eq(schema.syncRuns.id, run.id));
-      results.push({ connection: conn.id, status: "success" });
+      results.push({ connection: conn.id, status: "success", stats });
     } catch (err) {
       await db()
         .update(schema.syncRuns)

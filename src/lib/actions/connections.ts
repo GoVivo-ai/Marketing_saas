@@ -36,21 +36,34 @@ export async function connectMetaAccount(formData: FormData) {
     throw new Error("Meta token is not configured (Settings → Connections)");
   }
 
-  // Scope the lookup to this workspace: the same ad account can be linked to
-  // several client workspaces independently. Re-connecting to the SAME
-  // workspace refreshes the token; connecting to a NEW workspace creates a
-  // separate row instead of overwriting the previous client's connection.
-  const [existing] = await db()
-    .select({ id: schema.connections.id })
+  // One ad account belongs to exactly one client. Look at every row for this
+  // account so we can (a) block linking it to a second client while it is
+  // still active elsewhere, and (b) reuse this workspace's own row if present.
+  const rows = await db()
+    .select({
+      id: schema.connections.id,
+      workspaceId: schema.connections.workspaceId,
+      status: schema.connections.status,
+    })
     .from(schema.connections)
     .where(
       and(
         eq(schema.connections.platform, "meta"),
         eq(schema.connections.accountId, accountId),
-        eq(schema.connections.workspaceId, workspaceId),
       ),
-    )
-    .limit(1);
+    );
+
+  const activeElsewhere = rows.find(
+    (r) => r.status === "active" && r.workspaceId !== workspaceId,
+  );
+  if (activeElsewhere) {
+    throw new Error(
+      "This ad account is already linked to another client. Disconnect it there first.",
+    );
+  }
+
+  // Re-connecting to the same workspace refreshes its token/status.
+  const existing = rows.find((r) => r.workspaceId === workspaceId);
 
   let connectionId: string;
   if (existing) {

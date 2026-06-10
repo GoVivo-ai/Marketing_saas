@@ -199,8 +199,6 @@ export default async function ConnectionsPage() {
 
           {accounts.map((account) => {
             const conns = connectionsByAccount.get(account.externalId) ?? [];
-            const linkedWsIds = new Set(conns.map((c) => c.workspaceId));
-            const remaining = workspaces.filter((w) => !linkedWsIds.has(w.id));
             return (
               <div
                 key={account.externalId}
@@ -218,7 +216,8 @@ export default async function ConnectionsPage() {
                   )}
                 </div>
 
-                {/* One row per workspace this account is linked to. */}
+                {/* An account is linked to exactly one client. Existing links
+                    still render (so a wrong one can be disconnected here). */}
                 {conns.map((conn) => (
                   <div key={conn.id} className="flex flex-wrap items-center gap-2">
                     <Badge className="gap-1">
@@ -247,11 +246,12 @@ export default async function ConnectionsPage() {
                   </div>
                 ))}
 
-                {/* Link this account to another workspace (admins see all). */}
-                {remaining.length > 0 && (
+                {/* Assign to a client — only while the account is unlinked.
+                    To move it elsewhere, disconnect it first. */}
+                {conns.length === 0 && (
                   <form
                     action={connectMetaAccount}
-                    className={`flex flex-wrap items-center gap-2 ${conns.length > 0 ? "border-t pt-3" : ""}`}
+                    className="flex flex-wrap items-center gap-2"
                   >
                     <input type="hidden" name="accountId" value={account.externalId} />
                     <input type="hidden" name="accountName" value={account.name} />
@@ -262,18 +262,16 @@ export default async function ConnectionsPage() {
                       defaultValue=""
                     >
                       <option value="" disabled>
-                        {conns.length > 0
-                          ? "Link to another workspace…"
-                          : "Assign to workspace…"}
+                        Assign to workspace…
                       </option>
-                      {remaining.map((w) => (
+                      {workspaces.map((w) => (
                         <option key={w.id} value={w.id}>
                           {w.name}
                         </option>
                       ))}
                     </select>
                     <Button size="sm" type="submit">
-                      {conns.length > 0 ? "Add" : "Connect"}
+                      Connect
                     </Button>
                   </form>
                 )}

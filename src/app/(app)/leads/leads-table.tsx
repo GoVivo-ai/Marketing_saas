@@ -42,7 +42,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   return (
     <div className="flex items-start justify-between gap-4">
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-right font-medium">{value}</span>
+      <span className="min-w-0 break-words text-right font-medium">{value}</span>
     </div>
   );
 }
@@ -112,7 +112,7 @@ export function LeadsTable({ rows }: { rows: LeadRow[] }) {
       </Table>
 
       <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
-        <SheetContent side="right" className="overflow-y-auto sm:max-w-md">
+        <SheetContent side="right" className="overflow-x-hidden overflow-y-auto sm:max-w-md">
           {selected && (
             <>
               <SheetHeader>
@@ -225,16 +225,19 @@ export function LeadsTable({ rows }: { rows: LeadRow[] }) {
                 {selected.formData && Object.keys(selected.formData).length > 0 && (
                   <>
                     <Separator />
-                    <div className="space-y-2 text-sm">
+                    <div className="space-y-3 text-sm">
                       <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         Form responses
                       </h4>
                       {Object.entries(selected.formData).map(([key, value]) => (
-                        <DetailRow
-                          key={key}
-                          label={key.replaceAll("_", " ")}
-                          value={typeof value === "string" ? value : JSON.stringify(value)}
-                        />
+                        <div key={key} className="space-y-0.5">
+                          <p className="text-xs capitalize text-muted-foreground">
+                            {key.replaceAll("_", " ")}
+                          </p>
+                          <p className="break-words font-medium">
+                            {typeof value === "string" ? value : JSON.stringify(value)}
+                          </p>
+                        </div>
                       ))}
                     </div>
                   </>

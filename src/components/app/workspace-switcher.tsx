@@ -11,7 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { setActiveWorkspace } from "@/lib/actions/workspace";
 import type { WorkspaceInfo } from "@/lib/data";
 
 /**
@@ -31,11 +30,12 @@ export function WorkspaceSwitcher({
 
   if (!active) return null;
 
-  const select = (slug: string) =>
-    startTransition(async () => {
-      await setActiveWorkspace(slug);
-      router.refresh();
-    });
+  // Plain client-side cookie: switching workspaces never depends on a
+  // server action, so it keeps working across deployments (no skew errors).
+  const select = (slug: string) => {
+    document.cookie = `ws=${slug}; path=/; max-age=31536000; samesite=lax`;
+    startTransition(() => router.refresh());
+  };
 
   return (
     <DropdownMenu>

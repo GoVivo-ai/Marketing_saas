@@ -65,7 +65,14 @@ export function WorkspaceSwitcher({
               className="mr-2 h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: ws.accentColor ?? "#6366f1" }}
             />
-            <span className="flex-1">{ws.name}</span>
+            <span className="flex-1">
+              {ws.name}
+              {!ws.connected && (
+                <span className="block text-xs text-muted-foreground">
+                  Not connected
+                </span>
+              )}
+            </span>
             {ws.id === active.id && <Check className="h-4 w-4" />}
           </DropdownMenuItem>
         ))}

@@ -13,6 +13,8 @@ export interface WorkspaceInfo {
   name: string;
   slug: string;
   accentColor: string | null;
+  /** Has at least one active platform connection. */
+  connected: boolean;
 }
 
 export interface Kpi {
@@ -90,9 +92,9 @@ export async function getWorkspaceContext(): Promise<{
   const role = (session?.user as { role?: string } | undefined)?.role ?? "client";
   const userId = session?.user?.id;
 
-  let workspaces: WorkspaceInfo[];
+  let rows: Omit<WorkspaceInfo, "connected">[];
   if (role === "client") {
-    workspaces = userId
+    rows = userId
       ? await db()
           .select({
             id: schema.workspaces.id,
@@ -108,7 +110,7 @@ export async function getWorkspaceContext(): Promise<{
           .where(eq(schema.workspaceMembers.userId, userId))
       : [];
   } else {
-    workspaces = await db()
+    rows = await db()
       .select({
         id: schema.workspaces.id,
         name: schema.workspaces.name,
@@ -119,18 +121,24 @@ export async function getWorkspaceContext(): Promise<{
       .where(eq(schema.workspaces.isActive, true));
   }
 
-  let active = workspaces.find((w) => w.slug === requested) ?? null;
+  const activeConnections = await db()
+    .select({ workspaceId: schema.connections.workspaceId })
+    .from(schema.connections)
+    .where(eq(schema.connections.status, "active"));
+  const connectedIds = new Set(activeConnections.map((c) => c.workspaceId));
 
-  // No explicit selection yet: default to the first workspace that actually
-  // has an active platform connection, so a fresh login lands on real data.
-  if (!active && workspaces.length) {
-    const activeConnections = await db()
-      .select({ workspaceId: schema.connections.workspaceId })
-      .from(schema.connections)
-      .where(eq(schema.connections.status, "active"));
-    const connected = new Set(activeConnections.map((c) => c.workspaceId));
-    active = workspaces.find((w) => connected.has(w.id)) ?? workspaces[0];
-  }
+  // Connected workspaces first, then alphabetical.
+  const workspaces: WorkspaceInfo[] = rows
+    .map((w) => ({ ...w, connected: connectedIds.has(w.id) }))
+    .sort(
+      (a, b) =>
+        Number(b.connected) - Number(a.connected) || a.name.localeCompare(b.name),
+    );
+
+  // Explicit selection wins; otherwise default to the first connected
+  // workspace so a fresh login lands on real data.
+  const active =
+    workspaces.find((w) => w.slug === requested) ?? workspaces[0] ?? null;
 
   return { workspaces, active };
 }

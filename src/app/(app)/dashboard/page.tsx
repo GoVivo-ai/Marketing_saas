@@ -10,6 +10,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/app/kpi-card";
 import { PerformanceChart } from "@/components/app/performance-chart";
+import { DateRangeSelect } from "@/components/app/date-range-select";
 import { getEmptyOverview, getOverview, getWorkspaceContext } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +18,28 @@ export const dynamic = "force-dynamic";
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-export default async function DashboardPage() {
+// Allowed windows for the overview. The delta always compares against the
+// equal-length window just before the selected one.
+const RANGES = [
+  { value: "7", label: "Last 7 days" },
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 90 days" },
+];
+const DEFAULT_RANGE = "30";
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string }>;
+}) {
+  const { range } = await searchParams;
+  const days = RANGES.some((r) => r.value === range)
+    ? Number(range)
+    : Number(DEFAULT_RANGE);
+  const rangeLabel = `Last ${days} days`;
+
   const { active } = await getWorkspaceContext();
-  const data = active ? await getOverview(active.id) : getEmptyOverview();
+  const data = active ? await getOverview(active.id, days) : getEmptyOverview();
 
   const syncedLabel = data.lastSyncedAt
     ? `Synced ${formatDistanceToNow(data.lastSyncedAt, { addSuffix: true })}`
@@ -27,26 +47,29 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {active ? `${active.name} — Overview` : "Overview"}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Last 30 days · All platforms · {syncedLabel}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {active ? `${active.name} — Overview` : "Overview"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {rangeLabel} · All platforms · {syncedLabel}
+          </p>
+        </div>
+        <DateRangeSelect options={RANGES} defaultValue={DEFAULT_RANGE} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Ad Spend" value={usd(data.kpis.spend.value)} deltaPct={data.kpis.spend.deltaPct} invertColors />
-        <KpiCard label="Leads" value={String(data.kpis.leads.value)} deltaPct={data.kpis.leads.deltaPct} />
-        <KpiCard label="Cost per Lead" value={usd(data.kpis.cpl.value)} deltaPct={data.kpis.cpl.deltaPct} invertColors />
-        <KpiCard label="CTR" value={`${data.kpis.ctr.value.toFixed(2)}%`} deltaPct={data.kpis.ctr.deltaPct} />
+        <KpiCard label="Ad Spend" value={usd(data.kpis.spend.value)} deltaPct={data.kpis.spend.deltaPct} comparisonLabel={`previous ${days} days`} invertColors />
+        <KpiCard label="Leads" value={String(data.kpis.leads.value)} deltaPct={data.kpis.leads.deltaPct} comparisonLabel={`previous ${days} days`} />
+        <KpiCard label="Cost per Lead" value={usd(data.kpis.cpl.value)} deltaPct={data.kpis.cpl.deltaPct} comparisonLabel={`previous ${days} days`} invertColors />
+        <KpiCard label="CTR" value={`${data.kpis.ctr.value.toFixed(2)}%`} deltaPct={data.kpis.ctr.deltaPct} comparisonLabel={`previous ${days} days`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Spend & Leads — last 30 days</CardTitle>
+            <CardTitle>Spend & Leads — {rangeLabel.toLowerCase()}</CardTitle>
             <CardDescription>
               Daily performance across all connected platforms
             </CardDescription>
@@ -56,7 +79,7 @@ export default async function DashboardPage() {
               <PerformanceChart data={data.series} />
             ) : (
               <p className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
-                No activity in the last 30 days.
+                No activity in the {rangeLabel.toLowerCase()}.
               </p>
             )}
           </CardContent>
@@ -97,7 +120,7 @@ export default async function DashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle>Top campaigns</CardTitle>
-          <CardDescription>By spend, last 30 days</CardDescription>
+          <CardDescription>By spend, {rangeLabel.toLowerCase()}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {data.topCampaigns.length === 0 && (

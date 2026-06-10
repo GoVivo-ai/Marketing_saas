@@ -153,9 +153,14 @@ export async function getWorkspaceContext(): Promise<{
 // Overview (last 30 days, deltas vs the 30 days before)
 // ─────────────────────────────────────────────────────────────────────────
 
-export async function getOverview(workspaceId: string): Promise<OverviewData> {
-  const since60 = dateStr(daysAgo(60));
-  const since30 = dateStr(daysAgo(30));
+export async function getOverview(
+  workspaceId: string,
+  days = 30,
+): Promise<OverviewData> {
+  // Current window is the last `days`; the delta compares against the
+  // equal-length window immediately before it.
+  const sinceCurrent = dateStr(daysAgo(days));
+  const sinceWindow = dateStr(daysAgo(days * 2));
 
   const rows = await db()
     .select({
@@ -170,12 +175,12 @@ export async function getOverview(workspaceId: string): Promise<OverviewData> {
     .where(
       and(
         eq(schema.metricsDaily.workspaceId, workspaceId),
-        gte(schema.metricsDaily.date, since60),
+        gte(schema.metricsDaily.date, sinceWindow),
       ),
     );
 
-  const current = rows.filter((r) => r.date >= since30);
-  const previous = rows.filter((r) => r.date < since30);
+  const current = rows.filter((r) => r.date >= sinceCurrent);
+  const previous = rows.filter((r) => r.date < sinceCurrent);
 
   const totals = (set: typeof rows) =>
     set.reduce(
@@ -369,7 +374,14 @@ export async function getCampaignRows(workspaceId: string): Promise<CampaignRow[
 // Leads
 // ─────────────────────────────────────────────────────────────────────────
 
-export async function getLeadRows(workspaceId: string, limit = 200): Promise<LeadRow[]> {
+export async function getLeadRows(
+  workspaceId: string,
+  opts: { days?: number; limit?: number } = {},
+): Promise<LeadRow[]> {
+  const { days, limit = 200 } = opts;
+  // `days` undefined → all time. Otherwise only leads created within the
+  // last `days` (compared against the lead's createdAt timestamp).
+  const since = days != null ? daysAgo(days) : null;
   const rows = await db()
     .select({
       id: schema.leads.id,
@@ -391,7 +403,14 @@ export async function getLeadRows(workspaceId: string, limit = 200): Promise<Lea
     .from(schema.leads)
     .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
     .leftJoin(schema.users, eq(schema.leads.assignedToId, schema.users.id))
-    .where(eq(schema.leads.workspaceId, workspaceId))
+    .where(
+      since
+        ? and(
+            eq(schema.leads.workspaceId, workspaceId),
+            gte(schema.leads.createdAt, since),
+          )
+        : eq(schema.leads.workspaceId, workspaceId),
+    )
     .orderBy(desc(schema.leads.createdAt))
     .limit(limit);
 

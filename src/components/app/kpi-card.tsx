@@ -7,12 +7,15 @@ export function KpiCard({
   value,
   deltaPct,
   invertColors = false,
+  comparisonLabel = "previous 30 days",
 }: {
   label: string;
   value: string;
   deltaPct: number;
   /** For metrics where lower is better (CPL): green when negative. */
   invertColors?: boolean;
+  /** What the delta is compared against, e.g. "previous 7 days". */
+  comparisonLabel?: string;
 }) {
   // The arrow always follows the real number: up if it rose, down if it
   // fell — no surprises. The color and the "better/worse" word carry the
@@ -45,7 +48,7 @@ export function KpiCard({
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {isFlat ? (
-            "No change vs previous 30 days"
+            `No change vs ${comparisonLabel}`
           ) : (
             <>
               <span
@@ -56,7 +59,7 @@ export function KpiCard({
               >
                 {sentiment}
               </span>{" "}
-              vs previous 30 days
+              vs {comparisonLabel}
             </>
           )}
         </p>

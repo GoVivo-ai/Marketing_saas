@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { getDemoLeadRows, getLeadRows, getWorkspaceContext } from "@/lib/data";
+import { getLeadRows, getWorkspaceContext } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -29,8 +29,8 @@ const statusVariant: Record<string, "default" | "secondary" | "outline" | "destr
 };
 
 export default async function LeadsPage() {
-  const { active, live } = await getWorkspaceContext();
-  const rows = live && active ? await getLeadRows(active.id) : getDemoLeadRows();
+  const { active } = await getWorkspaceContext();
+  const rows = active ? await getLeadRows(active.id) : [];
 
   return (
     <div className="space-y-6">
@@ -40,7 +40,7 @@ export default async function LeadsPage() {
         </h1>
         <p className="text-sm text-muted-foreground">
           One source of truth for marketing and operations — no more duplicated
-          spreadsheets.{live ? "" : " · Demo data"}
+          spreadsheets.
         </p>
       </div>
 

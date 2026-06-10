@@ -78,9 +78,6 @@ export default async function LoginPage({
                 Sign in
               </Button>
             </form>
-            <p className="mt-4 text-center text-xs text-muted-foreground">
-              Demo access: demo@govivo.ai / vivo-demo-2026
-            </p>
           </CardContent>
         </Card>
       </div>

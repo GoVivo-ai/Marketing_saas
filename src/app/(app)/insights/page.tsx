@@ -1,4 +1,9 @@
+import { formatDistanceToNow } from "date-fns";
+import { desc, eq } from "drizzle-orm";
 import { Sparkles, AlertTriangle, Lightbulb, CalendarCheck } from "lucide-react";
+import { db, schema } from "@/lib/db";
+import { getWorkspaceContext } from "@/lib/data";
+import { GenerateInsightsButton } from "@/components/app/generate-insights-button";
 import {
   Card,
   CardContent,
@@ -7,7 +12,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { demoInsights } from "@/lib/demo-data";
+
+export const dynamic = "force-dynamic";
 
 const kindMeta = {
   anomaly: { icon: AlertTriangle, label: "Anomaly" },
@@ -16,62 +22,79 @@ const kindMeta = {
   forecast: { icon: Sparkles, label: "Forecast" },
 } as const;
 
-export default function InsightsPage() {
+export default async function InsightsPage() {
+  const { active } = await getWorkspaceContext();
+
+  const insights = active
+    ? await db()
+        .select({
+          id: schema.aiInsights.id,
+          kind: schema.aiInsights.kind,
+          severity: schema.aiInsights.severity,
+          title: schema.aiInsights.title,
+          body: schema.aiInsights.body,
+          createdAt: schema.aiInsights.createdAt,
+        })
+        .from(schema.aiInsights)
+        .where(eq(schema.aiInsights.workspaceId, active.id))
+        .orderBy(desc(schema.aiInsights.createdAt))
+        .limit(20)
+    : [];
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">AI Insights</h1>
-        <p className="text-sm text-muted-foreground">
-          The analyst engine reviews every campaign daily: anomalies, scaling
-          opportunities and a weekly executive summary — before anyone asks.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {active ? `${active.name} — AI Insights` : "AI Insights"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            The analyst engine reviews synced campaign data: anomalies, scaling
+            opportunities and executive summaries.
+          </p>
+        </div>
+        <GenerateInsightsButton />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {demoInsights.map((insight) => {
-          const meta = kindMeta[insight.kind];
-          const Icon = meta.icon;
-          return (
-            <Card key={insight.title}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <Badge
-                    variant={insight.severity === "critical" ? "destructive" : "secondary"}
-                    className="gap-1"
-                  >
-                    <Icon className="h-3 w-3" />
-                    {meta.label}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">Today, 6:00 AM</span>
-                </div>
-                <CardTitle className="text-base leading-snug">{insight.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CardDescription className="text-sm leading-relaxed">
-                  {insight.body}
-                </CardDescription>
-              </CardContent>
-            </Card>
-          );
-        })}
-
+      {insights.length === 0 ? (
         <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Sparkles className="h-4 w-4 text-primary" />
-              Ask your data
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription className="text-sm leading-relaxed">
-              Coming next: a chat interface where anyone on the team — or the
-              client — can ask questions in plain language (&ldquo;Which campaign
-              brought the cheapest qualified leads last month?&rdquo;) and get
-              answers computed from live data.
-            </CardDescription>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            No insights yet. Click &ldquo;Generate insights&rdquo; to analyze the
+            last 14 days of synced data for this workspace.
           </CardContent>
         </Card>
-      </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {insights.map((insight) => {
+            const meta = kindMeta[insight.kind] ?? kindMeta.recommendation;
+            const Icon = meta.icon;
+            return (
+              <Card key={insight.id}>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <Badge
+                      variant={insight.severity === "critical" ? "destructive" : "secondary"}
+                      className="gap-1"
+                    >
+                      <Icon className="h-3 w-3" />
+                      {meta.label}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(insight.createdAt, { addSuffix: true })}
+                    </span>
+                  </div>
+                  <CardTitle className="text-base leading-snug">{insight.title}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CardDescription className="text-sm leading-relaxed">
+                    {insight.body}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

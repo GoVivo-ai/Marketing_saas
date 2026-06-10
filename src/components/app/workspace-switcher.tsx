@@ -2,13 +2,12 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronsUpDown, Building2, Loader2 } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
@@ -70,11 +69,6 @@ export function WorkspaceSwitcher({
             {ws.id === active.id && <Check className="h-4 w-4" />}
           </DropdownMenuItem>
         ))}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-muted-foreground">
-          <Building2 className="mr-2 h-4 w-4" />
-          Add workspace…
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

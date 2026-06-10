@@ -4,18 +4,6 @@ import { compare } from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 
-/**
- * Demo account so the product can be shown to clients before a database
- * is provisioned. Disabled automatically in production builds.
- */
-const DEMO_USER = {
-  id: "demo-user",
-  name: "Vivo Demo",
-  email: "demo@govivo.ai",
-  role: "agency_admin" as const,
-};
-const DEMO_PASSWORD = "vivo-demo-2026";
-
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   trustHost: true,
@@ -30,15 +18,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       async authorize(credentials) {
         const email = String(credentials?.email ?? "").toLowerCase().trim();
         const password = String(credentials?.password ?? "");
-        if (!email || !password) return null;
-
-        const demoEnabled =
-          process.env.NODE_ENV !== "production" || !isDatabaseConfigured();
-        if (demoEnabled && email === DEMO_USER.email && password === DEMO_PASSWORD) {
-          return DEMO_USER;
-        }
-
-        if (!isDatabaseConfigured()) return null;
+        if (!email || !password || !isDatabaseConfigured()) return null;
 
         const [user] = await db()
           .select()

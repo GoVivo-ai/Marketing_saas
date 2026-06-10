@@ -2,19 +2,10 @@ import { cookies } from "next/headers";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
-import {
-  demoCampaigns,
-  demoDailySeries,
-  demoInsights,
-  demoKpis,
-  demoLeads,
-  demoWorkspaces,
-} from "@/lib/demo-data";
 
 /**
  * Read-side data layer for the product pages. Every function is scoped to
- * one workspace. When no database is configured the pages fall back to the
- * demo dataset via the getDemo* builders (same shapes).
+ * one workspace.
  */
 
 export interface WorkspaceInfo {
@@ -88,19 +79,11 @@ const deltaPct = (current: number, previous: number) =>
 export async function getWorkspaceContext(): Promise<{
   workspaces: WorkspaceInfo[];
   active: WorkspaceInfo | null;
-  live: boolean;
 }> {
   const requested = (await cookies()).get("ws")?.value;
 
   if (!isDatabaseConfigured()) {
-    const workspaces: WorkspaceInfo[] = demoWorkspaces.map((w) => ({
-      id: w.id,
-      name: w.name,
-      slug: w.slug,
-      accentColor: w.accentColor,
-    }));
-    const active = workspaces.find((w) => w.slug === requested) ?? workspaces[0];
-    return { workspaces, active, live: false };
+    return { workspaces: [], active: null };
   }
 
   const session = await auth();
@@ -137,7 +120,7 @@ export async function getWorkspaceContext(): Promise<{
   }
 
   const active = workspaces.find((w) => w.slug === requested) ?? workspaces[0] ?? null;
-  return { workspaces, active, live: true };
+  return { workspaces, active };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -265,29 +248,14 @@ export async function getOverview(workspaceId: string): Promise<OverviewData> {
   };
 }
 
-export function getDemoOverview(): OverviewData {
+/** Empty view-model for sessions without a selectable workspace. */
+export function getEmptyOverview(): OverviewData {
+  const zero = { value: 0, deltaPct: 0 };
   return {
-    kpis: {
-      spend: { value: demoKpis.spend.value, deltaPct: demoKpis.spend.deltaPct },
-      leads: { value: demoKpis.leads.value, deltaPct: demoKpis.leads.deltaPct },
-      cpl: { value: demoKpis.cpl.value, deltaPct: demoKpis.cpl.deltaPct },
-      ctr: { value: demoKpis.ctr.value, deltaPct: demoKpis.ctr.deltaPct },
-    },
-    series: demoDailySeries.map((d) => ({ date: d.date, spend: d.spend, leads: d.leads })),
-    topCampaigns: demoCampaigns
-      .filter((c) => c.spend > 0)
-      .slice(0, 4)
-      .map((c) => ({
-        id: c.id,
-        name: c.name,
-        platform: c.platform,
-        objective: c.objective,
-        status: c.status,
-        spend: c.spend,
-        leads: c.leads,
-        cpl: c.cpl,
-      })),
-    insights: demoInsights,
+    kpis: { spend: zero, leads: zero, cpl: zero, ctr: zero },
+    series: [],
+    topCampaigns: [],
+    insights: [],
     lastSyncedAt: null,
   };
 }
@@ -370,21 +338,6 @@ export async function getCampaignRows(workspaceId: string): Promise<CampaignRow[
     .sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
 }
 
-export function getDemoCampaignRows(): CampaignRow[] {
-  return demoCampaigns.map((c) => ({
-    id: c.id,
-    name: c.name,
-    platform: c.platform,
-    status: c.status,
-    objective: c.objective,
-    spend: c.spend,
-    impressions: c.impressions,
-    clicks: c.clicks,
-    leads: c.leads,
-    cpl: c.cpl,
-    trend: c.trend,
-  }));
-}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Leads
@@ -422,16 +375,3 @@ export async function getLeadRows(workspaceId: string, limit = 200): Promise<Lea
   }));
 }
 
-export function getDemoLeadRows(): LeadRow[] {
-  return demoLeads.map((l) => ({
-    id: l.id,
-    name: l.name,
-    email: l.email,
-    phone: l.phone,
-    campaign: l.campaign,
-    status: l.status,
-    aiScore: l.aiScore,
-    aiReason: l.aiReason,
-    createdAt: new Date(l.createdAt),
-  }));
-}

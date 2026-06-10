@@ -10,7 +10,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/app/kpi-card";
 import { PerformanceChart } from "@/components/app/performance-chart";
-import { getDemoOverview, getOverview, getWorkspaceContext } from "@/lib/data";
+import { getEmptyOverview, getOverview, getWorkspaceContext } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -18,14 +18,12 @@ const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default async function DashboardPage() {
-  const { active, live } = await getWorkspaceContext();
-  const data = live && active ? await getOverview(active.id) : getDemoOverview();
+  const { active } = await getWorkspaceContext();
+  const data = active ? await getOverview(active.id) : getEmptyOverview();
 
-  const syncedLabel = live
-    ? data.lastSyncedAt
-      ? `Synced ${formatDistanceToNow(data.lastSyncedAt, { addSuffix: true })}`
-      : "Not connected yet"
-    : "Demo data";
+  const syncedLabel = data.lastSyncedAt
+    ? `Synced ${formatDistanceToNow(data.lastSyncedAt, { addSuffix: true })}`
+    : "Not connected yet";
 
   return (
     <div className="space-y-6">

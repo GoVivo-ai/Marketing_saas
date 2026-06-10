@@ -50,16 +50,15 @@ cp .env.example .env.local   # fill in AUTH_SECRET at minimum
 npm run dev
 ```
 
-Open http://localhost:3000 and sign in with the demo account
-(`demo@govivo.ai` / `vivo-demo-2026`). Demo mode works without a database —
-the dashboard renders a realistic seeded dataset.
-
-### With a real database
+Set `DATABASE_URL` in `.env.local`, then create the schema and the initial
+workspaces/admin user:
 
 ```bash
-# set DATABASE_URL in .env.local, then:
-npx drizzle-kit push   # create schema
+npx drizzle-kit push
+npm run db:seed
 ```
+
+Open http://localhost:3000 and sign in with the seeded admin account.
 
 ### Useful scripts
 
@@ -89,7 +88,6 @@ src/
     ai/               # Claude-powered: insights, lead scoring, copy studio
     db/               # Drizzle schema + client (multi-tenant by workspace)
     integrations/     # Platform connectors (Meta live, Google Ads next)
-    demo-data.ts      # Seeded demo dataset (remove when live sync ships)
 docs/
   ARCHITECTURE.md     # Tenancy model, data flow, security
   ROADMAP.md          # Phased delivery plan

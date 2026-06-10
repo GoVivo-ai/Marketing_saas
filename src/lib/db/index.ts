@@ -3,9 +3,9 @@ import postgres from "postgres";
 import * as schema from "./schema";
 
 /**
- * Lazily-initialized Drizzle client. The app boots without a DATABASE_URL
- * (demo mode); anything that actually touches the DB will throw a clear
- * error instead of crashing at import time.
+ * Lazily-initialized Drizzle client. The app boots without a DATABASE_URL;
+ * anything that actually touches the DB throws a clear error instead of
+ * crashing at import time.
  */
 let _db: ReturnType<typeof createDb> | null = null;
 

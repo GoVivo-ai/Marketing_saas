@@ -16,7 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { TrendingDown, TrendingUp, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getCampaignRows, getDemoCampaignRows, getWorkspaceContext } from "@/lib/data";
+import { getCampaignRows, getWorkspaceContext } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +24,8 @@ const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default async function CampaignsPage() {
-  const { active, live } = await getWorkspaceContext();
-  const rows = live && active ? await getCampaignRows(active.id) : getDemoCampaignRows();
+  const { active } = await getWorkspaceContext();
+  const rows = active ? await getCampaignRows(active.id) : [];
 
   return (
     <div className="space-y-6">
@@ -35,7 +35,6 @@ export default async function CampaignsPage() {
         </h1>
         <p className="text-sm text-muted-foreground">
           All campaigns across platforms, normalized into one view
-          {live ? "" : " · Demo data"}
         </p>
       </div>
 

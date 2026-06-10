@@ -180,7 +180,7 @@ export default async function ConnectionsPage() {
             </p>
           )}
           {accountsError && (
-            <p className="text-sm text-red-500">
+            <p className="text-sm text-destructive">
               Could not reach the Meta API: {accountsError}
             </p>
           )}

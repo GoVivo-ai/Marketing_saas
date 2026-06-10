@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { VivoLogo } from "./vivo-logo";
 import type { WorkspaceInfo } from "@/lib/data";
 
 const nav = [
@@ -57,14 +58,9 @@ export function AppSidebar({
 
   return (
     <aside className="flex h-screen w-60 shrink-0 flex-col border-r bg-card/50">
-      <div className="flex items-center gap-2 px-5 py-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
-          V
-        </div>
-        <div className="leading-tight">
-          <p className="text-sm font-semibold">MarTech By Vivo</p>
-          <p className="text-xs text-muted-foreground">Agency Platform</p>
-        </div>
+      <div className="px-5 py-5">
+        <VivoLogo className="h-7 w-auto" />
+        <p className="mt-1.5 text-xs text-muted-foreground">MarTech Platform</p>
       </div>
 
       <div className="px-3 pb-2">

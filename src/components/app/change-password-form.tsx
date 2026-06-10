@@ -48,9 +48,9 @@ export function ChangePasswordForm() {
         />
       </div>
 
-      {state.error && <p className="text-sm text-red-500">{state.error}</p>}
+      {state.error && <p className="text-sm text-destructive">{state.error}</p>}
       {state.success && (
-        <p className="flex items-center gap-1 text-sm text-emerald-500">
+        <p className="flex items-center gap-1 text-sm text-success">
           <CircleCheck className="h-4 w-4" />
           Password updated successfully.
         </p>

@@ -64,6 +64,7 @@ export interface LeadRow {
   status: string;
   aiScore: number | null;
   aiReason: string | null;
+  aiSuggestedAction: string | null;
   formData: Record<string, unknown> | null;
   assignedTo: string | null;
   createdAt: Date;
@@ -378,6 +379,7 @@ export async function getLeadRows(workspaceId: string, limit = 200): Promise<Lea
       status: schema.leads.status,
       aiScore: schema.leads.aiScore,
       aiReason: schema.leads.aiScoreReason,
+      aiSuggestedAction: schema.leads.aiSuggestedAction,
       formData: schema.leads.formData,
       platform: schema.leads.platform,
       externalId: schema.leads.externalId,
@@ -404,6 +406,7 @@ export async function getLeadRows(workspaceId: string, limit = 200): Promise<Lea
     status: r.status,
     aiScore: r.aiScore,
     aiReason: r.aiReason,
+    aiSuggestedAction: r.aiSuggestedAction,
     formData: (r.formData ?? null) as Record<string, unknown> | null,
     assignedTo: r.assignedTo,
     createdAt: r.createdAt,

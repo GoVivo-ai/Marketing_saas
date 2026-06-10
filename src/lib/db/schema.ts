@@ -107,6 +107,12 @@ export const workspaces = pgTable("workspaces", {
   slug: text("slug").notNull().unique(),
   industry: text("industry"),
   logoUrl: text("logo_url"),
+  /**
+   * Free-text criteria the client uses to define a good lead (e.g. budget,
+   * location, role). Fed to the AI lead-scoring engine so scores reflect
+   * what actually matters for this client's business.
+   */
+  qualificationCriteria: text("qualification_criteria"),
   /** Brand color used to theme the client portal. */
   accentColor: text("accent_color"),
   isActive: boolean("is_active").notNull().default(true),
@@ -227,6 +233,8 @@ export const leads = pgTable(
     /** 0–100, assigned by the AI lead-scoring engine. */
     aiScore: integer("ai_score"),
     aiScoreReason: text("ai_score_reason"),
+    /** Concrete next step for sales, generated alongside the score. */
+    aiSuggestedAction: text("ai_suggested_action"),
     assignedToId: text("assigned_to_id").references(() => users.id, {
       onDelete: "set null",
     }),

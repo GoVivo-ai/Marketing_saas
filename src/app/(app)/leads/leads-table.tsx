@@ -179,6 +179,12 @@ export function LeadsTable({ rows }: { rows: LeadRow[] }) {
                       {selected.aiReason && (
                         <p className="text-sm text-muted-foreground">{selected.aiReason}</p>
                       )}
+                      {selected.aiSuggestedAction && (
+                        <p className="rounded-md bg-primary/10 px-3 py-2 text-sm text-primary">
+                          <span className="font-medium">Suggested: </span>
+                          {selected.aiSuggestedAction}
+                        </p>
+                      )}
                     </>
                   ) : (
                     <p className="text-sm text-muted-foreground">Pending scoring</p>

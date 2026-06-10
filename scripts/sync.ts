@@ -46,7 +46,7 @@ async function main() {
     console.log(`Syncing ${conn.accountId} (last ${days} days)…`);
     const stats = await syncConnection(conn.id, { days });
     console.log(
-      `  ✓ campaigns=${stats.campaigns} metricRows=${stats.metricRows} leads=${stats.leads}` +
+      `  ✓ campaigns=${stats.campaigns} metricRows=${stats.metricRows} leads=${stats.leads} scored=${stats.leadsScored}` +
         (stats.leadsError ? `\n  ⚠ leads failed: ${stats.leadsError.slice(0, 200)}` : ""),
     );
   }

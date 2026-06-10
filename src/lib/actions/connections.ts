@@ -36,6 +36,10 @@ export async function connectMetaAccount(formData: FormData) {
     throw new Error("Meta token is not configured (Settings → Connections)");
   }
 
+  // Scope the lookup to this workspace: the same ad account can be linked to
+  // several client workspaces independently. Re-connecting to the SAME
+  // workspace refreshes the token; connecting to a NEW workspace creates a
+  // separate row instead of overwriting the previous client's connection.
   const [existing] = await db()
     .select({ id: schema.connections.id })
     .from(schema.connections)
@@ -43,6 +47,7 @@ export async function connectMetaAccount(formData: FormData) {
       and(
         eq(schema.connections.platform, "meta"),
         eq(schema.connections.accountId, accountId),
+        eq(schema.connections.workspaceId, workspaceId),
       ),
     )
     .limit(1);

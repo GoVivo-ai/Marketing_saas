@@ -90,9 +90,15 @@ export default async function ConnectionsPage() {
   }
 
   const workspaceName = new Map(workspaces.map((w) => [w.id, w.name]));
-  const connectionByAccount = new Map(
-    connections.filter((c) => c.status === "active").map((c) => [c.accountId, c]),
-  );
+  // One ad account can be linked to several workspaces, so group every active
+  // connection by account instead of keeping just one.
+  const connectionsByAccount = new Map<string, typeof connections>();
+  for (const c of connections) {
+    if (c.status !== "active") continue;
+    const list = connectionsByAccount.get(c.accountId) ?? [];
+    list.push(c);
+    connectionsByAccount.set(c.accountId, list);
+  }
 
   return (
     <div className="space-y-6">
@@ -192,21 +198,29 @@ export default async function ConnectionsPage() {
           )}
 
           {accounts.map((account) => {
-            const conn = connectionByAccount.get(account.externalId);
+            const conns = connectionsByAccount.get(account.externalId) ?? [];
+            const linkedWsIds = new Set(conns.map((c) => c.workspaceId));
+            const remaining = workspaces.filter((w) => !linkedWsIds.has(w.id));
             return (
               <div
                 key={account.externalId}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"
+                className="space-y-3 rounded-lg border p-4"
               >
-                <div>
-                  <p className="font-medium">{account.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {account.externalId} · {account.currency}
-                  </p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{account.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {account.externalId} · {account.currency}
+                    </p>
+                  </div>
+                  {conns.length === 0 && (
+                    <Badge variant="secondary">Not linked</Badge>
+                  )}
                 </div>
 
-                {conn ? (
-                  <div className="flex flex-wrap items-center gap-2">
+                {/* One row per workspace this account is linked to. */}
+                {conns.map((conn) => (
+                  <div key={conn.id} className="flex flex-wrap items-center gap-2">
                     <Badge className="gap-1">
                       <CircleCheck className="h-3 w-3" />
                       {workspaceName.get(conn.workspaceId) ?? "Connected"}
@@ -231,8 +245,14 @@ export default async function ConnectionsPage() {
                       </Button>
                     </form>
                   </div>
-                ) : (
-                  <form action={connectMetaAccount} className="flex items-center gap-2">
+                ))}
+
+                {/* Link this account to another workspace (admins see all). */}
+                {remaining.length > 0 && (
+                  <form
+                    action={connectMetaAccount}
+                    className={`flex flex-wrap items-center gap-2 ${conns.length > 0 ? "border-t pt-3" : ""}`}
+                  >
                     <input type="hidden" name="accountId" value={account.externalId} />
                     <input type="hidden" name="accountName" value={account.name} />
                     <select
@@ -242,16 +262,18 @@ export default async function ConnectionsPage() {
                       defaultValue=""
                     >
                       <option value="" disabled>
-                        Assign to workspace…
+                        {conns.length > 0
+                          ? "Link to another workspace…"
+                          : "Assign to workspace…"}
                       </option>
-                      {workspaces.map((w) => (
+                      {remaining.map((w) => (
                         <option key={w.id} value={w.id}>
                           {w.name}
                         </option>
                       ))}
                     </select>
                     <Button size="sm" type="submit">
-                      Connect
+                      {conns.length > 0 ? "Add" : "Connect"}
                     </Button>
                   </form>
                 )}

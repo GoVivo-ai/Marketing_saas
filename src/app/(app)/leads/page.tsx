@@ -5,8 +5,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { DateRangeSelect } from "@/components/app/date-range-select";
-import { getLeadRows, getWorkspaceContext } from "@/lib/data";
+import { DateRangePicker } from "@/components/app/date-range-picker";
+import { Pagination } from "@/components/app/pagination";
+import { getLeadsPage, getWorkspaceContext } from "@/lib/data";
+import { resolveDateRange } from "@/lib/date-range";
 import { LeadsTable } from "./leads-table";
 
 export const dynamic = "force-dynamic";
@@ -22,15 +24,26 @@ const DEFAULT_RANGE = "all";
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  searchParams: Promise<{ range?: string; from?: string; to?: string; page?: string }>;
 }) {
-  const { range } = await searchParams;
-  const selected = RANGES.some((r) => r.value === range) ? range! : DEFAULT_RANGE;
-  const days = selected === "all" ? undefined : Number(selected);
-  const rangeLabel = RANGES.find((r) => r.value === selected)!.label;
+  const sp = await searchParams;
+  const resolved = resolveDateRange(sp, {
+    presets: [7, 30, 90],
+    defaultPreset: DEFAULT_RANGE,
+    allowAllTime: true,
+  });
+  const requestedPage = Math.max(1, Number(sp.page) || 1);
 
   const { active } = await getWorkspaceContext();
-  const rows = active ? await getLeadRows(active.id, { days }) : [];
+  const result = active
+    ? await getLeadsPage(active.id, {
+        start: resolved.start,
+        end: resolved.end,
+        page: requestedPage,
+      })
+    : { rows: [], total: 0, page: 1, pageSize: 25, totalPages: 1 };
+
+  const isFiltered = resolved.start != null;
 
   return (
     <div className="space-y-6">
@@ -44,25 +57,32 @@ export default async function LeadsPage({
             spreadsheets.
           </p>
         </div>
-        <DateRangeSelect options={RANGES} defaultValue={DEFAULT_RANGE} />
+        <DateRangePicker
+          presets={RANGES}
+          defaultValue={DEFAULT_RANGE}
+          label={resolved.label}
+        />
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Incoming leads</CardTitle>
           <CardDescription>
-            Synced from Meta Lead Ads · {rangeLabel} · {rows.length} total
+            Synced from Meta Lead Ads · {resolved.label} · {result.total} total
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {rows.length === 0 ? (
+          {result.total === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              {days != null
-                ? `No leads in the ${rangeLabel.toLowerCase()}. Try a wider range.`
+              {isFiltered
+                ? `No leads in ${resolved.label.toLowerCase()}. Try a wider range.`
                 : "No leads synced yet. They will appear here after the first sync of a connected account."}
             </p>
           ) : (
-            <LeadsTable rows={rows} />
+            <>
+              <LeadsTable rows={result.rows} />
+              <Pagination page={result.page} totalPages={result.totalPages} />
+            </>
           )}
         </CardContent>
       </Card>

@@ -10,16 +10,17 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/app/kpi-card";
 import { PerformanceChart } from "@/components/app/performance-chart";
-import { DateRangeSelect } from "@/components/app/date-range-select";
+import { DateRangePicker } from "@/components/app/date-range-picker";
 import { getEmptyOverview, getOverview, getWorkspaceContext } from "@/lib/data";
+import { resolveDateRange } from "@/lib/date-range";
 
 export const dynamic = "force-dynamic";
 
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-// Allowed windows for the overview. The delta always compares against the
-// equal-length window just before the selected one.
+// Quick presets for the picker; a custom calendar window is also allowed.
+// The delta always compares against the equal-length window just before.
 const RANGES = [
   { value: "7", label: "Last 7 days" },
   { value: "30", label: "Last 30 days" },
@@ -30,16 +31,25 @@ const DEFAULT_RANGE = "30";
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
 }) {
-  const { range } = await searchParams;
-  const days = RANGES.some((r) => r.value === range)
-    ? Number(range)
-    : Number(DEFAULT_RANGE);
-  const rangeLabel = `Last ${days} days`;
+  const sp = await searchParams;
+  const resolved = resolveDateRange(sp, {
+    presets: [7, 30, 90],
+    defaultPreset: DEFAULT_RANGE,
+    allowAllTime: false,
+  });
+  const start = resolved.start!;
+  const end = resolved.end!;
+  const rangeLabel = resolved.label;
+  const comparisonLabel = /^\d+$/.test(resolved.preset)
+    ? `previous ${resolved.preset} days`
+    : "previous period";
 
   const { active } = await getWorkspaceContext();
-  const data = active ? await getOverview(active.id, days) : getEmptyOverview();
+  const data = active
+    ? await getOverview(active.id, { start, end })
+    : getEmptyOverview();
 
   const syncedLabel = data.lastSyncedAt
     ? `Synced ${formatDistanceToNow(data.lastSyncedAt, { addSuffix: true })}`
@@ -56,14 +66,18 @@ export default async function DashboardPage({
             {rangeLabel} · All platforms · {syncedLabel}
           </p>
         </div>
-        <DateRangeSelect options={RANGES} defaultValue={DEFAULT_RANGE} />
+        <DateRangePicker
+          presets={RANGES}
+          defaultValue={DEFAULT_RANGE}
+          label={rangeLabel}
+        />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Ad Spend" value={usd(data.kpis.spend.value)} deltaPct={data.kpis.spend.deltaPct} comparisonLabel={`previous ${days} days`} invertColors />
-        <KpiCard label="Leads" value={String(data.kpis.leads.value)} deltaPct={data.kpis.leads.deltaPct} comparisonLabel={`previous ${days} days`} />
-        <KpiCard label="Cost per Lead" value={usd(data.kpis.cpl.value)} deltaPct={data.kpis.cpl.deltaPct} comparisonLabel={`previous ${days} days`} invertColors />
-        <KpiCard label="CTR" value={`${data.kpis.ctr.value.toFixed(2)}%`} deltaPct={data.kpis.ctr.deltaPct} comparisonLabel={`previous ${days} days`} />
+        <KpiCard label="Ad Spend" value={usd(data.kpis.spend.value)} deltaPct={data.kpis.spend.deltaPct} comparisonLabel={comparisonLabel} invertColors />
+        <KpiCard label="Leads" value={String(data.kpis.leads.value)} deltaPct={data.kpis.leads.deltaPct} comparisonLabel={comparisonLabel} />
+        <KpiCard label="Cost per Lead" value={usd(data.kpis.cpl.value)} deltaPct={data.kpis.cpl.deltaPct} comparisonLabel={comparisonLabel} invertColors />
+        <KpiCard label="CTR" value={`${data.kpis.ctr.value.toFixed(2)}%`} deltaPct={data.kpis.ctr.deltaPct} comparisonLabel={comparisonLabel} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">

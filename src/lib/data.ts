@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 
@@ -72,8 +72,9 @@ export interface LeadRow {
 }
 
 const dateStr = (d: Date) => d.toISOString().slice(0, 10);
-const daysAgo = (n: number) => {
-  const d = new Date();
+const daysAgo = (n: number) => daysBefore(new Date(), n);
+const daysBefore = (from: Date, n: number) => {
+  const d = new Date(from);
   d.setUTCDate(d.getUTCDate() - n);
   return d;
 };
@@ -155,12 +156,17 @@ export async function getWorkspaceContext(): Promise<{
 
 export async function getOverview(
   workspaceId: string,
-  days = 30,
+  range: { start: Date; end: Date },
 ): Promise<OverviewData> {
-  // Current window is the last `days`; the delta compares against the
+  // Current window is [start, end]; the delta compares against the
   // equal-length window immediately before it.
-  const sinceCurrent = dateStr(daysAgo(days));
-  const sinceWindow = dateStr(daysAgo(days * 2));
+  const startStr = dateStr(range.start);
+  const endStr = dateStr(range.end);
+  const lengthDays = Math.max(
+    1,
+    Math.round((Date.parse(endStr) - Date.parse(startStr)) / 86_400_000) + 1,
+  );
+  const prevStartStr = dateStr(daysBefore(range.start, lengthDays));
 
   const rows = await db()
     .select({
@@ -175,12 +181,13 @@ export async function getOverview(
     .where(
       and(
         eq(schema.metricsDaily.workspaceId, workspaceId),
-        gte(schema.metricsDaily.date, sinceWindow),
+        gte(schema.metricsDaily.date, prevStartStr),
+        lte(schema.metricsDaily.date, endStr),
       ),
     );
 
-  const current = rows.filter((r) => r.date >= sinceCurrent);
-  const previous = rows.filter((r) => r.date < sinceCurrent);
+  const current = rows.filter((r) => r.date >= startStr && r.date <= endStr);
+  const previous = rows.filter((r) => r.date < startStr);
 
   const totals = (set: typeof rows) =>
     set.reduce(
@@ -374,14 +381,40 @@ export async function getCampaignRows(workspaceId: string): Promise<CampaignRow[
 // Leads
 // ─────────────────────────────────────────────────────────────────────────
 
-export async function getLeadRows(
+export interface LeadsPage {
+  rows: LeadRow[];
+  total: number;
+  /** Effective (clamped) page that was actually returned. */
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export async function getLeadsPage(
   workspaceId: string,
-  opts: { days?: number; limit?: number } = {},
-): Promise<LeadRow[]> {
-  const { days, limit = 200 } = opts;
-  // `days` undefined → all time. Otherwise only leads created within the
-  // last `days` (compared against the lead's createdAt timestamp).
-  const since = days != null ? daysAgo(days) : null;
+  opts: {
+    start?: Date | null;
+    end?: Date | null;
+    page?: number;
+    pageSize?: number;
+  } = {},
+): Promise<LeadsPage> {
+  const { start, end, pageSize = 25 } = opts;
+  // start/end null or omitted → unbounded on that side (all time when both).
+  // Filtered against the lead's createdAt timestamp.
+  const filters = [eq(schema.leads.workspaceId, workspaceId)];
+  if (start) filters.push(gte(schema.leads.createdAt, start));
+  if (end) filters.push(lte(schema.leads.createdAt, end));
+  const where = and(...filters);
+
+  const [{ total }] = await db()
+    .select({ total: sql<number>`count(*)::int` })
+    .from(schema.leads)
+    .where(where);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(Math.max(1, opts.page ?? 1), totalPages);
+
   const rows = await db()
     .select({
       id: schema.leads.id,
@@ -403,18 +436,12 @@ export async function getLeadRows(
     .from(schema.leads)
     .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
     .leftJoin(schema.users, eq(schema.leads.assignedToId, schema.users.id))
-    .where(
-      since
-        ? and(
-            eq(schema.leads.workspaceId, workspaceId),
-            gte(schema.leads.createdAt, since),
-          )
-        : eq(schema.leads.workspaceId, workspaceId),
-    )
+    .where(where)
     .orderBy(desc(schema.leads.createdAt))
-    .limit(limit);
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
 
-  return rows.map((r) => ({
+  const mapped = rows.map((r) => ({
     id: r.id,
     name: r.name ?? "Unknown",
     email: r.email ?? "—",
@@ -431,5 +458,7 @@ export async function getLeadRows(
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   }));
+
+  return { rows: mapped, total, page, pageSize, totalPages };
 }
 

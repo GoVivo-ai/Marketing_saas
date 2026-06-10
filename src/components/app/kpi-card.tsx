@@ -14,8 +14,12 @@ export function KpiCard({
   /** For metrics where lower is better (CPL): green when negative. */
   invertColors?: boolean;
 }) {
+  // Is this change good news? For "lower is better" metrics (spend, CPL) a
+  // decrease is good. Arrow direction follows the sentiment, not the raw
+  // number, so green always points up and red always points down.
+  const isFlat = deltaPct === 0;
   const positive = invertColors ? deltaPct < 0 : deltaPct > 0;
-  const Arrow = deltaPct >= 0 ? ArrowUpRight : ArrowDownRight;
+  const Arrow = positive ? ArrowUpRight : ArrowDownRight;
 
   return (
     <Card>
@@ -26,14 +30,18 @@ export function KpiCard({
           <span
             className={cn(
               "flex items-center gap-0.5 text-sm font-medium",
-              positive ? "text-emerald-500" : "text-red-500",
+              isFlat
+                ? "text-muted-foreground"
+                : positive
+                  ? "text-emerald-500"
+                  : "text-red-500",
             )}
           >
-            <Arrow className="h-4 w-4" />
+            {!isFlat && <Arrow className="h-4 w-4" />}
             {Math.abs(deltaPct).toFixed(1)}%
           </span>
         </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">vs previous week</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">vs previous 30 days</p>
       </CardContent>
     </Card>
   );

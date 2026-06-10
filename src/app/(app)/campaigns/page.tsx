@@ -96,8 +96,8 @@ export default async function CampaignsPage() {
                       <span
                         className={cn(
                           "inline-flex items-center gap-1 text-sm font-medium",
-                          c.trend < 0 && "text-emerald-500",
-                          c.trend > 0 && "text-red-500",
+                          c.trend < 0 && "text-success",
+                          c.trend > 0 && "text-destructive",
                           c.trend === 0 && "text-muted-foreground",
                         )}
                       >

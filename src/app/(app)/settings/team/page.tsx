@@ -109,7 +109,7 @@ export default async function TeamPage() {
                 <div className="flex items-center gap-2">
                   <span
                     className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: ws.accentColor ?? "#6366f1" }}
+                    style={{ backgroundColor: ws.accentColor ?? "#04d98b" }}
                   />
                   <div>
                     <p className="text-sm font-medium">{ws.name}</p>

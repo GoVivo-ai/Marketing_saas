@@ -16,11 +16,11 @@ import { Label } from "@/components/ui/label";
 const initial: AdminActionState = {};
 
 function Feedback({ state }: { state: AdminActionState }) {
-  if (state.error) return <p className="text-sm text-red-500">{state.error}</p>;
+  if (state.error) return <p className="text-sm text-destructive">{state.error}</p>;
   if (!state.success) return null;
   return (
     <div className="space-y-1">
-      <p className="flex items-center gap-1 text-sm text-emerald-500">
+      <p className="flex items-center gap-1 text-sm text-success">
         <CircleCheck className="h-4 w-4" />
         {state.success}
       </p>
@@ -51,7 +51,7 @@ export function CreateWorkspaceForm() {
         </div>
         <div className="space-y-2">
           <Label htmlFor="ws-color">Brand color</Label>
-          <Input id="ws-color" name="accentColor" type="color" defaultValue="#6366f1" />
+          <Input id="ws-color" name="accentColor" type="color" defaultValue="#04d98b" />
         </div>
       </div>
       <div className="space-y-2">
@@ -147,7 +147,7 @@ export function DeleteWorkspaceButton({
       }}
     >
       <input type="hidden" name="workspaceId" value={workspaceId} />
-      <Button variant="ghost" size="sm" type="submit" className="text-red-500 hover:text-red-400">
+      <Button variant="ghost" size="sm" type="submit" className="text-destructive hover:text-destructive/80">
         <Trash2 className="mr-1 h-3.5 w-3.5" />
         Delete
       </Button>
@@ -179,7 +179,7 @@ export function ResetPasswordButton({ userId }: { userId: string }) {
           {state.tempPassword}
         </button>
       )}
-      {state.error && <p className="text-xs text-red-500">{state.error}</p>}
+      {state.error && <p className="text-xs text-destructive">{state.error}</p>}
     </form>
   );
 }

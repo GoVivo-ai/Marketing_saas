@@ -113,7 +113,7 @@ export default async function DashboardPage({
                 <div key={insight.title} className="rounded-lg border p-3">
                   <div className="flex items-start gap-2">
                     {insight.severity === "critical" ? (
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                     ) : (
                       <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                     )}

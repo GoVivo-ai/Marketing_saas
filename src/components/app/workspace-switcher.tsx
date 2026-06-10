@@ -49,7 +49,7 @@ export function WorkspaceSwitcher({
           ) : (
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ backgroundColor: active.accentColor ?? "#6366f1" }}
+              style={{ backgroundColor: active.accentColor ?? "#04d98b" }}
             />
           )}
           <span className="truncate">{active.name}</span>
@@ -65,7 +65,7 @@ export function WorkspaceSwitcher({
             <DropdownMenuItem key={ws.id} onClick={() => select(ws.slug)}>
               <span
                 className="mr-2 h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: ws.accentColor ?? "#6366f1" }}
+                style={{ backgroundColor: ws.accentColor ?? "#04d98b" }}
               />
               <span className="flex-1">
                 {ws.name}

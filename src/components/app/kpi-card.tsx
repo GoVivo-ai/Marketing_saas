@@ -38,8 +38,8 @@ export function KpiCard({
               isFlat
                 ? "text-muted-foreground"
                 : good
-                  ? "text-emerald-500"
-                  : "text-red-500",
+                  ? "text-success"
+                  : "text-destructive",
             )}
           >
             {!isFlat && <Arrow className="h-4 w-4" />}
@@ -54,7 +54,7 @@ export function KpiCard({
               <span
                 className={cn(
                   "font-medium",
-                  good ? "text-emerald-600" : "text-red-600",
+                  good ? "text-success" : "text-destructive",
                 )}
               >
                 {sentiment}

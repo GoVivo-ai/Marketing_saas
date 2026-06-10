@@ -1,7 +1,10 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { KeyRound, Users } from "lucide-react";
 import { auth } from "@/lib/auth";
+import { getRingCentralTokens, isRingCentralConnected } from "@/lib/settings";
 import { ChangePasswordForm } from "@/components/app/change-password-form";
+import { RingCentralConnectCard } from "@/components/app/ringcentral-connect-card";
 import {
   Card,
   CardContent,
@@ -14,6 +17,10 @@ export const dynamic = "force-dynamic";
 
 export default async function GeneralSettingsPage() {
   const session = await auth();
+  const userId = session?.user?.id;
+  const rcConnected = userId ? await isRingCentralConnected(userId) : false;
+  const rcTokens =
+    userId && rcConnected ? await getRingCentralTokens(userId) : null;
 
   return (
     <div className="space-y-6">
@@ -39,6 +46,13 @@ export default async function GeneralSettingsPage() {
           <ChangePasswordForm />
         </CardContent>
       </Card>
+
+      <Suspense>
+        <RingCentralConnectCard
+          connected={rcConnected}
+          fromNumber={rcTokens?.fromNumber ?? null}
+        />
+      </Suspense>
 
       <Card>
         <CardHeader>

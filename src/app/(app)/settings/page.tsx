@@ -1,3 +1,13 @@
+import { formatDistanceToNow } from "date-fns";
+import { RefreshCw, Unplug, CircleCheck } from "lucide-react";
+import { auth } from "@/lib/auth";
+import { db, schema, isDatabaseConfigured } from "@/lib/db";
+import { metaConnector } from "@/lib/integrations/meta";
+import {
+  connectMetaAccount,
+  disconnectConnection,
+  syncConnectionNow,
+} from "@/lib/actions/connections";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -8,59 +18,194 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-const platforms = [
-  {
-    name: "Meta Ads",
-    description: "Facebook & Instagram campaigns, insights and lead forms",
-    status: "available" as const,
-    detail: "OAuth connect flow — Phase 1",
-  },
-  {
-    name: "Google Ads",
-    description: "Search, Display, YouTube and Performance Max",
-    status: "planned" as const,
-    detail: "Phase 2",
-  },
-  {
-    name: "TikTok Ads",
-    description: "TikTok campaign performance and lead forms",
-    status: "planned" as const,
-    detail: "Phase 3",
-  },
-  {
-    name: "LinkedIn Ads",
-    description: "B2B campaigns and Lead Gen Forms",
-    status: "planned" as const,
-    detail: "Phase 3",
-  },
+export const dynamic = "force-dynamic";
+
+const upcomingPlatforms = [
+  { name: "Google Ads", description: "Search, Display, YouTube and Performance Max", detail: "Phase 2" },
+  { name: "TikTok Ads", description: "TikTok campaign performance and lead forms", detail: "Phase 3" },
+  { name: "LinkedIn Ads", description: "B2B campaigns and Lead Gen Forms", detail: "Phase 3" },
 ];
 
-export default function ConnectionsPage() {
+export default async function ConnectionsPage() {
+  const session = await auth();
+  const role = (session?.user as { role?: string } | undefined)?.role;
+  const isAgency = role === "agency_admin" || role === "agency_member";
+
+  if (!isAgency) {
+    return (
+      <div className="space-y-2">
+        <h1 className="text-2xl font-semibold tracking-tight">Connections</h1>
+        <p className="text-sm text-muted-foreground">
+          Platform connections are managed by the Vivo team. Contact your account
+          manager to connect or change an ad account.
+        </p>
+      </div>
+    );
+  }
+
+  const ready = isDatabaseConfigured() && Boolean(process.env.META_ACCESS_TOKEN);
+  let accounts: { externalId: string; name: string; currency: string }[] = [];
+  let accountsError: string | null = null;
+  let workspaces: { id: string; name: string }[] = [];
+  let connections: {
+    id: string;
+    accountId: string;
+    workspaceId: string;
+    status: string;
+    lastSyncedAt: Date | null;
+  }[] = [];
+
+  if (ready) {
+    try {
+      [accounts, workspaces, connections] = await Promise.all([
+        metaConnector.listAccounts({
+          accessToken: process.env.META_ACCESS_TOKEN!,
+          accountId: "",
+        }),
+        db()
+          .select({ id: schema.workspaces.id, name: schema.workspaces.name })
+          .from(schema.workspaces),
+        db()
+          .select({
+            id: schema.connections.id,
+            accountId: schema.connections.accountId,
+            workspaceId: schema.connections.workspaceId,
+            status: schema.connections.status,
+            lastSyncedAt: schema.connections.lastSyncedAt,
+          })
+          .from(schema.connections),
+      ]);
+    } catch (err) {
+      accountsError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  const workspaceName = new Map(workspaces.map((w) => [w.id, w.name]));
+  const connectionByAccount = new Map(
+    connections.filter((c) => c.status === "active").map((c) => [c.accountId, c]),
+  );
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Connections</h1>
         <p className="text-sm text-muted-foreground">
-          Connect this workspace&apos;s ad accounts. Tokens are stored encrypted
-          and scoped to the workspace.
+          Ad accounts shared with GoVivo&apos;s business portfolio appear here
+          automatically. Link each one to its client workspace — the first sync
+          runs on connect.
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {platforms.map((p) => (
+      <Card>
+        <CardHeader>
+          <CardTitle>Meta ad accounts</CardTitle>
+          <CardDescription>
+            Visible to the GoVivo system user. To add a client, ask them to share
+            their ad account and page as partner with the GoVivo portfolio.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!ready && (
+            <p className="text-sm text-muted-foreground">
+              Configure DATABASE_URL and META_ACCESS_TOKEN to enable live
+              connections.
+            </p>
+          )}
+          {accountsError && (
+            <p className="text-sm text-red-500">
+              Could not reach the Meta API: {accountsError}
+            </p>
+          )}
+          {ready && !accountsError && accounts.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No ad accounts visible yet. Assign accounts to the system user in
+              GoVivo&apos;s Business settings.
+            </p>
+          )}
+
+          {accounts.map((account) => {
+            const conn = connectionByAccount.get(account.externalId);
+            return (
+              <div
+                key={account.externalId}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"
+              >
+                <div>
+                  <p className="font-medium">{account.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {account.externalId} · {account.currency}
+                  </p>
+                </div>
+
+                {conn ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="gap-1">
+                      <CircleCheck className="h-3 w-3" />
+                      {workspaceName.get(conn.workspaceId) ?? "Connected"}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {conn.lastSyncedAt
+                        ? `synced ${formatDistanceToNow(conn.lastSyncedAt, { addSuffix: true })}`
+                        : "never synced"}
+                    </span>
+                    <form action={syncConnectionNow}>
+                      <input type="hidden" name="connectionId" value={conn.id} />
+                      <Button variant="outline" size="sm" type="submit">
+                        <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                        Sync now
+                      </Button>
+                    </form>
+                    <form action={disconnectConnection}>
+                      <input type="hidden" name="connectionId" value={conn.id} />
+                      <Button variant="ghost" size="sm" type="submit">
+                        <Unplug className="mr-1 h-3.5 w-3.5" />
+                        Disconnect
+                      </Button>
+                    </form>
+                  </div>
+                ) : (
+                  <form action={connectMetaAccount} className="flex items-center gap-2">
+                    <input type="hidden" name="accountId" value={account.externalId} />
+                    <input type="hidden" name="accountName" value={account.name} />
+                    <select
+                      name="workspaceId"
+                      required
+                      className="h-9 rounded-md border bg-background px-2 text-sm"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>
+                        Assign to workspace…
+                      </option>
+                      {workspaces.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Button size="sm" type="submit">
+                      Connect
+                    </Button>
+                  </form>
+                )}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        {upcomingPlatforms.map((p) => (
           <Card key={p.name}>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">{p.name}</CardTitle>
-                <Badge variant={p.status === "available" ? "default" : "secondary"}>
-                  {p.status === "available" ? "Available" : p.detail}
-                </Badge>
+                <Badge variant="secondary">{p.detail}</Badge>
               </div>
               <CardDescription>{p.description}</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button disabled={p.status !== "available"} variant="outline">
-                Connect account
+              <Button disabled variant="outline" size="sm">
+                Coming soon
               </Button>
             </CardContent>
           </Card>

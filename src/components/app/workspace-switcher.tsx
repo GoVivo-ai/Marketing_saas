@@ -6,6 +6,7 @@ import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
@@ -56,26 +57,28 @@ export function WorkspaceSwitcher({
         <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="start">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">
-          Client workspaces
-        </DropdownMenuLabel>
-        {workspaces.map((ws) => (
-          <DropdownMenuItem key={ws.id} onClick={() => select(ws.slug)}>
-            <span
-              className="mr-2 h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: ws.accentColor ?? "#6366f1" }}
-            />
-            <span className="flex-1">
-              {ws.name}
-              {!ws.connected && (
-                <span className="block text-xs text-muted-foreground">
-                  Not connected
-                </span>
-              )}
-            </span>
-            {ws.id === active.id && <Check className="h-4 w-4" />}
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-xs text-muted-foreground">
+            Client workspaces
+          </DropdownMenuLabel>
+          {workspaces.map((ws) => (
+            <DropdownMenuItem key={ws.id} onClick={() => select(ws.slug)}>
+              <span
+                className="mr-2 h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: ws.accentColor ?? "#6366f1" }}
+              />
+              <span className="flex-1">
+                {ws.name}
+                {!ws.connected && (
+                  <span className="block text-xs text-muted-foreground">
+                    Not connected
+                  </span>
+                )}
+              </span>
+              {ws.id === active.id && <Check className="h-4 w-4" />}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

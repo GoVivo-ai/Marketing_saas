@@ -1,36 +1,111 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Vivo Marketing OS
 
-## Getting Started
+Multi-client marketing intelligence platform by **GoVivo.ai**.
 
-First, run the development server:
+One place where the agency and its clients see ad performance across platforms,
+manage every lead without duplicated spreadsheets, and get AI-generated insights
+before anyone has to ask for a report.
+
+## Why this exists
+
+Today, reporting is manual: ad spend and performance are copied from Meta into a
+master Excel sheet per client, and leads land in a Google Sheet that operations
+teams duplicate to add their own notes. This platform replaces that workflow with:
+
+- **Live dashboards** connected directly to the ad platforms' APIs
+- **A unified lead inbox** shared by marketing and operations — one source of truth
+- **AI that does the analyst work**: anomaly detection, scaling recommendations,
+  lead scoring and auto-written client reports
+
+## Differentiators (what wins clients)
+
+| Feature | What the client experiences |
+| --- | --- |
+| **Client portal** | Their own branded login with live numbers — radical transparency vs. a monthly PDF |
+| **AI Analyst** | Daily insights citing real numbers: "Dallas CPL up 18%, creative fatigue, rotate videos" |
+| **AI Lead Scoring** | Every lead arrives pre-scored 0–100 with a reason — sales calls the best ones first |
+| **Unified Lead Inbox** | Marketing attribution + operations follow-up in one place, no duplicated sheets |
+| **AI Copy Studio** | New ad variants seeded with the account's actual winning ads, not generic templates |
+| **Proactive alerts** | CPL jumps and tracking outages pushed to WhatsApp/email the moment they happen |
+
+## Tech stack
+
+| Layer | Choice | Why |
+| --- | --- | --- |
+| Framework | **Next.js 16** (App Router, RSC, Turbopack) | One codebase for portal + API, first-class Vercel deploys |
+| Language | **TypeScript** end-to-end | Safety across DB → API → UI |
+| UI | **Tailwind CSS v4 + shadcn/ui + Recharts** | Professional dashboard UI, fast iteration |
+| Database | **PostgreSQL + Drizzle ORM** | Relational fits campaign/metrics data; typed schema & migrations |
+| Auth | **Auth.js v5** | Role-based access: agency vs. per-workspace client users |
+| AI | **Vercel AI SDK + Anthropic Claude** | Structured outputs (Zod-validated) for insights, scoring, copy |
+| Integrations | **Connector pattern** (`src/lib/integrations`) | Meta first; Google Ads, TikTok, LinkedIn plug into the same interface |
+| Jobs | **Vercel Cron → `/api/cron/sync`** | Nightly sync of campaigns, metrics and leads per connection |
+| Hosting | **Vercel** | Zero-ops, preview deploys, edge network |
+
+## Getting started
 
 ```bash
+npm install
+cp .env.example .env.local   # fill in AUTH_SECRET at minimum
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 and sign in with the demo account
+(`demo@govivo.ai` / `vivo-demo-2026`). Demo mode works without a database —
+the dashboard renders a realistic seeded dataset.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### With a real database
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# set DATABASE_URL in .env.local, then:
+npx drizzle-kit push   # create schema
+```
 
-## Learn More
+### Useful scripts
 
-To learn more about Next.js, take a look at the following resources:
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Dev server (Turbopack) |
+| `npm run build` | Production build |
+| `npm run lint` | ESLint |
+| `npx drizzle-kit studio` | Browse the database |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+  app/
+    (app)/            # Authenticated product: dashboard, campaigns, leads,
+                      # insights, reports, settings
+    api/
+      auth/           # Auth.js handlers
+      ai/insights/    # On-demand AI insight generation
+      cron/sync/      # Nightly platform sync (Vercel Cron)
+    login/            # Sign-in
+  components/
+    app/              # Product components (sidebar, KPI cards, charts)
+    ui/               # shadcn/ui primitives
+  lib/
+    ai/               # Claude-powered: insights, lead scoring, copy studio
+    db/               # Drizzle schema + client (multi-tenant by workspace)
+    integrations/     # Platform connectors (Meta live, Google Ads next)
+    demo-data.ts      # Seeded demo dataset (remove when live sync ships)
+docs/
+  ARCHITECTURE.md     # Tenancy model, data flow, security
+  ROADMAP.md          # Phased delivery plan
+```
 
-## Deploy on Vercel
+## Multi-tenancy model
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Every client of Vivo (Alexia, FTS, Vectora…) is a **workspace**. All marketing
+data — connections, campaigns, metrics, leads, insights — is scoped to exactly
+one workspace. Access:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `agency_admin` / `agency_member` (Vivo team): all / assigned workspaces
+- `client` users: only the workspaces they are members of, viewer-oriented UI
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
+
+## Status
+
+Phase 1 foundation. See [docs/ROADMAP.md](docs/ROADMAP.md) for the delivery plan.

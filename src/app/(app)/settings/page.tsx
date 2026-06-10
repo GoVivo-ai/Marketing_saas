@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
-import { RefreshCw, Unplug, CircleCheck, KeyRound } from "lucide-react";
+import { RefreshCw, Unplug, CircleCheck, KeyRound, Filter } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
+import { getWorkspaceContext } from "@/lib/data";
 import { metaConnector } from "@/lib/integrations/meta";
 import { getSecret, getSecretPreview } from "@/lib/settings";
 import {
@@ -29,7 +31,12 @@ const upcomingPlatforms = [
   { name: "LinkedIn Ads", description: "B2B campaigns and Lead Gen Forms", detail: "Phase 3" },
 ];
 
-export default async function ConnectionsPage() {
+export default async function ConnectionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ all?: string }>;
+}) {
+  const showAll = (await searchParams).all === "1";
   const session = await auth();
   const role = (session?.user as { role?: string } | undefined)?.role;
   const isAgency = role === "agency_admin" || role === "agency_member";
@@ -90,8 +97,7 @@ export default async function ConnectionsPage() {
   }
 
   const workspaceName = new Map(workspaces.map((w) => [w.id, w.name]));
-  // One ad account can be linked to several workspaces, so group every active
-  // connection by account instead of keeping just one.
+  // Group every active connection by account.
   const connectionsByAccount = new Map<string, typeof connections>();
   for (const c of connections) {
     if (c.status !== "active") continue;
@@ -99,6 +105,18 @@ export default async function ConnectionsPage() {
     list.push(c);
     connectionsByAccount.set(c.accountId, list);
   }
+
+  // Follow the selected client: by default show only this client's accounts
+  // (plus unlinked ones, so they can still be assigned). "Show all" overrides.
+  const { active } = await getWorkspaceContext();
+  const filtering = !showAll && Boolean(active);
+  const visibleAccounts = filtering
+    ? accounts.filter((acc) => {
+        const conns = connectionsByAccount.get(acc.externalId) ?? [];
+        if (conns.length === 0) return true; // unlinked → assignable
+        return conns.some((c) => c.workspaceId === active!.id);
+      })
+    : accounts;
 
   return (
     <div className="space-y-6">
@@ -172,11 +190,34 @@ export default async function ConnectionsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Meta ad accounts</CardTitle>
-          <CardDescription>
-            Visible to the GoVivo system user. To add a client, ask them to share
-            their ad account and page as partner with the GoVivo portfolio.
-          </CardDescription>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle>Meta ad accounts</CardTitle>
+              <CardDescription>
+                Visible to the GoVivo system user. To add a client, ask them to
+                share their ad account and page as partner with the GoVivo
+                portfolio.
+              </CardDescription>
+            </div>
+            {ready && !accountsError && active && (
+              <Button
+                variant="outline"
+                size="sm"
+                render={
+                  <Link href={filtering ? "/settings?all=1" : "/settings"} />
+                }
+              >
+                <Filter className="mr-1 h-3.5 w-3.5" />
+                {filtering ? "Show all accounts" : `Filter: ${active.name}`}
+              </Button>
+            )}
+          </div>
+          {filtering && active && (
+            <p className="text-xs text-muted-foreground">
+              Showing accounts for <span className="font-medium">{active.name}</span>{" "}
+              and any unlinked account.
+            </p>
+          )}
         </CardHeader>
         <CardContent className="space-y-3">
           {!ready && (
@@ -196,8 +237,18 @@ export default async function ConnectionsPage() {
               GoVivo&apos;s Business settings.
             </p>
           )}
+          {ready && !accountsError && accounts.length > 0 &&
+            visibleAccounts.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No accounts linked to {active?.name ?? "this client"} yet.{" "}
+                <Link href="/settings?all=1" className="underline">
+                  Show all accounts
+                </Link>{" "}
+                to assign one.
+              </p>
+            )}
 
-          {accounts.map((account) => {
+          {visibleAccounts.map((account) => {
             const conns = connectionsByAccount.get(account.externalId) ?? [];
             return (
               <div

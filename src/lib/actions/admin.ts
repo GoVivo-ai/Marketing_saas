@@ -80,6 +80,21 @@ export async function setWorkspaceActive(formData: FormData) {
   revalidatePath("/", "layout");
 }
 
+/**
+ * Permanently deletes a workspace and ALL its data (connections, campaigns,
+ * metrics, leads, insights) via DB cascades. Irreversible.
+ */
+export async function deleteWorkspace(formData: FormData) {
+  const gate = await requireAdmin();
+  if (!gate.ok) throw new Error(gate.error);
+
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  if (!workspaceId) throw new Error("Missing workspace");
+
+  await db().delete(schema.workspaces).where(eq(schema.workspaces.id, workspaceId));
+  revalidatePath("/", "layout");
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Users
 // ─────────────────────────────────────────────────────────────────────────

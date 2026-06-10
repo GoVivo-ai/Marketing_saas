@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState } from "react";
-import { CircleCheck, Copy, Loader2, RotateCcw } from "lucide-react";
+import { CircleCheck, Copy, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import {
   createWorkspace,
   createUser,
+  deleteWorkspace,
   resetUserPassword,
   type AdminActionState,
 } from "@/lib/actions/admin";
@@ -120,6 +121,35 @@ export function CreateUserForm({
       <Button type="submit" disabled={pending}>
         {pending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
         Create account
+      </Button>
+    </form>
+  );
+}
+
+export function DeleteWorkspaceButton({
+  workspaceId,
+  name,
+}: {
+  workspaceId: string;
+  name: string;
+}) {
+  return (
+    <form
+      action={deleteWorkspace}
+      onSubmit={(e) => {
+        if (
+          !confirm(
+            `Delete "${name}" permanently?\n\nThis erases ALL its data: connections, campaigns, metrics and leads. This cannot be undone.`,
+          )
+        ) {
+          e.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="workspaceId" value={workspaceId} />
+      <Button variant="ghost" size="sm" type="submit" className="text-red-500 hover:text-red-400">
+        <Trash2 className="mr-1 h-3.5 w-3.5" />
+        Delete
       </Button>
     </form>
   );

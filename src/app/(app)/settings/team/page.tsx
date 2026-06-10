@@ -7,6 +7,7 @@ import { setWorkspaceActive } from "@/lib/actions/admin";
 import {
   CreateUserForm,
   CreateWorkspaceForm,
+  DeleteWorkspaceButton,
   ResetPasswordButton,
 } from "@/components/app/admin-forms";
 import { Button } from "@/components/ui/button";
@@ -130,6 +131,7 @@ export default async function TeamPage() {
                       {ws.isActive ? "Deactivate" : "Reactivate"}
                     </Button>
                   </form>
+                  <DeleteWorkspaceButton workspaceId={ws.id} name={ws.name} />
                 </div>
               </div>
             ))}

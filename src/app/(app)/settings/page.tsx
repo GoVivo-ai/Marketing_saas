@@ -323,31 +323,43 @@ export default async function ConnectionsPage({
 
                 {/* Assign to a client — only while the account is unlinked.
                     To move it elsewhere, disconnect it first. */}
-                {conns.length === 0 && (
+                {conns.length === 0 && account.live !== false && (
                   <form
                     action={connectMetaAccount}
                     className="flex flex-wrap items-center gap-2"
                   >
                     <input type="hidden" name="accountId" value={account.externalId} />
                     <input type="hidden" name="accountName" value={account.name} />
-                    <select
-                      name="workspaceId"
-                      required
-                      className="h-9 rounded-md border bg-background px-2 text-sm"
-                      defaultValue=""
-                    >
-                      <option value="" disabled>
-                        Assign to workspace…
-                      </option>
-                      {workspaces.map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name}
-                        </option>
-                      ))}
-                    </select>
-                    <Button size="sm" type="submit">
-                      Connect
-                    </Button>
+                    {filtering && active ? (
+                      // A client is selected: connect straight to it, no picker.
+                      <>
+                        <input type="hidden" name="workspaceId" value={active.id} />
+                        <Button size="sm" type="submit">
+                          Connect to {active.name}
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <select
+                          name="workspaceId"
+                          required
+                          className="h-9 rounded-md border bg-background px-2 text-sm"
+                          defaultValue=""
+                        >
+                          <option value="" disabled>
+                            Assign to workspace…
+                          </option>
+                          {workspaces.map((w) => (
+                            <option key={w.id} value={w.id}>
+                              {w.name}
+                            </option>
+                          ))}
+                        </select>
+                        <Button size="sm" type="submit">
+                          Connect
+                        </Button>
+                      </>
+                    )}
                   </form>
                 )}
               </div>

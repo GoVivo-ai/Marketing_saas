@@ -21,6 +21,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { LeadContactActions } from "@/components/app/lead-contact-actions";
 import type { LeadRow } from "@/lib/data";
 
 const statusVariant: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
@@ -47,7 +48,13 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   );
 }
 
-export function LeadsTable({ rows }: { rows: LeadRow[] }) {
+export function LeadsTable({
+  rows,
+  ringcentralConnected,
+}: {
+  rows: LeadRow[];
+  ringcentralConnected: boolean;
+}) {
   const [selected, setSelected] = useState<LeadRow | null>(null);
 
   return (
@@ -162,6 +169,11 @@ export function LeadsTable({ rows }: { rows: LeadRow[] }) {
                       )}
                     </p>
                   </div>
+                  <LeadContactActions
+                    leadId={selected.id}
+                    hasPhone={selected.phone !== "—"}
+                    connected={ringcentralConnected}
+                  />
                 </div>
 
                 <Separator />

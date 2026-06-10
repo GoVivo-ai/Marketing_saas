@@ -4,6 +4,7 @@ import { getWorkspaceContext } from "@/lib/data";
 import { AppSidebar } from "@/components/app/sidebar";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Toaster } from "@/components/ui/sonner";
 import { LogOut } from "lucide-react";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -44,6 +45,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </header>
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
+      <Toaster />
     </div>
   );
 }

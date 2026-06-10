@@ -93,6 +93,16 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash"),
   role: userRoleEnum("role").notNull().default("client"),
   image: text("image"),
+  // RingCentral per-user connection (AES-256-GCM encrypted tokens). Each user
+  // self-connects their own RC account to call/SMS leads from the platform.
+  rcAccessTokenEnc: text("rc_access_token_enc"),
+  rcRefreshTokenEnc: text("rc_refresh_token_enc"),
+  rcTokenExpiresAt: timestamp("rc_token_expires_at"),
+  rcRefreshTokenExpiresAt: timestamp("rc_refresh_token_expires_at"),
+  /** The user's own RingCentral number used as the "from" for RingOut/SMS. */
+  rcFromNumber: text("rc_from_number"),
+  rcOwnerId: text("rc_owner_id"),
+  rcConnectedAt: timestamp("rc_connected_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -260,7 +270,7 @@ export const leadEvents = pgTable("lead_events", {
     .notNull()
     .references(() => leads.id, { onDelete: "cascade" }),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
-  type: text("type").notNull(), // note | status_change | call | whatsapp | email
+  type: text("type").notNull(), // note | status_change | call | sms | whatsapp | email
   payload: jsonb("payload"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

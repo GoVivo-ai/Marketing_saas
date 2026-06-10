@@ -7,6 +7,8 @@ import {
 } from "@/components/ui/card";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { Pagination } from "@/components/app/pagination";
+import { auth } from "@/lib/auth";
+import { isRingCentralConnected } from "@/lib/settings";
 import { getLeadsPage, getWorkspaceContext } from "@/lib/data";
 import { resolveDateRange } from "@/lib/date-range";
 import { LeadsTable } from "./leads-table";
@@ -33,6 +35,11 @@ export default async function LeadsPage({
     allowAllTime: true,
   });
   const requestedPage = Math.max(1, Number(sp.page) || 1);
+
+  const session = await auth();
+  const rcConnected = session?.user?.id
+    ? await isRingCentralConnected(session.user.id)
+    : false;
 
   const { active } = await getWorkspaceContext();
   const result = active
@@ -80,7 +87,7 @@ export default async function LeadsPage({
             </p>
           ) : (
             <>
-              <LeadsTable rows={result.rows} />
+              <LeadsTable rows={result.rows} ringcentralConnected={rcConnected} />
               <Pagination page={result.page} totalPages={result.totalPages} />
             </>
           )}

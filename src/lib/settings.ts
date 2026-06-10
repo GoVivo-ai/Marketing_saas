@@ -78,3 +78,110 @@ export async function getWorkspaceMetaTokenPreview(
   const value = await getWorkspaceMetaToken(workspaceId);
   return value ? `••••••${value.slice(-4)}` : null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Per-user RingCentral OAuth tokens — each user self-connects their own RC
+// account to call/SMS leads. Tokens are AES-256-GCM encrypted at rest.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface RingCentralTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: Date | null;
+  refreshExpiresAt: Date | null;
+  fromNumber: string | null;
+  ownerId: string | null;
+}
+
+export async function getRingCentralTokens(
+  userId: string,
+): Promise<RingCentralTokens | null> {
+  if (!isDatabaseConfigured()) return null;
+  const [row] = await db()
+    .select({
+      access: schema.users.rcAccessTokenEnc,
+      refresh: schema.users.rcRefreshTokenEnc,
+      expiresAt: schema.users.rcTokenExpiresAt,
+      refreshExpiresAt: schema.users.rcRefreshTokenExpiresAt,
+      fromNumber: schema.users.rcFromNumber,
+      ownerId: schema.users.rcOwnerId,
+    })
+    .from(schema.users)
+    .where(eq(schema.users.id, userId))
+    .limit(1);
+  if (!row?.access || !row.refresh) return null;
+  return {
+    accessToken: decryptSecret(row.access),
+    refreshToken: decryptSecret(row.refresh),
+    expiresAt: row.expiresAt,
+    refreshExpiresAt: row.refreshExpiresAt,
+    fromNumber: row.fromNumber,
+    ownerId: row.ownerId,
+  };
+}
+
+export interface RingCentralTokenUpdate {
+  accessToken: string;
+  refreshToken: string;
+  expiresInSec: number;
+  refreshExpiresInSec: number;
+}
+
+/** Full connect: stores tokens + the user's "from" number, stamps connectedAt. */
+export async function setRingCentralTokens(
+  userId: string,
+  input: RingCentralTokenUpdate & { fromNumber: string | null; ownerId: string | null },
+): Promise<void> {
+  const now = Date.now();
+  await db()
+    .update(schema.users)
+    .set({
+      rcAccessTokenEnc: encryptSecret(input.accessToken),
+      rcRefreshTokenEnc: encryptSecret(input.refreshToken),
+      rcTokenExpiresAt: new Date(now + input.expiresInSec * 1000),
+      rcRefreshTokenExpiresAt: new Date(now + input.refreshExpiresInSec * 1000),
+      rcFromNumber: input.fromNumber,
+      rcOwnerId: input.ownerId,
+      rcConnectedAt: new Date(now),
+    })
+    .where(eq(schema.users.id, userId));
+}
+
+/** Refresh path: rotates tokens only, keeps fromNumber/ownerId/connectedAt. */
+export async function updateRingCentralAccessToken(
+  userId: string,
+  input: RingCentralTokenUpdate,
+): Promise<void> {
+  const now = Date.now();
+  await db()
+    .update(schema.users)
+    .set({
+      rcAccessTokenEnc: encryptSecret(input.accessToken),
+      rcRefreshTokenEnc: encryptSecret(input.refreshToken),
+      rcTokenExpiresAt: new Date(now + input.expiresInSec * 1000),
+      rcRefreshTokenExpiresAt: new Date(now + input.refreshExpiresInSec * 1000),
+    })
+    .where(eq(schema.users.id, userId));
+}
+
+export async function clearRingCentralTokens(userId: string): Promise<void> {
+  await db()
+    .update(schema.users)
+    .set({
+      rcAccessTokenEnc: null,
+      rcRefreshTokenEnc: null,
+      rcTokenExpiresAt: null,
+      rcRefreshTokenExpiresAt: null,
+      rcFromNumber: null,
+      rcOwnerId: null,
+      rcConnectedAt: null,
+    })
+    .where(eq(schema.users.id, userId));
+}
+
+export async function isRingCentralConnected(userId: string): Promise<boolean> {
+  const tokens = await getRingCentralTokens(userId);
+  if (!tokens) return false;
+  // A dead refresh token means the connection can't be renewed.
+  return !tokens.refreshExpiresAt || tokens.refreshExpiresAt.getTime() > Date.now();
+}

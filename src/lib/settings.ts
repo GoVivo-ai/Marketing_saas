@@ -44,3 +44,37 @@ export async function getSecretPreview(key: SecretKey): Promise<string | null> {
   if (!value) return null;
   return `••••••${value.slice(-4)}`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Per-client Meta token — each workspace (client) has its own system-user
+// token, used to list and sync only that client's ad accounts.
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function getWorkspaceMetaToken(
+  workspaceId: string,
+): Promise<string | null> {
+  if (!isDatabaseConfigured()) return process.env.META_ACCESS_TOKEN ?? null;
+  const [row] = await db()
+    .select({ enc: schema.workspaces.metaAccessTokenEnc })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, workspaceId))
+    .limit(1);
+  return row?.enc ? decryptSecret(row.enc) : null;
+}
+
+export async function setWorkspaceMetaToken(
+  workspaceId: string,
+  value: string,
+): Promise<void> {
+  await db()
+    .update(schema.workspaces)
+    .set({ metaAccessTokenEnc: encryptSecret(value.trim()) })
+    .where(eq(schema.workspaces.id, workspaceId));
+}
+
+export async function getWorkspaceMetaTokenPreview(
+  workspaceId: string,
+): Promise<string | null> {
+  const value = await getWorkspaceMetaToken(workspaceId);
+  return value ? `••••••${value.slice(-4)}` : null;
+}

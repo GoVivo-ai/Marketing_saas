@@ -1,8 +1,8 @@
 import { generateObject } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
+import { anthropicProvider } from "./provider";
 
-export const isAiConfigured = () => Boolean(process.env.ANTHROPIC_API_KEY);
+export { isAiConfigured } from "./provider";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -41,6 +41,7 @@ export async function generateInsights(
   workspaceName: string,
   snapshots: CampaignSnapshot[],
 ): Promise<GeneratedInsight[]> {
+  const anthropic = await anthropicProvider();
   const { object } = await generateObject({
     model: anthropic(MODEL),
     schema: insightSchema,

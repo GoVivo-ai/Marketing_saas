@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { encryptSecret } from "@/lib/crypto";
 import { syncConnection } from "@/lib/sync";
+import { getSecret } from "@/lib/settings";
 
 async function requireAgencyUser() {
   const session = await auth();
@@ -30,8 +31,10 @@ export async function connectMetaAccount(formData: FormData) {
     throw new Error("Missing account or workspace");
   }
 
-  const token = process.env.META_ACCESS_TOKEN;
-  if (!token) throw new Error("META_ACCESS_TOKEN is not configured");
+  const token = await getSecret("meta_access_token");
+  if (!token) {
+    throw new Error("Meta token is not configured (Settings → Connections)");
+  }
 
   const [existing] = await db()
     .select({ id: schema.connections.id })

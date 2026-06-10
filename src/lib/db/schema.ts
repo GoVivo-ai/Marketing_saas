@@ -67,6 +67,22 @@ export const syncStatusEnum = pgEnum("sync_status", [
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────
+// Platform settings (encrypted secrets managed from the UI)
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Agency-level credentials (Meta system-user token, Anthropic API key…)
+ * configured from Settings → Connections. Values are AES-256-GCM encrypted
+ * with TOKEN_ENCRYPTION_KEY — the only secrets that stay in env are
+ * infrastructure ones (DB, auth, encryption key, cron).
+ */
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  valueEnc: text("value_enc").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // Identity & tenancy
 // ─────────────────────────────────────────────────────────────────────────
 

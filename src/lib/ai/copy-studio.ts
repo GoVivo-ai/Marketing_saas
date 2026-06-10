@@ -1,6 +1,6 @@
 import { generateObject } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
+import { anthropicProvider } from "./provider";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -32,6 +32,7 @@ export async function generateAdVariants(input: {
   winningAds?: { text: string; cpl: number }[];
 }): Promise<AdCopyVariant[]> {
   const lang = input.language === "es" ? "Spanish" : "English";
+  const anthropic = await anthropicProvider();
   const { object } = await generateObject({
     model: anthropic(MODEL),
     schema: variantsSchema,

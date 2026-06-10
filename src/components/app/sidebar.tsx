@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import type { WorkspaceInfo } from "@/lib/data";
 
 const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -27,7 +28,13 @@ const bottomNav = [
   { href: "/settings/general", label: "Settings", icon: Settings },
 ];
 
-export function AppSidebar() {
+export function AppSidebar({
+  workspaces,
+  activeWorkspaceId,
+}: {
+  workspaces: WorkspaceInfo[];
+  activeWorkspaceId: string | null;
+}) {
   const pathname = usePathname();
 
   const item = (href: string, label: string, Icon: typeof LayoutDashboard) => (
@@ -59,7 +66,7 @@ export function AppSidebar() {
       </div>
 
       <div className="px-3 pb-2">
-        <WorkspaceSwitcher />
+        <WorkspaceSwitcher workspaces={workspaces} activeId={activeWorkspaceId} />
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-2">

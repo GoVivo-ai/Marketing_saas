@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { getConnector } from "@/lib/integrations";
 import { decryptSecret } from "@/lib/crypto";
+import { getSecret } from "@/lib/settings";
 
 export interface SyncStats {
   campaigns: number;
@@ -30,9 +31,11 @@ export async function syncConnection(
 
   const accessToken = conn.accessTokenEnc
     ? decryptSecret(conn.accessTokenEnc)
-    : process.env.META_ACCESS_TOKEN;
+    : await getSecret("meta_access_token");
   if (!accessToken) {
-    throw new Error(`Connection ${connectionId} has no token and META_ACCESS_TOKEN is unset`);
+    throw new Error(
+      `Connection ${connectionId} has no token — configure the Meta token in Settings → Connections`,
+    );
   }
 
   const connector = getConnector(conn.platform);

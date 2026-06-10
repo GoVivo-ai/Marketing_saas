@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
+import { getWorkspaceContext } from "@/lib/data";
 import { AppSidebar } from "@/components/app/sidebar";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -8,6 +9,8 @@ import { LogOut } from "lucide-react";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const { workspaces, active } = await getWorkspaceContext();
 
   const initials = (session.user.name ?? "U")
     .split(" ")
@@ -18,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <AppSidebar />
+      <AppSidebar workspaces={workspaces} activeWorkspaceId={active?.id ?? null} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b px-6">
           <div className="text-right leading-tight">

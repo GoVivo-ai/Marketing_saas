@@ -7,17 +7,20 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import { demoDailySeries } from "@/lib/demo-data";
 
 const config = {
   spend: { label: "Spend (USD)", color: "var(--chart-1)" },
   leads: { label: "Leads", color: "var(--chart-2)" },
 } satisfies ChartConfig;
 
-export function PerformanceChart() {
+export function PerformanceChart({
+  data,
+}: {
+  data: { date: string; spend: number; leads: number }[];
+}) {
   return (
     <ChartContainer config={config} className="h-[280px] w-full">
-      <AreaChart data={demoDailySeries} margin={{ left: 0, right: 8, top: 8 }}>
+      <AreaChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
         <defs>
           <linearGradient id="fillSpend" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor="var(--color-spend)" stopOpacity={0.6} />

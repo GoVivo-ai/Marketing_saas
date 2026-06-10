@@ -1,6 +1,6 @@
 import { generateObject } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
+import { anthropicProvider } from "./provider";
 
 const MODEL = "claude-haiku-4-5-20251001"; // high volume, low latency — cheap model
 
@@ -25,6 +25,7 @@ export async function scoreLead(input: {
   qualificationCriteria?: string;
   formData: Record<string, unknown>;
 }): Promise<LeadScore> {
+  const anthropic = await anthropicProvider();
   const { object } = await generateObject({
     model: anthropic(MODEL),
     schema: scoreSchema,

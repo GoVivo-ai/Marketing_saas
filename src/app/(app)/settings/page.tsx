@@ -1,13 +1,16 @@
 import { formatDistanceToNow } from "date-fns";
-import { RefreshCw, Unplug, CircleCheck } from "lucide-react";
+import { RefreshCw, Unplug, CircleCheck, KeyRound } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { metaConnector } from "@/lib/integrations/meta";
+import { getSecret, getSecretPreview } from "@/lib/settings";
 import {
   connectMetaAccount,
   disconnectConnection,
   syncConnectionNow,
 } from "@/lib/actions/connections";
+import { savePlatformSecret } from "@/lib/actions/settings";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -43,7 +46,13 @@ export default async function ConnectionsPage() {
     );
   }
 
-  const ready = isDatabaseConfigured() && Boolean(process.env.META_ACCESS_TOKEN);
+  const isAdmin = role === "agency_admin";
+  const metaToken = isDatabaseConfigured() ? await getSecret("meta_access_token") : null;
+  const metaPreview = metaToken ? `••••••${metaToken.slice(-4)}` : null;
+  const aiPreview = isDatabaseConfigured()
+    ? await getSecretPreview("anthropic_api_key")
+    : null;
+  const ready = isDatabaseConfigured() && Boolean(metaToken);
   let accounts: { externalId: string; name: string; currency: string }[] = [];
   let accountsError: string | null = null;
   let workspaces: { id: string; name: string }[] = [];
@@ -59,7 +68,7 @@ export default async function ConnectionsPage() {
     try {
       [accounts, workspaces, connections] = await Promise.all([
         metaConnector.listAccounts({
-          accessToken: process.env.META_ACCESS_TOKEN!,
+          accessToken: metaToken!,
           accountId: "",
         }),
         db()
@@ -95,6 +104,65 @@ export default async function ConnectionsPage() {
           runs on connect.
         </p>
       </div>
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4 text-primary" />
+              Platform credentials
+            </CardTitle>
+            <CardDescription>
+              Agency-level keys, stored encrypted. Only admins can see or change
+              them.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4">
+              <div className="min-w-44">
+                <p className="text-sm font-medium">Meta system-user token</p>
+                {metaPreview ? (
+                  <Badge variant="secondary" className="mt-1">{metaPreview}</Badge>
+                ) : (
+                  <Badge variant="destructive" className="mt-1">Not configured</Badge>
+                )}
+              </div>
+              <form action={savePlatformSecret} className="flex flex-1 items-center gap-2">
+                <input type="hidden" name="key" value="meta_access_token" />
+                <Input
+                  name="value"
+                  type="password"
+                  placeholder={metaPreview ? "Replace token…" : "EAA…"}
+                  className="max-w-md"
+                  required
+                />
+                <Button size="sm" type="submit">Save</Button>
+              </form>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4">
+              <div className="min-w-44">
+                <p className="text-sm font-medium">Anthropic API key (AI)</p>
+                {aiPreview ? (
+                  <Badge variant="secondary" className="mt-1">{aiPreview}</Badge>
+                ) : (
+                  <Badge variant="destructive" className="mt-1">Not configured</Badge>
+                )}
+              </div>
+              <form action={savePlatformSecret} className="flex flex-1 items-center gap-2">
+                <input type="hidden" name="key" value="anthropic_api_key" />
+                <Input
+                  name="value"
+                  type="password"
+                  placeholder={aiPreview ? "Replace key…" : "sk-ant-…"}
+                  className="max-w-md"
+                  required
+                />
+                <Button size="sm" type="submit">Save</Button>
+              </form>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

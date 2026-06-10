@@ -14,7 +14,7 @@ export async function POST() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isAiConfigured()) {
+  if (!(await isAiConfigured())) {
     return NextResponse.json({ insights: demoInsights, source: "demo" });
   }
 

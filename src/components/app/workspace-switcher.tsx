@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Check, ChevronsUpDown, Building2 } from "lucide-react";
+import { useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Check, ChevronsUpDown, Building2, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,14 +12,31 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { demoWorkspaces } from "@/lib/demo-data";
+import { setActiveWorkspace } from "@/lib/actions/workspace";
+import type { WorkspaceInfo } from "@/lib/data";
 
 /**
  * Agency users switch between client workspaces here. Client users only
- * ever see their own workspace (enforced server-side by workspace_members).
+ * see their own workspace(s) — the list is filtered server-side.
  */
-export function WorkspaceSwitcher() {
-  const [active, setActive] = useState(demoWorkspaces[0]);
+export function WorkspaceSwitcher({
+  workspaces,
+  activeId,
+}: {
+  workspaces: WorkspaceInfo[];
+  activeId: string | null;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0];
+
+  if (!active) return null;
+
+  const select = (slug: string) =>
+    startTransition(async () => {
+      await setActiveWorkspace(slug);
+      router.refresh();
+    });
 
   return (
     <DropdownMenu>
@@ -26,10 +44,14 @@ export function WorkspaceSwitcher() {
         render={<Button variant="outline" className="w-full justify-between" />}
       >
         <span className="flex items-center gap-2 truncate">
-          <span
-            className="h-2.5 w-2.5 shrink-0 rounded-full"
-            style={{ backgroundColor: active.accentColor }}
-          />
+          {pending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: active.accentColor ?? "#6366f1" }}
+            />
+          )}
           <span className="truncate">{active.name}</span>
         </span>
         <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
@@ -38,11 +60,11 @@ export function WorkspaceSwitcher() {
         <DropdownMenuLabel className="text-xs text-muted-foreground">
           Client workspaces
         </DropdownMenuLabel>
-        {demoWorkspaces.map((ws) => (
-          <DropdownMenuItem key={ws.id} onClick={() => setActive(ws)}>
+        {workspaces.map((ws) => (
+          <DropdownMenuItem key={ws.id} onClick={() => select(ws.slug)}>
             <span
               className="mr-2 h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: ws.accentColor }}
+              style={{ backgroundColor: ws.accentColor ?? "#6366f1" }}
             />
             <span className="flex-1">{ws.name}</span>
             {ws.id === active.id && <Check className="h-4 w-4" />}

@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
-import { RefreshCw, Unplug, CircleCheck, KeyRound, Filter } from "lucide-react";
+import { RefreshCw, Unplug, CircleCheck, KeyRound } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
@@ -31,12 +30,7 @@ const upcomingPlatforms = [
   { name: "LinkedIn Ads", description: "B2B campaigns and Lead Gen Forms", detail: "Phase 3" },
 ];
 
-export default async function ConnectionsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ all?: string }>;
-}) {
-  const showAll = (await searchParams).all === "1";
+export default async function ConnectionsPage() {
   const session = await auth();
   const role = (session?.user as { role?: string } | undefined)?.role;
   const isAgency = role === "agency_admin" || role === "agency_member";
@@ -124,10 +118,10 @@ export default async function ConnectionsPage({
     ...orphanAccounts,
   ];
 
-  // Follow the selected client: by default show only this client's accounts
-  // (plus unlinked ones, so they can still be assigned). "Show all" overrides.
+  // Always scoped to the selected client: only this client's accounts plus
+  // unlinked ones (so they can still be assigned to it).
   const { active } = await getWorkspaceContext();
-  const filtering = !showAll && Boolean(active);
+  const filtering = Boolean(active);
   const visibleAccounts = filtering
     ? displayAccounts.filter((acc) => {
         const conns = connectionsByAccount.get(acc.externalId) ?? [];
@@ -208,28 +202,12 @@ export default async function ConnectionsPage({
 
       <Card>
         <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <CardTitle>Meta ad accounts</CardTitle>
-              <CardDescription>
-                Visible to the GoVivo system user. To add a client, ask them to
-                share their ad account and page as partner with the GoVivo
-                portfolio.
-              </CardDescription>
-            </div>
-            {ready && !accountsError && active && (
-              <Button
-                variant="outline"
-                size="sm"
-                render={
-                  <Link href={filtering ? "/settings?all=1" : "/settings"} />
-                }
-              >
-                <Filter className="mr-1 h-3.5 w-3.5" />
-                {filtering ? "Show all accounts" : `Filter: ${active.name}`}
-              </Button>
-            )}
-          </div>
+          <CardTitle>Meta ad accounts</CardTitle>
+          <CardDescription>
+            Visible to the GoVivo system user. To add a client, ask them to
+            share their ad account and page as partner with the GoVivo
+            portfolio.
+          </CardDescription>
           {filtering && active && (
             <p className="text-xs text-muted-foreground">
               Showing accounts for <span className="font-medium">{active.name}</span>{" "}
@@ -258,11 +236,9 @@ export default async function ConnectionsPage({
           {ready && !accountsError && displayAccounts.length > 0 &&
             visibleAccounts.length === 0 && (
               <p className="text-sm text-muted-foreground">
-                No accounts linked to {active?.name ?? "this client"} yet.{" "}
-                <Link href="/settings?all=1" className="underline">
-                  Show all accounts
-                </Link>{" "}
-                to assign one.
+                No ad accounts linked to {active?.name ?? "this client"} yet.
+                Once this client&apos;s account is shared with the GoVivo system
+                user it will appear here to connect.
               </p>
             )}
 

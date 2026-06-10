@@ -66,6 +66,7 @@ export default async function ConnectionsPage({
   let connections: {
     id: string;
     accountId: string;
+    accountName: string | null;
     workspaceId: string;
     status: string;
     lastSyncedAt: Date | null;
@@ -85,6 +86,7 @@ export default async function ConnectionsPage({
           .select({
             id: schema.connections.id,
             accountId: schema.connections.accountId,
+            accountName: schema.connections.accountName,
             workspaceId: schema.connections.workspaceId,
             status: schema.connections.status,
             lastSyncedAt: schema.connections.lastSyncedAt,
@@ -106,17 +108,33 @@ export default async function ConnectionsPage({
     connectionsByAccount.set(c.accountId, list);
   }
 
+  // Surface accounts that are linked in our DB but no longer returned by the
+  // Meta API (the partner share was removed) so the connection isn't invisible.
+  const liveIds = new Set(accounts.map((a) => a.externalId));
+  const orphanAccounts = [...connectionsByAccount.entries()]
+    .filter(([id]) => !liveIds.has(id))
+    .map(([id, conns]) => ({
+      externalId: id,
+      name: conns[0].accountName ?? id,
+      currency: null as string | null,
+      live: false,
+    }));
+  const displayAccounts = [
+    ...accounts.map((a) => ({ ...a, currency: a.currency as string | null, live: true })),
+    ...orphanAccounts,
+  ];
+
   // Follow the selected client: by default show only this client's accounts
   // (plus unlinked ones, so they can still be assigned). "Show all" overrides.
   const { active } = await getWorkspaceContext();
   const filtering = !showAll && Boolean(active);
   const visibleAccounts = filtering
-    ? accounts.filter((acc) => {
+    ? displayAccounts.filter((acc) => {
         const conns = connectionsByAccount.get(acc.externalId) ?? [];
         if (conns.length === 0) return true; // unlinked → assignable
         return conns.some((c) => c.workspaceId === active!.id);
       })
-    : accounts;
+    : displayAccounts;
 
   return (
     <div className="space-y-6">
@@ -231,13 +249,13 @@ export default async function ConnectionsPage({
               Could not reach the Meta API: {accountsError}
             </p>
           )}
-          {ready && !accountsError && accounts.length === 0 && (
+          {ready && !accountsError && displayAccounts.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No ad accounts visible yet. Assign accounts to the system user in
               GoVivo&apos;s Business settings.
             </p>
           )}
-          {ready && !accountsError && accounts.length > 0 &&
+          {ready && !accountsError && displayAccounts.length > 0 &&
             visibleAccounts.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 No accounts linked to {active?.name ?? "this client"} yet.{" "}
@@ -259,9 +277,15 @@ export default async function ConnectionsPage({
                   <div>
                     <p className="font-medium">{account.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {account.externalId} · {account.currency}
+                      {account.externalId}
+                      {account.currency ? ` · ${account.currency}` : ""}
                     </p>
                   </div>
+                  {account.live === false && (
+                    <Badge variant="destructive" title="Re-share this ad account with the GoVivo system user in Meta Business Manager.">
+                      Not visible in Meta — re-share to sync
+                    </Badge>
+                  )}
                   {conns.length === 0 && (
                     <Badge variant="secondary">Not linked</Badge>
                   )}

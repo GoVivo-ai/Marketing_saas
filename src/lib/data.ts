@@ -119,7 +119,19 @@ export async function getWorkspaceContext(): Promise<{
       .where(eq(schema.workspaces.isActive, true));
   }
 
-  const active = workspaces.find((w) => w.slug === requested) ?? workspaces[0] ?? null;
+  let active = workspaces.find((w) => w.slug === requested) ?? null;
+
+  // No explicit selection yet: default to the first workspace that actually
+  // has an active platform connection, so a fresh login lands on real data.
+  if (!active && workspaces.length) {
+    const activeConnections = await db()
+      .select({ workspaceId: schema.connections.workspaceId })
+      .from(schema.connections)
+      .where(eq(schema.connections.status, "active"));
+    const connected = new Set(activeConnections.map((c) => c.workspaceId));
+    active = workspaces.find((w) => connected.has(w.id)) ?? workspaces[0];
+  }
+
   return { workspaces, active };
 }
 

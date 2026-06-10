@@ -1,3 +1,6 @@
+import { KeyRound, Users } from "lucide-react";
+import { auth } from "@/lib/auth";
+import { ChangePasswordForm } from "@/components/app/change-password-form";
 import {
   Card,
   CardContent,
@@ -6,22 +9,45 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export default function GeneralSettingsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function GeneralSettingsPage() {
+  const session = await auth();
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">
-          Workspace configuration and team management
+          Account security and workspace configuration
         </p>
       </div>
+
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Team & permissions</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <KeyRound className="h-4 w-4 text-primary" />
+            Change password
+          </CardTitle>
           <CardDescription>
-            Invite Vivo team members and client users. Clients only see their own
-            workspace with a read-oriented view; the agency sees everything.
-            Coming with the database-backed release.
+            Signed in as {session?.user?.email}. Choose a strong password you
+            don&apos;t use anywhere else.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ChangePasswordForm />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Users className="h-4 w-4 text-primary" />
+            Team & permissions
+          </CardTitle>
+          <CardDescription>
+            Invite Vivo team members and client users. Clients only see their
+            own workspace; the agency sees everything. Coming next.
           </CardDescription>
         </CardHeader>
         <CardContent />

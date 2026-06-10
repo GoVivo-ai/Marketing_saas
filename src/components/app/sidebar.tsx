@@ -10,6 +10,7 @@ import {
   FileBarChart,
   Plug,
   Settings,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WorkspaceSwitcher } from "./workspace-switcher";
@@ -25,6 +26,7 @@ const nav = [
 
 const bottomNav = [
   { href: "/settings", label: "Connections", icon: Plug },
+  { href: "/settings/team", label: "Clients & Team", icon: Users },
   { href: "/settings/general", label: "Settings", icon: Settings },
 ];
 
@@ -43,7 +45,7 @@ export function AppSidebar({
       href={href}
       className={cn(
         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-        pathname === href || (href !== "/dashboard" && pathname.startsWith(href))
+        pathname === href
           ? "bg-primary/10 text-primary"
           : "text-muted-foreground hover:bg-muted hover:text-foreground",
       )}

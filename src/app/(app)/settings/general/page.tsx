@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { KeyRound, Users } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { ChangePasswordForm } from "@/components/app/change-password-form";
@@ -46,8 +47,12 @@ export default async function GeneralSettingsPage() {
             Team & permissions
           </CardTitle>
           <CardDescription>
-            Invite Vivo team members and client users. Clients only see their
-            own workspace; the agency sees everything. Coming next.
+            Workspaces and user accounts are managed in{" "}
+            <Link href="/settings/team" className="text-primary underline">
+              Clients &amp; Team
+            </Link>
+            . Client users only see their own workspace; the agency sees
+            everything.
           </CardDescription>
         </CardHeader>
         <CardContent />

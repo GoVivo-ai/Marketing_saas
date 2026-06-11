@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { syncConnection } from "@/lib/sync";
+import { scorePendingLeads } from "@/lib/ai/lead-scoring";
 
 export const maxDuration = 300;
 
@@ -52,5 +53,16 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ synced: results.length, results });
+  // Drain pending AI scores so no lead stays unscored (also retries failures).
+  const workspaceIds = [...new Set(activeConnections.map((c) => c.workspaceId))];
+  const scored: Record<string, { scored: number; remaining: number }> = {};
+  for (const wsId of workspaceIds) {
+    try {
+      scored[wsId] = await scorePendingLeads(wsId, 100);
+    } catch {
+      // non-fatal
+    }
+  }
+
+  return NextResponse.json({ synced: results.length, results, scored });
 }

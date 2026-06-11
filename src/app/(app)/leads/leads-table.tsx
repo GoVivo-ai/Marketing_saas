@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { format, formatDistanceToNow } from "date-fns";
-import { Mail, Phone } from "lucide-react";
+import { Mail, Phone, Loader2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -91,7 +91,10 @@ export function LeadsTable({
                     )}
                   </>
                 ) : (
-                  <span className="text-xs text-muted-foreground">Pending</span>
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Procesando…
+                  </span>
                 )}
               </TableCell>
               <TableCell>
@@ -193,7 +196,10 @@ export function LeadsTable({
                       )}
                     </>
                   ) : (
-                    <p className="text-sm text-muted-foreground">Pending scoring</p>
+                    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Procesando…
+                    </p>
                   )}
                 </div>
 

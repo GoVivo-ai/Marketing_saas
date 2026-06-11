@@ -23,16 +23,15 @@ export async function POST() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!(await isAiConfigured())) {
+  const { active } = await getWorkspaceContext();
+  if (!active) {
+    return NextResponse.json({ error: "No workspace selected" }, { status: 400 });
+  }
+  if (!(await isAiConfigured(active.id))) {
     return NextResponse.json(
       { error: "AI is not configured. Add the Anthropic API key in Settings → Connections." },
       { status: 503 },
     );
-  }
-
-  const { active } = await getWorkspaceContext();
-  if (!active) {
-    return NextResponse.json({ error: "No workspace selected" }, { status: 400 });
   }
 
   const since14 = dateStr(daysAgo(14));
@@ -98,7 +97,7 @@ export async function POST() {
     });
   }
 
-  const insights = await generateInsights(active.name, snapshots);
+  const insights = await generateInsights(active.name, snapshots, active.id);
 
   await db()
     .insert(schema.aiInsights)

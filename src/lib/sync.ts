@@ -165,10 +165,11 @@ export async function syncConnection(
   // Non-fatal and skipped entirely when no Anthropic key is configured; a
   // single lead's failure never aborts the rest of the batch.
   let leadsScored = 0;
-  if (freshLeads.length && workspace && (await isAiConfigured())) {
+  if (freshLeads.length && workspace && (await isAiConfigured(conn.workspaceId))) {
     for (const lead of freshLeads) {
       try {
         const result = await scoreLead({
+          workspaceId: conn.workspaceId,
           workspaceName: workspace.name,
           industry: workspace.industry ?? undefined,
           qualificationCriteria: workspace.qualificationCriteria ?? undefined,

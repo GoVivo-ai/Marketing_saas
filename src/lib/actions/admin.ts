@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { hash } from "bcryptjs";
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 
@@ -135,9 +135,25 @@ export async function createUser(
     .returning({ id: schema.users.id });
 
   if (role === "client" && workspaceId) {
+    // First client of a workspace becomes its owner (can self-manage the org);
+    // later ones are viewers.
+    const [existingOwner] = await db()
+      .select({ id: schema.workspaceMembers.id })
+      .from(schema.workspaceMembers)
+      .where(
+        and(
+          eq(schema.workspaceMembers.workspaceId, workspaceId),
+          eq(schema.workspaceMembers.role, "owner"),
+        ),
+      )
+      .limit(1);
     await db()
       .insert(schema.workspaceMembers)
-      .values({ workspaceId, userId: user.id, role: "viewer" })
+      .values({
+        workspaceId,
+        userId: user.id,
+        role: existingOwner ? "viewer" : "owner",
+      })
       .onConflictDoNothing();
   }
 

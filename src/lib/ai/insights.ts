@@ -40,8 +40,9 @@ export interface CampaignSnapshot {
 export async function generateInsights(
   workspaceName: string,
   snapshots: CampaignSnapshot[],
+  workspaceId?: string,
 ): Promise<GeneratedInsight[]> {
-  const anthropic = await anthropicProvider();
+  const anthropic = await anthropicProvider(workspaceId);
   const { object } = await generateObject({
     model: anthropic(MODEL),
     schema: insightSchema,

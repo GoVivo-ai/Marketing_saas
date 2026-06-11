@@ -25,20 +25,33 @@ const nav = [
   { href: "/reports", label: "Reports", icon: FileBarChart },
 ];
 
-const bottomNav = [
-  { href: "/settings", label: "Connections", icon: Plug },
-  { href: "/settings/team", label: "Clients & Team", icon: Users },
-  { href: "/settings/general", label: "Settings", icon: Settings },
-];
-
 export function AppSidebar({
   workspaces,
   activeWorkspaceId,
+  role,
+  canManageActive,
 }: {
   workspaces: WorkspaceInfo[];
   activeWorkspaceId: string | null;
+  role?: string;
+  canManageActive?: boolean;
 }) {
   const pathname = usePathname();
+
+  // Connections only for those who can manage the active workspace (agency or
+  // the client owner). The team link is the agency roster for agency users and
+  // the client's own org for clients.
+  const bottomNav = [
+    ...(canManageActive
+      ? [{ href: "/settings", label: "Connections", icon: Plug }]
+      : []),
+    {
+      href: "/settings/team",
+      label: role === "client" ? "Team" : "Clients & Team",
+      icon: Users,
+    },
+    { href: "/settings/general", label: "Settings", icon: Settings },
+  ];
 
   const item = (href: string, label: string, Icon: typeof LayoutDashboard) => (
     <Link

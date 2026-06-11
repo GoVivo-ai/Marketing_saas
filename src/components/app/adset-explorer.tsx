@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { MapPin, MapPinOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AdSetRow } from "@/lib/data";
@@ -18,14 +19,31 @@ import { CityRadiusMap } from "./city-radius-map";
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
+type StatusFilter = "all" | "active" | "paused";
+
 /**
  * Campaign drill-down: a map of every ad set's audience location (city +
  * targeting radius) paired with a metrics table. Selecting a city in either
- * place highlights it in the other.
+ * place highlights it in the other. A status filter narrows both panels to
+ * active or paused ad sets.
  */
 export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const locatedCount = adsets.filter((a) => a.lat != null && a.lng != null).length;
+  const [status, setStatus] = useState<StatusFilter>("all");
+
+  const counts = {
+    all: adsets.length,
+    active: adsets.filter((a) => a.status === "ACTIVE").length,
+    paused: adsets.filter((a) => a.status !== "ACTIVE").length,
+  };
+  const visible = adsets.filter((a) =>
+    status === "all"
+      ? true
+      : status === "active"
+        ? a.status === "ACTIVE"
+        : a.status !== "ACTIVE",
+  );
+  const locatedCount = visible.filter((a) => a.lat != null && a.lng != null).length;
 
   if (adsets.length === 0) {
     return (
@@ -35,19 +53,42 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
     );
   }
 
+  const filters: { value: StatusFilter; label: string }[] = [
+    { value: "all", label: `All (${counts.all})` },
+    { value: "active", label: `Active (${counts.active})` },
+    { value: "paused", label: `Paused (${counts.paused})` },
+  ];
+
   return (
-    <div className="grid gap-6 lg:grid-cols-5">
-      <div className="lg:col-span-3">
-        <CityRadiusMap
-          adsets={adsets}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-        />
-        <p className="mt-2 text-xs text-muted-foreground">
-          {locatedCount} of {adsets.length} ad sets placed on the map · the
-          circle shows the audience radius. Click a city to focus it.
-        </p>
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-1.5">
+        {filters.map((f) => (
+          <Button
+            key={f.value}
+            variant={status === f.value ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              setStatus(f.value);
+              setSelectedId(null);
+            }}
+          >
+            {f.label}
+          </Button>
+        ))}
       </div>
+
+      <div className="grid gap-6 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <CityRadiusMap
+            adsets={visible}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            {locatedCount} of {visible.length} ad sets placed on the map · the
+            circle shows the audience radius. Click a city to focus it.
+          </p>
+        </div>
 
       <div className="lg:col-span-2">
         <div className="max-h-[420px] overflow-auto rounded-xl border">
@@ -62,7 +103,17 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {adsets.map((a) => {
+              {visible.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={5}
+                    className="py-6 text-center text-sm text-muted-foreground"
+                  >
+                    No {status} ad sets.
+                  </TableCell>
+                </TableRow>
+              )}
+              {visible.map((a) => {
                 const located = a.lat != null && a.lng != null;
                 return (
                   <TableRow
@@ -119,6 +170,7 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
             </TableBody>
           </Table>
         </div>
+      </div>
       </div>
     </div>
   );

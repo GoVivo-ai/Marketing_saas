@@ -138,22 +138,28 @@ function StageColumn({
   onCardClick: (c: PipelineCard) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
+  const accent = stage.color ?? "#94a3b8";
   return (
-    <div className="flex h-full w-72 shrink-0 flex-col">
-      <div className="mb-2 flex shrink-0 items-center gap-2 px-1">
+    <div
+      className={`flex h-full w-72 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/40 shadow-sm transition-colors ${
+        isOver ? "border-primary/60 ring-2 ring-primary/30" : ""
+      }`}
+    >
+      <div className="h-1 w-full shrink-0" style={{ backgroundColor: accent }} />
+      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5">
         <span
           className="h-2.5 w-2.5 rounded-full"
-          style={{ backgroundColor: stage.color ?? "#94a3b8" }}
+          style={{ backgroundColor: accent }}
         />
         <span className="text-sm font-semibold">{stage.name}</span>
-        <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+        <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
           {total}
         </span>
       </div>
       <div
         ref={setNodeRef}
-        className={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-xl border p-2 transition-colors ${
-          isOver ? "border-primary/50 bg-primary/5" : "bg-card/40"
+        className={`pipeline-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 transition-colors ${
+          isOver ? "bg-primary/5" : ""
         }`}
       >
         {cards.map((card) => (

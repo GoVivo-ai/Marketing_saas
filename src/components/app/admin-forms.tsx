@@ -6,6 +6,7 @@ import {
   createWorkspace,
   createUser,
   deleteWorkspace,
+  deleteUser,
   resetUserPassword,
   type AdminActionState,
 } from "@/lib/actions/admin";
@@ -180,6 +181,40 @@ export function ResetPasswordButton({ userId }: { userId: string }) {
         </button>
       )}
       {state.error && <p className="text-xs text-destructive">{state.error}</p>}
+    </form>
+  );
+}
+
+export function DeleteUserButton({
+  userId,
+  name,
+}: {
+  userId: string;
+  name: string;
+}) {
+  return (
+    <form
+      action={deleteUser}
+      onSubmit={(e) => {
+        if (
+          !confirm(
+            `Delete ${name}? This permanently removes their account and access.`,
+          )
+        ) {
+          e.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="userId" value={userId} />
+      <Button
+        variant="ghost"
+        size="sm"
+        type="submit"
+        className="text-destructive hover:text-destructive/80"
+      >
+        <Trash2 className="mr-1 h-3.5 w-3.5" />
+        Delete
+      </Button>
     </form>
   );
 }

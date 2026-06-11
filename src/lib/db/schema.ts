@@ -131,6 +131,8 @@ export const workspaces = pgTable("workspaces", {
    * client's ad accounts with it.
    */
   metaAccessTokenEnc: text("meta_access_token_enc"),
+  /** This client's own Anthropic API key (encrypted) for AI scoring/insights. */
+  anthropicApiKeyEnc: text("anthropic_api_key_enc"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

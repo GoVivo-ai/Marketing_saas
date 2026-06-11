@@ -2,19 +2,34 @@
 
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
-import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { encryptSecret } from "@/lib/crypto";
 import { syncConnection } from "@/lib/sync";
-import { getWorkspaceMetaToken, setWorkspaceMetaToken } from "@/lib/settings";
+import {
+  getWorkspaceMetaToken,
+  setWorkspaceMetaToken,
+  setWorkspaceAnthropicKey,
+} from "@/lib/settings";
+import { canManageWorkspace } from "@/lib/permissions";
 
-async function requireAgencyUser() {
-  const session = await auth();
-  const role = (session?.user as { role?: string } | undefined)?.role;
-  if (!session?.user || (role !== "agency_admin" && role !== "agency_member")) {
-    throw new Error("Only agency users can manage connections");
+/** The agency team or the workspace owner may manage a workspace's connections. */
+async function requireWorkspaceManager(workspaceId: string) {
+  if (!workspaceId) throw new Error("Missing workspace");
+  if (!(await canManageWorkspace(workspaceId))) {
+    throw new Error("You don't have permission to manage this workspace");
   }
-  return session;
+}
+
+/** Resolves a connection's workspace, then checks management permission. */
+async function requireConnectionManager(connectionId: string) {
+  if (!connectionId) throw new Error("Missing connection");
+  const [conn] = await db()
+    .select({ workspaceId: schema.connections.workspaceId })
+    .from(schema.connections)
+    .where(eq(schema.connections.id, connectionId))
+    .limit(1);
+  if (!conn) throw new Error("Connection not found");
+  await requireWorkspaceManager(conn.workspaceId);
 }
 
 /**
@@ -22,14 +37,13 @@ async function requireAgencyUser() {
  * workspace and runs an initial 30-day sync.
  */
 export async function connectMetaAccount(formData: FormData) {
-  await requireAgencyUser();
-
   const accountId = String(formData.get("accountId") ?? "");
   const accountName = String(formData.get("accountName") ?? "") || null;
   const workspaceId = String(formData.get("workspaceId") ?? "");
   if (!accountId.startsWith("act_") || !workspaceId) {
     throw new Error("Missing account or workspace");
   }
+  await requireWorkspaceManager(workspaceId);
 
   // Use this client's own Meta token (each workspace has its own).
   const token = await getWorkspaceMetaToken(workspaceId);
@@ -98,18 +112,16 @@ export async function connectMetaAccount(formData: FormData) {
 
 /** Re-runs the sync for an existing connection (last 30 days). */
 export async function syncConnectionNow(formData: FormData) {
-  await requireAgencyUser();
   const connectionId = String(formData.get("connectionId") ?? "");
-  if (!connectionId) throw new Error("Missing connection");
+  await requireConnectionManager(connectionId);
   await syncConnection(connectionId, { days: 30 });
   revalidatePath("/settings");
 }
 
 /** Marks a connection as disconnected (data is kept). */
 export async function disconnectConnection(formData: FormData) {
-  await requireAgencyUser();
   const connectionId = String(formData.get("connectionId") ?? "");
-  if (!connectionId) throw new Error("Missing connection");
+  await requireConnectionManager(connectionId);
   await db()
     .update(schema.connections)
     .set({ status: "disconnected" })
@@ -117,13 +129,22 @@ export async function disconnectConnection(formData: FormData) {
   revalidatePath("/settings");
 }
 
-/** Saves a client's own Meta system-user token (encrypted). Agency users. */
+/** Saves a client's own Meta system-user token (encrypted). */
 export async function saveWorkspaceMetaToken(formData: FormData) {
-  await requireAgencyUser();
   const workspaceId = String(formData.get("workspaceId") ?? "");
   const value = String(formData.get("value") ?? "").trim();
-  if (!workspaceId) throw new Error("Missing workspace");
+  await requireWorkspaceManager(workspaceId);
   if (!value) throw new Error("Token is required");
   await setWorkspaceMetaToken(workspaceId, value);
+  revalidatePath("/settings");
+}
+
+/** Saves a client's own Anthropic (AI) API key (encrypted). */
+export async function saveWorkspaceAiKey(formData: FormData) {
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const value = String(formData.get("value") ?? "").trim();
+  await requireWorkspaceManager(workspaceId);
+  if (!value) throw new Error("API key is required");
+  await setWorkspaceAnthropicKey(workspaceId, value);
   revalidatePath("/settings");
 }

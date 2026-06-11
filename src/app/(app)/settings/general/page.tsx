@@ -1,10 +1,15 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { KeyRound, Users } from "lucide-react";
+import { eq } from "drizzle-orm";
+import { Building2, KeyRound, Users } from "lucide-react";
 import { auth } from "@/lib/auth";
+import { db, schema } from "@/lib/db";
+import { getWorkspaceContext } from "@/lib/data";
+import { canManageWorkspace } from "@/lib/permissions";
 import { getRingCentralTokens, isRingCentralConnected } from "@/lib/settings";
 import { ChangePasswordForm } from "@/components/app/change-password-form";
 import { RingCentralConnectCard } from "@/components/app/ringcentral-connect-card";
+import { CompanyProfileForm } from "@/components/app/org-forms";
 import {
   Card,
   CardContent,
@@ -22,6 +27,27 @@ export default async function GeneralSettingsPage() {
   const rcTokens =
     userId && rcConnected ? await getRingCentralTokens(userId) : null;
 
+  const { active } = await getWorkspaceContext();
+  const canManage = active ? await canManageWorkspace(active.id) : false;
+  let company: { name: string; industry: string; criteria: string } | null = null;
+  if (active && canManage) {
+    const [w] = await db()
+      .select({
+        name: schema.workspaces.name,
+        industry: schema.workspaces.industry,
+        criteria: schema.workspaces.qualificationCriteria,
+      })
+      .from(schema.workspaces)
+      .where(eq(schema.workspaces.id, active.id))
+      .limit(1);
+    if (w)
+      company = {
+        name: w.name,
+        industry: w.industry ?? "",
+        criteria: w.criteria ?? "",
+      };
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -30,6 +56,29 @@ export default async function GeneralSettingsPage() {
           Account security and workspace configuration
         </p>
       </div>
+
+      {company && active && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Building2 className="h-4 w-4 text-primary" />
+              Company profile · {active.name}
+            </CardTitle>
+            <CardDescription>
+              Your company details and the lead qualification criteria that
+              guides AI lead scoring.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CompanyProfileForm
+              workspaceId={active.id}
+              name={company.name}
+              industry={company.industry}
+              qualificationCriteria={company.criteria}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

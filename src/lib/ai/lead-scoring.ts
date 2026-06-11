@@ -20,12 +20,13 @@ export type LeadScore = z.infer<typeof scoreSchema>;
  * so the unified inbox is always pre-prioritized for the operations team.
  */
 export async function scoreLead(input: {
+  workspaceId?: string;
   workspaceName: string;
   industry?: string;
   qualificationCriteria?: string;
   formData: Record<string, unknown>;
 }): Promise<LeadScore> {
-  const anthropic = await anthropicProvider();
+  const anthropic = await anthropicProvider(input.workspaceId);
   const { object } = await generateObject({
     model: anthropic(MODEL),
     schema: scoreSchema,

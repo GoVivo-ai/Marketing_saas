@@ -1,12 +1,21 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { getSecret } from "@/lib/settings";
+import { getSecret, getWorkspaceAnthropicKey } from "@/lib/settings";
 
 /**
- * Anthropic provider backed by the platform-managed API key
- * (Settings → Connections), with env fallback for local development.
+ * Resolves the Anthropic API key for a workspace: the client's own key first,
+ * falling back to the agency-level key (and env in local dev).
  */
-export async function anthropicProvider() {
-  const apiKey = await getSecret("anthropic_api_key");
+async function resolveKey(workspaceId?: string): Promise<string | null> {
+  const own = workspaceId ? await getWorkspaceAnthropicKey(workspaceId) : null;
+  return own ?? (await getSecret("anthropic_api_key"));
+}
+
+/**
+ * Anthropic provider. Pass a workspaceId to use that client's own key
+ * (Settings → Connections); otherwise the agency-level key is used.
+ */
+export async function anthropicProvider(workspaceId?: string) {
+  const apiKey = await resolveKey(workspaceId);
   if (!apiKey) {
     throw new Error(
       "Anthropic API key is not configured. Add it in Settings → Connections.",
@@ -15,6 +24,6 @@ export async function anthropicProvider() {
   return createAnthropic({ apiKey });
 }
 
-export async function isAiConfigured(): Promise<boolean> {
-  return Boolean(await getSecret("anthropic_api_key"));
+export async function isAiConfigured(workspaceId?: string): Promise<boolean> {
+  return Boolean(await resolveKey(workspaceId));
 }

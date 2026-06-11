@@ -79,6 +79,37 @@ export async function getWorkspaceMetaTokenPreview(
   return value ? `••••••${value.slice(-4)}` : null;
 }
 
+// ── Per-client Anthropic (AI) key ────────────────────────────────────────────
+
+export async function getWorkspaceAnthropicKey(
+  workspaceId: string,
+): Promise<string | null> {
+  if (!isDatabaseConfigured()) return null;
+  const [row] = await db()
+    .select({ enc: schema.workspaces.anthropicApiKeyEnc })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, workspaceId))
+    .limit(1);
+  return row?.enc ? decryptSecret(row.enc) : null;
+}
+
+export async function setWorkspaceAnthropicKey(
+  workspaceId: string,
+  value: string,
+): Promise<void> {
+  await db()
+    .update(schema.workspaces)
+    .set({ anthropicApiKeyEnc: encryptSecret(value.trim()) })
+    .where(eq(schema.workspaces.id, workspaceId));
+}
+
+export async function getWorkspaceAnthropicKeyPreview(
+  workspaceId: string,
+): Promise<string | null> {
+  const value = await getWorkspaceAnthropicKey(workspaceId);
+  return value ? `••••••${value.slice(-4)}` : null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Per-user RingCentral OAuth tokens — each user self-connects their own RC
 // account to call/SMS leads. Tokens are AES-256-GCM encrypted at rest.

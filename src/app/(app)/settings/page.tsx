@@ -1,17 +1,20 @@
 import { formatDistanceToNow } from "date-fns";
-import { RefreshCw, Unplug, CircleCheck, KeyRound } from "lucide-react";
-import { auth } from "@/lib/auth";
+import { RefreshCw, Unplug, CircleCheck, KeyRound, Sparkles } from "lucide-react";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
+import { canManageWorkspace } from "@/lib/permissions";
 import { metaConnector } from "@/lib/integrations/meta";
-import { getSecretPreview, getWorkspaceMetaToken } from "@/lib/settings";
+import {
+  getWorkspaceMetaToken,
+  getWorkspaceAnthropicKeyPreview,
+} from "@/lib/settings";
 import {
   connectMetaAccount,
   disconnectConnection,
   syncConnectionNow,
   saveWorkspaceMetaToken,
+  saveWorkspaceAiKey,
 } from "@/lib/actions/connections";
-import { savePlatformSecret } from "@/lib/actions/settings";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,35 +35,32 @@ const upcomingPlatforms = [
 ];
 
 export default async function ConnectionsPage() {
-  const session = await auth();
-  const role = (session?.user as { role?: string } | undefined)?.role;
-  const isAgency = role === "agency_admin" || role === "agency_member";
+  // Each client has its own credentials; the page works in the context of the
+  // selected client (from the workspace switcher).
+  const { active } = await getWorkspaceContext();
+  const canManage = active ? await canManageWorkspace(active.id) : false;
 
-  if (!isAgency) {
+  if (!canManage) {
     return (
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Connections</h1>
         <p className="text-sm text-muted-foreground">
-          Platform connections are managed by the Vivo team. Contact your account
-          manager to connect or change an ad account.
+          Connections are managed by your organization&apos;s admin. Contact
+          them to connect or change an ad account.
         </p>
       </div>
     );
   }
 
-  const isAdmin = role === "agency_admin";
-
-  // Each client has its own Meta token; the page works in the context of the
-  // selected client (from the workspace switcher).
-  const { active } = await getWorkspaceContext();
   const metaToken =
     isDatabaseConfigured() && active
       ? await getWorkspaceMetaToken(active.id)
       : null;
   const metaPreview = metaToken ? `••••••${metaToken.slice(-4)}` : null;
-  const aiPreview = isDatabaseConfigured()
-    ? await getSecretPreview("anthropic_api_key")
-    : null;
+  const aiPreview =
+    isDatabaseConfigured() && active
+      ? await getWorkspaceAnthropicKeyPreview(active.id)
+      : null;
   const ready = isDatabaseConfigured() && Boolean(metaToken);
   let accounts: { externalId: string; name: string; currency: string }[] = [];
   let accountsError: string | null = null;
@@ -187,30 +187,30 @@ export default async function ConnectionsPage() {
         </Card>
       )}
 
-      {isAdmin && (
+      {active && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-primary" />
-              Platform credentials
+              <Sparkles className="h-4 w-4 text-primary" />
+              AI API key · {active.name}
             </CardTitle>
             <CardDescription>
-              Agency-level keys, stored encrypted. Only admins can see or change
-              them.
+              Each client uses its own Anthropic API key (encrypted at rest) to
+              power lead scoring and AI insights for {active.name}.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4">
               <div className="min-w-44">
-                <p className="text-sm font-medium">Anthropic API key (AI)</p>
+                <p className="text-sm font-medium">Anthropic API key</p>
                 {aiPreview ? (
                   <Badge variant="secondary" className="mt-1">{aiPreview}</Badge>
                 ) : (
                   <Badge variant="destructive" className="mt-1">Not configured</Badge>
                 )}
               </div>
-              <form action={savePlatformSecret} className="flex flex-1 items-center gap-2">
-                <input type="hidden" name="key" value="anthropic_api_key" />
+              <form action={saveWorkspaceAiKey} className="flex flex-1 items-center gap-2">
+                <input type="hidden" name="workspaceId" value={active.id} />
                 <Input
                   name="value"
                   type="password"

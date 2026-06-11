@@ -1,0 +1,240 @@
+"use client";
+
+import { useActionState } from "react";
+import {
+  CircleCheck,
+  Copy,
+  Loader2,
+  Pencil,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
+import {
+  createOrgUser,
+  updateOrgUser,
+  deleteOrgUser,
+  resetOrgUserPassword,
+  updateWorkspaceProfile,
+  type OrgActionState,
+} from "@/lib/actions/org";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+
+const initial: OrgActionState = {};
+
+function Feedback({ state }: { state: OrgActionState }) {
+  if (state.error) return <p className="text-sm text-destructive">{state.error}</p>;
+  if (!state.success) return null;
+  return (
+    <div className="space-y-1">
+      <p className="flex items-center gap-1 text-sm text-success">
+        <CircleCheck className="h-4 w-4" />
+        {state.success}
+      </p>
+      {state.tempPassword && (
+        <button
+          type="button"
+          onClick={() => navigator.clipboard?.writeText(state.tempPassword!)}
+          className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2 font-mono text-sm"
+          title="Click to copy"
+        >
+          {state.tempPassword}
+          <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function CreateOrgUserForm({ workspaceId }: { workspaceId: string }) {
+  const [state, action, pending] = useActionState(createOrgUser, initial);
+  return (
+    <form action={action} className="space-y-4">
+      <input type="hidden" name="workspaceId" value={workspaceId} />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="ou-name">Full name</Label>
+          <Input id="ou-name" name="name" placeholder="Jane Pérez" required />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="ou-email">Email</Label>
+          <Input id="ou-email" name="email" type="email" placeholder="jane@company.com" required />
+        </div>
+      </div>
+      <Feedback state={state} />
+      <Button type="submit" disabled={pending}>
+        {pending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+        Add user
+      </Button>
+    </form>
+  );
+}
+
+export function EditOrgUserDialog({
+  workspaceId,
+  userId,
+  name,
+  email,
+}: {
+  workspaceId: string;
+  userId: string;
+  name: string;
+  email: string;
+}) {
+  const [state, action, pending] = useActionState(updateOrgUser, initial);
+  return (
+    <Dialog>
+      <DialogTrigger
+        render={
+          <Button variant="ghost" size="sm">
+            <Pencil className="mr-1 h-3.5 w-3.5" />
+            Edit
+          </Button>
+        }
+      />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit user</DialogTitle>
+          <DialogDescription>Update this user&apos;s name or email.</DialogDescription>
+        </DialogHeader>
+        <form action={action} className="space-y-3">
+          <input type="hidden" name="workspaceId" value={workspaceId} />
+          <input type="hidden" name="userId" value={userId} />
+          <div className="space-y-2">
+            <Label htmlFor={`edit-name-${userId}`}>Full name</Label>
+            <Input id={`edit-name-${userId}`} name="name" defaultValue={name} required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`edit-email-${userId}`}>Email</Label>
+            <Input id={`edit-email-${userId}`} name="email" type="email" defaultValue={email} required />
+          </div>
+          <Feedback state={state} />
+          <DialogFooter>
+            <DialogClose render={<Button variant="ghost" size="sm" type="button">Close</Button>} />
+            <Button size="sm" type="submit" disabled={pending}>
+              {pending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function DeleteOrgUserButton({
+  workspaceId,
+  userId,
+  name,
+}: {
+  workspaceId: string;
+  userId: string;
+  name: string;
+}) {
+  return (
+    <form
+      action={deleteOrgUser}
+      onSubmit={(e) => {
+        if (!confirm(`Remove ${name} from your organization?`)) e.preventDefault();
+      }}
+    >
+      <input type="hidden" name="workspaceId" value={workspaceId} />
+      <input type="hidden" name="userId" value={userId} />
+      <Button variant="ghost" size="sm" type="submit" className="text-destructive hover:text-destructive/80">
+        <Trash2 className="mr-1 h-3.5 w-3.5" />
+        Remove
+      </Button>
+    </form>
+  );
+}
+
+export function ResetOrgPasswordButton({
+  workspaceId,
+  userId,
+}: {
+  workspaceId: string;
+  userId: string;
+}) {
+  const [state, action, pending] = useActionState(resetOrgUserPassword, initial);
+  return (
+    <form action={action} className="flex flex-col items-end gap-1">
+      <input type="hidden" name="workspaceId" value={workspaceId} />
+      <input type="hidden" name="userId" value={userId} />
+      <Button variant="outline" size="sm" type="submit" disabled={pending}>
+        {pending ? (
+          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <RotateCcw className="mr-1 h-3.5 w-3.5" />
+        )}
+        Reset password
+      </Button>
+      {state.tempPassword && (
+        <button
+          type="button"
+          onClick={() => navigator.clipboard?.writeText(state.tempPassword!)}
+          className="rounded-md border bg-muted px-2 py-1 font-mono text-xs"
+          title="Click to copy"
+        >
+          {state.tempPassword}
+        </button>
+      )}
+      {state.error && <p className="text-xs text-destructive">{state.error}</p>}
+    </form>
+  );
+}
+
+export function CompanyProfileForm({
+  workspaceId,
+  name,
+  industry,
+  qualificationCriteria,
+}: {
+  workspaceId: string;
+  name: string;
+  industry: string;
+  qualificationCriteria: string;
+}) {
+  const [state, action, pending] = useActionState(updateWorkspaceProfile, initial);
+  return (
+    <form action={action} className="space-y-4">
+      <input type="hidden" name="workspaceId" value={workspaceId} />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="cp-name">Company name</Label>
+          <Input id="cp-name" name="name" defaultValue={name} required />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="cp-industry">Industry</Label>
+          <Input id="cp-industry" name="industry" defaultValue={industry} placeholder="Logistics" />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="cp-criteria">Lead qualification criteria</Label>
+        <textarea
+          id="cp-criteria"
+          name="qualificationCriteria"
+          defaultValue={qualificationCriteria}
+          rows={3}
+          placeholder="What makes a good lead for your business (budget, location, role…). This guides the AI lead scoring."
+          className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+        />
+      </div>
+      <Feedback state={state} />
+      <Button type="submit" disabled={pending}>
+        {pending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+        Save profile
+      </Button>
+    </form>
+  );
+}

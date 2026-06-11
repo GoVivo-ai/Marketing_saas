@@ -1,8 +1,9 @@
 import { formatDistanceToNow } from "date-fns";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Building2, UserPlus } from "lucide-react";
-import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
+import { getWorkspaceContext } from "@/lib/data";
+import { currentUser, getWorkspaceRole } from "@/lib/permissions";
 import { setWorkspaceActive } from "@/lib/actions/admin";
 import {
   CreateUserForm,
@@ -10,6 +11,12 @@ import {
   DeleteWorkspaceButton,
   ResetPasswordButton,
 } from "@/components/app/admin-forms";
+import {
+  CreateOrgUserForm,
+  EditOrgUserDialog,
+  DeleteOrgUserButton,
+  ResetOrgPasswordButton,
+} from "@/components/app/org-forms";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,8 +36,11 @@ const roleLabel: Record<string, string> = {
 };
 
 export default async function TeamPage() {
-  const session = await auth();
-  const role = (session?.user as { role?: string } | undefined)?.role;
+  const me = await currentUser();
+  const role = me?.role;
+
+  // Clients manage only their own organization's users.
+  if (role === "client") return <ClientTeam userId={me!.id} />;
 
   if (role !== "agency_admin") {
     return (
@@ -192,6 +202,106 @@ export default async function TeamPage() {
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+/** Client-facing org view: only this workspace's users; the owner can manage. */
+async function ClientTeam({ userId }: { userId: string }) {
+  const { active } = await getWorkspaceContext();
+  if (!active) {
+    return (
+      <div className="space-y-2">
+        <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
+        <p className="text-sm text-muted-foreground">No workspace assigned.</p>
+      </div>
+    );
+  }
+
+  const isOwner = (await getWorkspaceRole(userId, active.id)) === "owner";
+  const members = await db()
+    .select({
+      id: schema.users.id,
+      name: schema.users.name,
+      email: schema.users.email,
+      createdAt: schema.users.createdAt,
+      wsRole: schema.workspaceMembers.role,
+    })
+    .from(schema.workspaceMembers)
+    .innerJoin(schema.users, eq(schema.users.id, schema.workspaceMembers.userId))
+    .where(
+      and(
+        eq(schema.workspaceMembers.workspaceId, active.id),
+        eq(schema.users.role, "client"),
+      ),
+    );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {active.name} — Team
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {isOwner
+            ? "Manage the users that can access your organization."
+            : "Users in your organization. Only the owner can manage them."}
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <UserPlus className="h-4 w-4 text-primary" />
+            Users
+          </CardTitle>
+          <CardDescription>
+            Temporary passwords are shown once — share them securely.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {members.map((u) => (
+            <div
+              key={u.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"
+            >
+              <div>
+                <p className="text-sm font-medium">{u.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {u.email} · added{" "}
+                  {formatDistanceToNow(u.createdAt, { addSuffix: true })}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {u.wsRole === "owner" && <Badge>Owner</Badge>}
+                {isOwner && u.wsRole !== "owner" && (
+                  <>
+                    <EditOrgUserDialog
+                      workspaceId={active.id}
+                      userId={u.id}
+                      name={u.name}
+                      email={u.email}
+                    />
+                    <ResetOrgPasswordButton workspaceId={active.id} userId={u.id} />
+                    <DeleteOrgUserButton
+                      workspaceId={active.id}
+                      userId={u.id}
+                      name={u.name}
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {isOwner && (
+            <div className="border-t pt-4">
+              <p className="mb-3 text-sm font-medium">New user</p>
+              <CreateOrgUserForm workspaceId={active.id} />
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -134,8 +134,30 @@ export const metaConnector: MarketingConnector = {
       campaign_id?: string;
       campaign?: { id: string; name?: string; status?: string; objective?: string };
     };
+    // By default Meta's /ads edge only returns ACTIVE/PAUSED ads, so leads from
+    // archived ads (and their campaigns) were never fetched. Request every
+    // status explicitly so those leads can still be pulled and attributed.
+    // Note: "DELETED" is rejected by this edge ("cannot request deleted
+    // objects"), so we request every non-deleted status — crucially ARCHIVED,
+    // which holds the bulk of historical leads.
+    const adStatuses = encodeURIComponent(
+      JSON.stringify([
+        "ACTIVE",
+        "PAUSED",
+        "ARCHIVED",
+        "ADSET_PAUSED",
+        "CAMPAIGN_PAUSED",
+        "DISAPPROVED",
+        "PENDING_REVIEW",
+        "PREAPPROVED",
+        "PENDING_BILLING_INFO",
+        "IN_PROCESS",
+        "WITH_ISSUES",
+      ]),
+    );
     const ads = await graphGetAll<AdRow>(
-      `${GRAPH}/${creds.accountId}/ads?fields=id,campaign_id,campaign{id,name,status,objective}&limit=200`,
+      `${GRAPH}/${creds.accountId}/ads?fields=id,campaign_id,campaign{id,name,status,objective}` +
+        `&effective_status=${adStatuses}&limit=200`,
       creds.accessToken,
     );
 

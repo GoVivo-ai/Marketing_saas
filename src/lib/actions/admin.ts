@@ -192,3 +192,20 @@ export async function resetUserPassword(
     tempPassword,
   };
 }
+
+/** Permanently deletes a user account (memberships cascade). Admins only. */
+export async function deleteUser(formData: FormData) {
+  const gate = await requireAdmin();
+  if (!gate.ok) throw new Error(gate.error);
+
+  const userId = String(formData.get("userId") ?? "");
+  if (!userId) throw new Error("Missing user");
+
+  const session = await auth();
+  if (session?.user?.id === userId) {
+    throw new Error("You can't delete your own account.");
+  }
+
+  await db().delete(schema.users).where(eq(schema.users.id, userId));
+  revalidatePath("/settings/team");
+}

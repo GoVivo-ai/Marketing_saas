@@ -9,6 +9,7 @@ import {
   CreateUserForm,
   CreateWorkspaceForm,
   DeleteWorkspaceButton,
+  DeleteUserButton,
   ResetPasswordButton,
 } from "@/components/app/admin-forms";
 import {
@@ -187,6 +188,9 @@ export default async function TeamPage() {
                     </span>
                   )}
                   <ResetPasswordButton userId={u.id} />
+                  {u.id !== me!.id && (
+                    <DeleteUserButton userId={u.id} name={u.name} />
+                  )}
                 </div>
               </div>
             ))}

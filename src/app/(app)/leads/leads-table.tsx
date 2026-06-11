@@ -24,14 +24,6 @@ import { Separator } from "@/components/ui/separator";
 import { LeadContactActions } from "@/components/app/lead-contact-actions";
 import type { LeadRow } from "@/lib/data";
 
-const statusVariant: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
-  new: "default",
-  contacted: "secondary",
-  qualified: "outline",
-  won: "default",
-  lost: "destructive",
-};
-
 const platformLabel: Record<string, string> = {
   meta: "Meta",
   google_ads: "Google Ads",
@@ -65,7 +57,7 @@ export function LeadsTable({
             <TableHead>Lead</TableHead>
             <TableHead>Campaign</TableHead>
             <TableHead>AI Score</TableHead>
-            <TableHead>Status</TableHead>
+            <TableHead>Stage</TableHead>
             <TableHead className="text-right">Received</TableHead>
           </TableRow>
         </TableHeader>
@@ -103,12 +95,13 @@ export function LeadsTable({
                 )}
               </TableCell>
               <TableCell>
-                <Badge
-                  variant={statusVariant[lead.status] ?? "secondary"}
-                  className="capitalize"
-                >
-                  {lead.status}
-                </Badge>
+                <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium">
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: lead.stageColor ?? "#94a3b8" }}
+                  />
+                  {lead.stageName ?? lead.status}
+                </span>
               </TableCell>
               <TableCell className="text-right text-sm text-muted-foreground">
                 {formatDistanceToNow(lead.createdAt, { addSuffix: true })}
@@ -132,12 +125,13 @@ export function LeadsTable({
 
               <div className="space-y-6 px-4 pb-6">
                 <div className="flex items-center gap-2">
-                  <Badge
-                    variant={statusVariant[selected.status] ?? "secondary"}
-                    className="capitalize"
-                  >
-                    {selected.status}
-                  </Badge>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: selected.stageColor ?? "#94a3b8" }}
+                    />
+                    {selected.stageName ?? selected.status}
+                  </span>
                   <Badge variant="outline">
                     {platformLabel[selected.platform] ?? selected.platform}
                   </Badge>

@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Megaphone,
   Inbox,
+  Columns3,
   Sparkles,
   FileBarChart,
   Plug,
@@ -21,6 +22,7 @@ const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/leads", label: "Leads", icon: Inbox },
+  { href: "/leads/pipeline", label: "Pipeline", icon: Columns3 },
   { href: "/insights", label: "AI Insights", icon: Sparkles },
   { href: "/reports", label: "Reports", icon: FileBarChart },
 ];

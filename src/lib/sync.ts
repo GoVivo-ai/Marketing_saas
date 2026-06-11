@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { getConnector } from "@/lib/integrations";
 import { decryptSecret } from "@/lib/crypto";
@@ -129,6 +129,18 @@ export async function syncConnection(
   // Leads that were actually inserted this run (not duplicates), so we only
   // pay for an AI score once per lead instead of on every re-sync.
   const freshLeads: { id: string; formData: Record<string, unknown> }[] = [];
+  // Newly-synced leads land in the workspace's first open stage.
+  const [defaultStage] = await db()
+    .select({ id: schema.stages.id })
+    .from(schema.stages)
+    .where(
+      and(
+        eq(schema.stages.workspaceId, conn.workspaceId),
+        eq(schema.stages.kind, "open"),
+      ),
+    )
+    .orderBy(asc(schema.stages.position))
+    .limit(1);
   try {
     const leads = await connector.fetchLeads(creds, range);
     for (const l of leads) {
@@ -145,6 +157,7 @@ export async function syncConnection(
           email: l.email,
           phone: l.phone,
           formData: l.formData,
+          stageId: defaultStage?.id ?? null,
           createdAt: new Date(l.createdAt),
         })
         .onConflictDoNothing()

@@ -23,6 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +58,7 @@ export default async function GeneralSettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-4xl space-y-10">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">
@@ -66,75 +67,123 @@ export default async function GeneralSettingsPage() {
       </div>
 
       {company && active && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Building2 className="h-4 w-4 text-primary" />
-              Company profile · {active.name}
-            </CardTitle>
-            <CardDescription>
-              Your company details and the lead qualification criteria that
-              guides AI lead scoring.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <CompanyProfileForm
-              workspaceId={active.id}
-              name={company.name}
-              industry={company.industry}
-              qualificationCriteria={company.criteria}
-            />
-          </CardContent>
-        </Card>
+        <section className="space-y-3">
+          <SectionHeading
+            title="Workspace"
+            description={`Profile and lead-scoring criteria for ${active.name}.`}
+          />
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Building2 className="h-4 w-4 text-primary" />
+                Company profile · {active.name}
+              </CardTitle>
+              <CardDescription>
+                Your company details and the lead qualification criteria that
+                guides AI lead scoring.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CompanyProfileForm
+                workspaceId={active.id}
+                name={company.name}
+                industry={company.industry}
+                qualificationCriteria={company.criteria}
+              />
+            </CardContent>
+          </Card>
+        </section>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <KeyRound className="h-4 w-4 text-primary" />
-            Change password
-          </CardTitle>
-          <CardDescription>
-            Signed in as {session?.user?.email}. Choose a strong password you
-            don&apos;t use anywhere else.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ChangePasswordForm />
-        </CardContent>
-      </Card>
-
-      <Suspense>
-        <RingCentralConnectCard
-          connected={rcConnected}
-          fromNumber={rcTokens?.fromNumber ?? null}
+      <section className="space-y-3">
+        <SectionHeading
+          title="Calling & messaging"
+          description="Connect a provider to call and text leads from the pipeline. Connect either one — if you connect both, the most recently connected is used."
         />
-      </Suspense>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Suspense>
+            <RingCentralConnectCard
+              connected={rcConnected}
+              fromNumber={rcTokens?.fromNumber ?? null}
+            />
+          </Suspense>
+          <Suspense>
+            <DialpadConnectCard
+              connected={dpConnected}
+              fromNumber={dpTokens?.fromNumber ?? null}
+            />
+          </Suspense>
+        </div>
+      </section>
 
-      <Suspense>
-        <DialpadConnectCard
-          connected={dpConnected}
-          fromNumber={dpTokens?.fromNumber ?? null}
+      <section className="space-y-3">
+        <SectionHeading
+          title="Account & access"
+          description="Your sign-in security and where the team is managed."
         />
-      </Suspense>
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <KeyRound className="h-4 w-4 text-primary" />
+                Change password
+              </CardTitle>
+              <CardDescription>
+                Signed in as {session?.user?.email}. Choose a strong password you
+                don&apos;t use anywhere else.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChangePasswordForm />
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="h-4 w-4 text-primary" />
-            Team & permissions
-          </CardTitle>
-          <CardDescription>
-            Workspaces and user accounts are managed in{" "}
-            <Link href="/settings/team" className="text-primary underline">
-              Clients &amp; Team
-            </Link>
-            . Client users only see their own workspace; the agency sees
-            everything.
-          </CardDescription>
-        </CardHeader>
-        <CardContent />
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Users className="h-4 w-4 text-primary" />
+                Team & permissions
+              </CardTitle>
+              <CardDescription>
+                Workspaces and user accounts are managed in{" "}
+                <Link href="/settings/team" className="text-primary underline">
+                  Clients &amp; Team
+                </Link>
+                . Client users only see their own workspace; the agency sees
+                everything.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                variant="outline"
+                size="sm"
+                render={<Link href="/settings/team" />}
+              >
+                <Users className="mr-1 h-3.5 w-3.5" />
+                Manage team
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/** Small section label + helper text used to group the settings cards. */
+function SectionHeading({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="space-y-0.5">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h2>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   );
 }

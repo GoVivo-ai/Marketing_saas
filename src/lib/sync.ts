@@ -1,6 +1,8 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { getConnector } from "@/lib/integrations";
+import { listAdSets, fetchAdSetDailyMetrics } from "@/lib/integrations/meta";
+import { geocodeCity } from "@/lib/integrations/geocode";
 import { decryptSecret } from "@/lib/crypto";
 import { getSecret } from "@/lib/settings";
 import { scoreLead } from "@/lib/ai/lead-scoring";
@@ -9,6 +11,10 @@ import { isAiConfigured } from "@/lib/ai/provider";
 export interface SyncStats {
   campaigns: number;
   metricRows: number;
+  /** Ad sets upserted (Meta only). */
+  adsets: number;
+  /** Ad-set daily metric rows upserted (Meta only). */
+  adsetMetricRows: number;
   leads: number;
   /** How many newly-synced leads the AI engine scored this run. */
   leadsScored: number;
@@ -120,6 +126,112 @@ export async function syncConnection(
         },
       });
     metricRows++;
+  }
+
+  // 2b) Ad sets + their audience-location targeting + daily metrics.
+  // Meta-specific (geo targeting lives on the ad set). Geocoding is cached:
+  // we only hit Nominatim when an ad set is new or its city changed.
+  let adsetCount = 0;
+  let adsetMetricRows = 0;
+  if (conn.platform === "meta") {
+    const prevAdsets = await db()
+      .select({
+        externalId: schema.adsets.externalId,
+        cityName: schema.adsets.cityName,
+        lat: schema.adsets.lat,
+        lng: schema.adsets.lng,
+      })
+      .from(schema.adsets)
+      .where(eq(schema.adsets.connectionId, conn.id));
+    const prevByExternal = new Map(prevAdsets.map((r) => [r.externalId, r]));
+
+    const adsets = await listAdSets(creds);
+    for (const a of adsets) {
+      const campaignId = campaignIdByExternal.get(a.campaignExternalId);
+      if (!campaignId) continue; // ad set's campaign isn't tracked — skip
+
+      // Resolve coordinates: reuse the stored pin when the city is unchanged,
+      // otherwise geocode the (new) city. Numeric columns come back as strings.
+      let lat: string | null = null;
+      let lng: string | null = null;
+      if (a.city) {
+        const prev = prevByExternal.get(a.externalId);
+        if (prev?.lat != null && prev.lng != null && prev.cityName === a.city.name) {
+          lat = prev.lat;
+          lng = prev.lng;
+        } else {
+          const geo = await geocodeCity(a.city.name, a.city.region, a.city.country);
+          if (geo) {
+            lat = geo.lat.toFixed(6);
+            lng = geo.lng.toFixed(6);
+          }
+        }
+      }
+
+      const fields = {
+        name: a.name,
+        status: a.status,
+        cityName: a.city?.name ?? null,
+        cityRegion: a.city?.region ?? null,
+        cityCountry: a.city?.country ?? null,
+        radius: a.city?.radius != null ? a.city.radius.toFixed(2) : null,
+        distanceUnit: a.city?.distanceUnit ?? null,
+        lat,
+        lng,
+      };
+      await db()
+        .insert(schema.adsets)
+        .values({
+          workspaceId: conn.workspaceId,
+          connectionId: conn.id,
+          campaignId,
+          platform: conn.platform,
+          externalId: a.externalId,
+          ...fields,
+        })
+        .onConflictDoUpdate({
+          target: [schema.adsets.connectionId, schema.adsets.externalId],
+          set: fields,
+        });
+      adsetCount++;
+    }
+
+    const adsetRows = await db()
+      .select({ id: schema.adsets.id, externalId: schema.adsets.externalId })
+      .from(schema.adsets)
+      .where(eq(schema.adsets.connectionId, conn.id));
+    const adsetIdByExternal = new Map(adsetRows.map((r) => [r.externalId, r.id]));
+
+    const adsetMetrics = await fetchAdSetDailyMetrics(creds, range);
+    for (const m of adsetMetrics) {
+      const adsetId = adsetIdByExternal.get(m.adsetExternalId);
+      if (!adsetId) continue;
+      await db()
+        .insert(schema.adsetMetricsDaily)
+        .values({
+          workspaceId: conn.workspaceId,
+          adsetId,
+          date: m.date,
+          spend: m.spend.toFixed(2),
+          impressions: m.impressions,
+          clicks: m.clicks,
+          leads: m.leads,
+          conversions: m.conversions,
+          extra: m.extra,
+        })
+        .onConflictDoUpdate({
+          target: [schema.adsetMetricsDaily.adsetId, schema.adsetMetricsDaily.date],
+          set: {
+            spend: m.spend.toFixed(2),
+            impressions: m.impressions,
+            clicks: m.clicks,
+            leads: m.leads,
+            conversions: m.conversions,
+            extra: m.extra,
+          },
+        });
+      adsetMetricRows++;
+    }
   }
 
   // 3) Leads — non-fatal: lead retrieval needs page access and can fail
@@ -252,6 +364,8 @@ export async function syncConnection(
   return {
     campaigns: campaigns.length,
     metricRows,
+    adsets: adsetCount,
+    adsetMetricRows,
     leads: leadCount,
     leadsScored,
     leadsError,

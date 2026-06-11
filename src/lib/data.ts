@@ -53,6 +53,34 @@ export interface CampaignRow {
   trend: number;
 }
 
+/** A campaign's header info for its detail page. */
+export interface CampaignDetail {
+  id: string;
+  name: string;
+  platform: string;
+  status: string;
+  objective: string | null;
+}
+
+/** One ad set with 30-day metrics and its audience-location geometry. */
+export interface AdSetRow {
+  id: string;
+  name: string;
+  status: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  leads: number;
+  cpl: number;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  radius: number | null;
+  distanceUnit: string | null;
+  lat: number | null;
+  lng: number | null;
+}
+
 export interface LeadRow {
   id: string;
   name: string;
@@ -305,9 +333,17 @@ export function getEmptyOverview(): OverviewData {
 // Campaigns (last 30 days; trend = CPL last 15d vs previous 15d)
 // ─────────────────────────────────────────────────────────────────────────
 
-export async function getCampaignRows(workspaceId: string): Promise<CampaignRow[]> {
-  const since30 = dateStr(daysAgo(30));
-  const since15 = dateStr(daysAgo(15));
+export async function getCampaignRows(
+  workspaceId: string,
+  range: { start: Date; end: Date },
+): Promise<CampaignRow[]> {
+  const startStr = dateStr(range.start);
+  const endStr = dateStr(range.end);
+  // Split the window in half so "trend" compares CPL in the recent half vs the
+  // earlier half — the same idea as the 15-vs-15 split, generalized to any range.
+  const midStr = dateStr(
+    new Date((range.start.getTime() + range.end.getTime()) / 2),
+  );
 
   const [campaigns, rows] = await Promise.all([
     db()
@@ -333,7 +369,8 @@ export async function getCampaignRows(workspaceId: string): Promise<CampaignRow[
       .where(
         and(
           eq(schema.metricsDaily.workspaceId, workspaceId),
-          gte(schema.metricsDaily.date, since30),
+          gte(schema.metricsDaily.date, startStr),
+          lte(schema.metricsDaily.date, endStr),
         ),
       ),
   ]);
@@ -350,8 +387,8 @@ export async function getCampaignRows(workspaceId: string): Promise<CampaignRow[
         }),
         { spend: 0, impressions: 0, clicks: 0, leads: 0 },
       );
-      const recent = mine.filter((r) => r.date >= since15);
-      const older = mine.filter((r) => r.date < since15);
+      const recent = mine.filter((r) => r.date >= midStr);
+      const older = mine.filter((r) => r.date < midStr);
       const cplOf = (set: typeof mine) => {
         const s = set.reduce((a, r) => a + Number(r.spend), 0);
         const l = set.reduce((a, r) => a + r.leads, 0);
@@ -379,6 +416,111 @@ export async function getCampaignRows(workspaceId: string): Promise<CampaignRow[
     .sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Campaign detail → ad sets (one ad set per targeted city)
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Campaign header, scoped to the workspace (null if it isn't theirs). */
+export async function getCampaignById(
+  workspaceId: string,
+  campaignId: string,
+): Promise<CampaignDetail | null> {
+  const [c] = await db()
+    .select({
+      id: schema.campaigns.id,
+      name: schema.campaigns.name,
+      platform: schema.campaigns.platform,
+      status: schema.campaigns.status,
+      objective: schema.campaigns.objective,
+    })
+    .from(schema.campaigns)
+    .where(
+      and(
+        eq(schema.campaigns.id, campaignId),
+        eq(schema.campaigns.workspaceId, workspaceId),
+      ),
+    )
+    .limit(1);
+  return c ?? null;
+}
+
+/** Ad sets of a campaign with 30-day metrics + audience-location geometry. */
+export async function getAdSetRows(
+  workspaceId: string,
+  campaignId: string,
+): Promise<AdSetRow[]> {
+  const since30 = dateStr(daysAgo(30));
+
+  const [adsets, rows] = await Promise.all([
+    db()
+      .select({
+        id: schema.adsets.id,
+        name: schema.adsets.name,
+        status: schema.adsets.status,
+        city: schema.adsets.cityName,
+        region: schema.adsets.cityRegion,
+        country: schema.adsets.cityCountry,
+        radius: schema.adsets.radius,
+        distanceUnit: schema.adsets.distanceUnit,
+        lat: schema.adsets.lat,
+        lng: schema.adsets.lng,
+      })
+      .from(schema.adsets)
+      .where(
+        and(
+          eq(schema.adsets.workspaceId, workspaceId),
+          eq(schema.adsets.campaignId, campaignId),
+        ),
+      ),
+    db()
+      .select({
+        adsetId: schema.adsetMetricsDaily.adsetId,
+        spend: schema.adsetMetricsDaily.spend,
+        impressions: schema.adsetMetricsDaily.impressions,
+        clicks: schema.adsetMetricsDaily.clicks,
+        leads: schema.adsetMetricsDaily.leads,
+      })
+      .from(schema.adsetMetricsDaily)
+      .where(
+        and(
+          eq(schema.adsetMetricsDaily.workspaceId, workspaceId),
+          gte(schema.adsetMetricsDaily.date, since30),
+        ),
+      ),
+  ]);
+
+  return adsets
+    .map((a) => {
+      const mine = rows.filter((r) => r.adsetId === a.id);
+      const sum = mine.reduce(
+        (acc, r) => ({
+          spend: acc.spend + Number(r.spend),
+          impressions: acc.impressions + r.impressions,
+          clicks: acc.clicks + r.clicks,
+          leads: acc.leads + r.leads,
+        }),
+        { spend: 0, impressions: 0, clicks: 0, leads: 0 },
+      );
+      return {
+        id: a.id,
+        name: a.name,
+        status: a.status,
+        spend: Math.round(sum.spend * 100) / 100,
+        impressions: sum.impressions,
+        clicks: sum.clicks,
+        leads: sum.leads,
+        cpl: sum.leads > 0 ? Math.round((sum.spend / sum.leads) * 100) / 100 : 0,
+        city: a.city,
+        region: a.region,
+        country: a.country,
+        radius: a.radius != null ? Number(a.radius) : null,
+        distanceUnit: a.distanceUnit,
+        lat: a.lat != null ? Number(a.lat) : null,
+        lng: a.lng != null ? Number(a.lng) : null,
+      };
+    })
+    .sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Leads

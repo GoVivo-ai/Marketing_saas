@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 
@@ -62,6 +62,9 @@ export interface LeadRow {
   platform: string;
   externalId: string | null;
   status: string;
+  stageId: string | null;
+  stageName: string | null;
+  stageColor: string | null;
   aiScore: number | null;
   aiReason: string | null;
   aiSuggestedAction: string | null;
@@ -432,10 +435,14 @@ export async function getLeadsPage(
       updatedAt: schema.leads.updatedAt,
       campaign: schema.campaigns.name,
       assignedTo: schema.users.name,
+      stageId: schema.leads.stageId,
+      stageName: schema.stages.name,
+      stageColor: schema.stages.color,
     })
     .from(schema.leads)
     .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
     .leftJoin(schema.users, eq(schema.leads.assignedToId, schema.users.id))
+    .leftJoin(schema.stages, eq(schema.leads.stageId, schema.stages.id))
     .where(where)
     .orderBy(desc(schema.leads.createdAt))
     .limit(pageSize)
@@ -450,6 +457,9 @@ export async function getLeadsPage(
     platform: r.platform,
     externalId: r.externalId,
     status: r.status,
+    stageId: r.stageId,
+    stageName: r.stageName,
+    stageColor: r.stageColor,
     aiScore: r.aiScore,
     aiReason: r.aiReason,
     aiSuggestedAction: r.aiSuggestedAction,
@@ -460,5 +470,101 @@ export async function getLeadsPage(
   }));
 
   return { rows: mapped, total, page, pageSize, totalPages };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Pipeline (Kanban) — stages + leads grouped by stage
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface Stage {
+  id: string;
+  name: string;
+  color: string | null;
+  kind: string;
+  position: number;
+}
+
+export interface PipelineCard {
+  id: string;
+  name: string;
+  campaign: string;
+  platform: string;
+  phone: string;
+  aiScore: number | null;
+  stageId: string | null;
+  createdAt: Date;
+}
+
+export interface PipelineData {
+  stages: Stage[];
+  cardsByStage: Record<string, PipelineCard[]>;
+  counts: Record<string, number>;
+  cap: number;
+}
+
+/** Columns load at most this many cards; the header shows the true total. */
+export const PIPELINE_CARD_CAP = 100;
+
+export async function getPipeline(workspaceId: string): Promise<PipelineData> {
+  const stages = await db()
+    .select({
+      id: schema.stages.id,
+      name: schema.stages.name,
+      color: schema.stages.color,
+      kind: schema.stages.kind,
+      position: schema.stages.position,
+    })
+    .from(schema.stages)
+    .where(eq(schema.stages.workspaceId, workspaceId))
+    .orderBy(asc(schema.stages.position));
+
+  const countRows = await db()
+    .select({
+      stageId: schema.leads.stageId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(schema.leads)
+    .where(eq(schema.leads.workspaceId, workspaceId))
+    .groupBy(schema.leads.stageId);
+  const counts: Record<string, number> = {};
+  for (const r of countRows) if (r.stageId) counts[r.stageId] = r.count;
+
+  const cardsByStage: Record<string, PipelineCard[]> = {};
+  for (const st of stages) {
+    const rows = await db()
+      .select({
+        id: schema.leads.id,
+        name: schema.leads.name,
+        phone: schema.leads.phone,
+        platform: schema.leads.platform,
+        aiScore: schema.leads.aiScore,
+        stageId: schema.leads.stageId,
+        createdAt: schema.leads.createdAt,
+        campaign: schema.campaigns.name,
+      })
+      .from(schema.leads)
+      .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
+      .where(
+        and(
+          eq(schema.leads.workspaceId, workspaceId),
+          eq(schema.leads.stageId, st.id),
+        ),
+      )
+      .orderBy(desc(schema.leads.createdAt))
+      .limit(PIPELINE_CARD_CAP);
+
+    cardsByStage[st.id] = rows.map((r) => ({
+      id: r.id,
+      name: r.name ?? "Unknown",
+      campaign: r.campaign ?? "—",
+      platform: r.platform,
+      phone: r.phone ?? "—",
+      aiScore: r.aiScore,
+      stageId: r.stageId,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  return { stages, cardsByStage, counts, cap: PIPELINE_CARD_CAP };
 }
 

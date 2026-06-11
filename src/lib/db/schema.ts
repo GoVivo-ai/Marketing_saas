@@ -227,6 +227,28 @@ export const metricsDaily = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────
+// Pipeline stages — customizable funnel columns, one ordered set per client
+// ─────────────────────────────────────────────────────────────────────────
+
+export const stages = pgTable(
+  "stages",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** Column accent color (hex). */
+    color: text("color"),
+    /** Funnel semantics so reporting/AI can tell outcomes apart. */
+    kind: text("kind").notNull().default("open"), // open | won | lost
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("stage_workspace_position_idx").on(t.workspaceId, t.position)],
+);
+
+// ─────────────────────────────────────────────────────────────────────────
 // Leads — the unified inbox that replaces duplicated spreadsheets
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -248,6 +270,10 @@ export const leads = pgTable(
     /** Raw form answers exactly as the platform delivered them. */
     formData: jsonb("form_data"),
     status: leadStatusEnum("status").notNull().default("new"),
+    /** Customizable pipeline stage (authoritative for the Kanban board). */
+    stageId: text("stage_id").references(() => stages.id, {
+      onDelete: "set null",
+    }),
     /** 0–100, assigned by the AI lead-scoring engine. */
     aiScore: integer("ai_score"),
     aiScoreReason: text("ai_score_reason"),

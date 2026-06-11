@@ -103,6 +103,16 @@ export const users = pgTable("users", {
   rcFromNumber: text("rc_from_number"),
   rcOwnerId: text("rc_owner_id"),
   rcConnectedAt: timestamp("rc_connected_at"),
+  // Dialpad per-user connection (same pattern as RingCentral). Calls/SMS are
+  // keyed by the user's numeric Dialpad id, stored in dp_user_id.
+  dpAccessTokenEnc: text("dp_access_token_enc"),
+  dpRefreshTokenEnc: text("dp_refresh_token_enc"),
+  dpTokenExpiresAt: timestamp("dp_token_expires_at"),
+  dpRefreshTokenExpiresAt: timestamp("dp_refresh_token_expires_at"),
+  /** The user's own Dialpad number, shown in Settings as the "from". */
+  dpFromNumber: text("dp_from_number"),
+  dpUserId: text("dp_user_id"),
+  dpConnectedAt: timestamp("dp_connected_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

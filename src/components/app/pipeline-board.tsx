@@ -3,14 +3,15 @@
 import { useState, useTransition } from "react";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
   useDraggable,
   useDroppable,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
 import { toast } from "sonner";
 import { Phone, Sparkles, GripVertical, Loader2 } from "lucide-react";
 import { moveLeadToStage } from "@/lib/actions/leads";
@@ -35,7 +36,7 @@ export function PipelineBoard({
   cardsByStage,
   counts,
   cap,
-  ringcentralConnected,
+  contactConnected,
   canManage,
 }: {
   workspaceId: string;
@@ -43,12 +44,13 @@ export function PipelineBoard({
   cardsByStage: Board;
   counts: Record<string, number>;
   cap: number;
-  ringcentralConnected: boolean;
+  contactConnected: boolean;
   canManage: boolean;
 }) {
   const [board, setBoard] = useState<Board>(cardsByStage);
   const [count, setCount] = useState<Record<string, number>>(counts);
   const [selected, setSelected] = useState<PipelineCard | null>(null);
+  const [activeCard, setActiveCard] = useState<PipelineCard | null>(null);
   const [, startTransition] = useTransition();
   // Press-and-hold to drag; a quick click opens the lead detail.
   const sensors = useSensors(
@@ -65,7 +67,19 @@ export function PipelineBoard({
     };
   }
 
+  function handleDragStart(e: DragStartEvent) {
+    const id = String(e.active.id);
+    for (const list of Object.values(board)) {
+      const found = list.find((c) => c.id === id);
+      if (found) {
+        setActiveCard(found);
+        return;
+      }
+    }
+  }
+
   function handleDragEnd(e: DragEndEvent) {
+    setActiveCard(null);
     const cardId = String(e.active.id);
     const from = String(e.active.data.current?.stageId ?? "");
     const to = e.over ? String(e.over.id) : "";
@@ -87,7 +101,12 @@ export function PipelineBoard({
   }
 
   return (
-    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => setActiveCard(null)}
+    >
       <div className="flex h-[calc(100vh-11rem)] flex-col gap-3">
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
@@ -110,10 +129,15 @@ export function PipelineBoard({
         </div>
       </div>
 
+      {/* The dragged card rides above everything, unclipped by the columns. */}
+      <DragOverlay dropAnimation={null}>
+        {activeCard ? <LeadCardContent card={activeCard} overlay /> : null}
+      </DragOverlay>
+
       <CardDetailSheet
         card={selected}
         stages={stages}
-        ringcentralConnected={ringcentralConnected}
+        contactConnected={contactConnected}
         onClose={() => setSelected(null)}
         onMoved={(card, to) => {
           setBoard((b) => relocate(b, card.id, card.stageId ?? "", to));
@@ -181,20 +205,39 @@ function StageColumn({
 }
 
 function LeadCard({ card, onClick }: { card: PipelineCard; onClick: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: card.id,
     data: { stageId: card.stageId },
   });
+  // The original stays in place but dims while its overlay clone is dragged.
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform) }}
       onClick={onClick}
-      className={`cursor-grab touch-none rounded-lg border bg-card p-3 shadow-sm select-none active:cursor-grabbing ${
-        isDragging ? "opacity-50 shadow-lg" : ""
-      }`}
+      className={`touch-none ${isDragging ? "opacity-40" : ""}`}
       {...listeners}
       {...attributes}
+    >
+      <LeadCardContent card={card} />
+    </div>
+  );
+}
+
+/** Pure card visuals — reused for the in-column card and the drag overlay. */
+function LeadCardContent({
+  card,
+  overlay = false,
+}: {
+  card: PipelineCard;
+  overlay?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-lg border bg-card p-3 shadow-sm select-none ${
+        overlay
+          ? "rotate-2 scale-[1.03] cursor-grabbing shadow-2xl ring-2 ring-primary/40"
+          : "cursor-grab active:cursor-grabbing"
+      }`}
     >
       <div className="flex items-start gap-1.5">
         <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/40" />
@@ -226,13 +269,13 @@ function LeadCard({ card, onClick }: { card: PipelineCard; onClick: () => void }
 function CardDetailSheet({
   card,
   stages,
-  ringcentralConnected,
+  contactConnected,
   onClose,
   onMoved,
 }: {
   card: PipelineCard | null;
   stages: Stage[];
-  ringcentralConnected: boolean;
+  contactConnected: boolean;
   onClose: () => void;
   onMoved: (card: PipelineCard, toStageId: string) => void;
 }) {
@@ -307,7 +350,7 @@ function CardDetailSheet({
                 <LeadContactActions
                   leadId={card.id}
                   hasPhone={card.phone !== "—"}
-                  connected={ringcentralConnected}
+                  connected={contactConnected}
                 />
               </div>
             </div>

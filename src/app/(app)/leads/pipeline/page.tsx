@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { getWorkspaceContext, getPipeline } from "@/lib/data";
 import { canManageWorkspace } from "@/lib/permissions";
-import { isRingCentralConnected } from "@/lib/settings";
+import { isAnyTelephonyConnected } from "@/lib/integrations/telephony";
 import { PipelineBoard } from "@/components/app/pipeline-board";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +22,8 @@ export default async function PipelinePage() {
     getPipeline(active.id),
     canManageWorkspace(active.id),
   ]);
-  const rcConnected = session?.user?.id
-    ? await isRingCentralConnected(session.user.id)
+  const contactConnected = session?.user?.id
+    ? await isAnyTelephonyConnected(session.user.id)
     : false;
 
   return (
@@ -43,7 +43,7 @@ export default async function PipelinePage() {
         cardsByStage={pipeline.cardsByStage}
         counts={pipeline.counts}
         cap={pipeline.cap}
-        ringcentralConnected={rcConnected}
+        contactConnected={contactConnected}
         canManage={canManage}
       />
     </div>

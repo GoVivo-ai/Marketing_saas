@@ -6,9 +6,15 @@ import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
 import { canManageWorkspace } from "@/lib/permissions";
-import { getRingCentralTokens, isRingCentralConnected } from "@/lib/settings";
+import {
+  getRingCentralTokens,
+  isRingCentralConnected,
+  getDialpadTokens,
+  isDialpadConnected,
+} from "@/lib/settings";
 import { ChangePasswordForm } from "@/components/app/change-password-form";
 import { RingCentralConnectCard } from "@/components/app/ringcentral-connect-card";
+import { DialpadConnectCard } from "@/components/app/dialpad-connect-card";
 import { CompanyProfileForm } from "@/components/app/org-forms";
 import {
   Card,
@@ -26,6 +32,8 @@ export default async function GeneralSettingsPage() {
   const rcConnected = userId ? await isRingCentralConnected(userId) : false;
   const rcTokens =
     userId && rcConnected ? await getRingCentralTokens(userId) : null;
+  const dpConnected = userId ? await isDialpadConnected(userId) : false;
+  const dpTokens = userId && dpConnected ? await getDialpadTokens(userId) : null;
 
   const { active } = await getWorkspaceContext();
   const canManage = active ? await canManageWorkspace(active.id) : false;
@@ -100,6 +108,13 @@ export default async function GeneralSettingsPage() {
         <RingCentralConnectCard
           connected={rcConnected}
           fromNumber={rcTokens?.fromNumber ?? null}
+        />
+      </Suspense>
+
+      <Suspense>
+        <DialpadConnectCard
+          connected={dpConnected}
+          fromNumber={dpTokens?.fromNumber ?? null}
         />
       </Suspense>
 

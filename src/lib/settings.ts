@@ -122,6 +122,7 @@ export interface RingCentralTokens {
   refreshExpiresAt: Date | null;
   fromNumber: string | null;
   ownerId: string | null;
+  connectedAt: Date | null;
 }
 
 export async function getRingCentralTokens(
@@ -136,6 +137,7 @@ export async function getRingCentralTokens(
       refreshExpiresAt: schema.users.rcRefreshTokenExpiresAt,
       fromNumber: schema.users.rcFromNumber,
       ownerId: schema.users.rcOwnerId,
+      connectedAt: schema.users.rcConnectedAt,
     })
     .from(schema.users)
     .where(eq(schema.users.id, userId))
@@ -148,6 +150,7 @@ export async function getRingCentralTokens(
     refreshExpiresAt: row.refreshExpiresAt,
     fromNumber: row.fromNumber,
     ownerId: row.ownerId,
+    connectedAt: row.connectedAt,
   };
 }
 
@@ -215,4 +218,113 @@ export async function isRingCentralConnected(userId: string): Promise<boolean> {
   if (!tokens) return false;
   // A dead refresh token means the connection can't be renewed.
   return !tokens.refreshExpiresAt || tokens.refreshExpiresAt.getTime() > Date.now();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Per-user Dialpad OAuth tokens — same pattern as RingCentral. Dialpad refresh
+// tokens don't carry an expiry, so refreshExpiresAt stays null.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface DialpadTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: Date | null;
+  refreshExpiresAt: Date | null;
+  fromNumber: string | null;
+  dialpadUserId: string | null;
+  connectedAt: Date | null;
+}
+
+export async function getDialpadTokens(
+  userId: string,
+): Promise<DialpadTokens | null> {
+  if (!isDatabaseConfigured()) return null;
+  const [row] = await db()
+    .select({
+      access: schema.users.dpAccessTokenEnc,
+      refresh: schema.users.dpRefreshTokenEnc,
+      expiresAt: schema.users.dpTokenExpiresAt,
+      refreshExpiresAt: schema.users.dpRefreshTokenExpiresAt,
+      fromNumber: schema.users.dpFromNumber,
+      dialpadUserId: schema.users.dpUserId,
+      connectedAt: schema.users.dpConnectedAt,
+    })
+    .from(schema.users)
+    .where(eq(schema.users.id, userId))
+    .limit(1);
+  if (!row?.access || !row.refresh) return null;
+  return {
+    accessToken: decryptSecret(row.access),
+    refreshToken: decryptSecret(row.refresh),
+    expiresAt: row.expiresAt,
+    refreshExpiresAt: row.refreshExpiresAt,
+    fromNumber: row.fromNumber,
+    dialpadUserId: row.dialpadUserId,
+    connectedAt: row.connectedAt,
+  };
+}
+
+export interface DialpadTokenUpdate {
+  accessToken: string;
+  refreshToken: string;
+  expiresInSec: number;
+}
+
+/** Full connect: stores tokens + the user's number/id, stamps connectedAt. */
+export async function setDialpadTokens(
+  userId: string,
+  input: DialpadTokenUpdate & {
+    fromNumber: string | null;
+    dialpadUserId: string | null;
+  },
+): Promise<void> {
+  const now = Date.now();
+  await db()
+    .update(schema.users)
+    .set({
+      dpAccessTokenEnc: encryptSecret(input.accessToken),
+      dpRefreshTokenEnc: encryptSecret(input.refreshToken),
+      dpTokenExpiresAt: new Date(now + input.expiresInSec * 1000),
+      dpRefreshTokenExpiresAt: null,
+      dpFromNumber: input.fromNumber,
+      dpUserId: input.dialpadUserId,
+      dpConnectedAt: new Date(now),
+    })
+    .where(eq(schema.users.id, userId));
+}
+
+/** Refresh path: rotates tokens only, keeps fromNumber/userId/connectedAt. */
+export async function updateDialpadAccessToken(
+  userId: string,
+  input: DialpadTokenUpdate,
+): Promise<void> {
+  const now = Date.now();
+  await db()
+    .update(schema.users)
+    .set({
+      dpAccessTokenEnc: encryptSecret(input.accessToken),
+      dpRefreshTokenEnc: encryptSecret(input.refreshToken),
+      dpTokenExpiresAt: new Date(now + input.expiresInSec * 1000),
+    })
+    .where(eq(schema.users.id, userId));
+}
+
+export async function clearDialpadTokens(userId: string): Promise<void> {
+  await db()
+    .update(schema.users)
+    .set({
+      dpAccessTokenEnc: null,
+      dpRefreshTokenEnc: null,
+      dpTokenExpiresAt: null,
+      dpRefreshTokenExpiresAt: null,
+      dpFromNumber: null,
+      dpUserId: null,
+      dpConnectedAt: null,
+    })
+    .where(eq(schema.users.id, userId));
+}
+
+export async function isDialpadConnected(userId: string): Promise<boolean> {
+  const tokens = await getDialpadTokens(userId);
+  return Boolean(tokens);
 }

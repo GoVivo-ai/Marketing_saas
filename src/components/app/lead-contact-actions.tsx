@@ -26,7 +26,7 @@ function report(r: LeadContactResult, okText: string) {
     case "bad_phone":
       return toast.error("The lead's phone number isn't valid (need E.164, e.g. +57…).");
     case "not_connected":
-      return toast.error("Connect RingCentral in Settings first.", {
+      return toast.error("Connect RingCentral or Dialpad in Settings first.", {
         action: {
           label: "Settings",
           onClick: () => {
@@ -57,7 +57,7 @@ export function LeadContactActions({
     return (
       <p className="text-xs text-muted-foreground">
         <a href="/settings/general" className="underline">
-          Connect RingCentral
+          Connect RingCentral or Dialpad
         </a>{" "}
         to call or text leads from here.
       </p>
@@ -67,7 +67,7 @@ export function LeadContactActions({
   const onCall = () =>
     startCall(async () => {
       const r = await callLead(leadId);
-      report(r, "Calling — your RingCentral phone will ring, then the lead.");
+      report(r, "Calling — your phone will ring first, then the lead.");
     });
 
   const onSend = () =>
@@ -109,7 +109,7 @@ export function LeadContactActions({
           <DialogHeader>
             <DialogTitle>Send SMS</DialogTitle>
             <DialogDescription>
-              Sent from your RingCentral number to the lead.
+              Sent from your connected number to the lead.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">

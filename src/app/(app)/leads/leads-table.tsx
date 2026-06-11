@@ -42,10 +42,10 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
 
 export function LeadsTable({
   rows,
-  ringcentralConnected,
+  contactConnected,
 }: {
   rows: LeadRow[];
-  ringcentralConnected: boolean;
+  contactConnected: boolean;
 }) {
   const [selected, setSelected] = useState<LeadRow | null>(null);
 
@@ -169,7 +169,7 @@ export function LeadsTable({
                   <LeadContactActions
                     leadId={selected.id}
                     hasPhone={selected.phone !== "—"}
-                    connected={ringcentralConnected}
+                    connected={contactConnected}
                   />
                 </div>
 

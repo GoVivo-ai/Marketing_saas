@@ -5,11 +5,11 @@ import { and, asc, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import {
-  ringOut,
-  sendSms,
+  placeCall,
+  sendText,
   normalizeE164,
-  RingCentralNotConnectedError,
-} from "@/lib/integrations/ringcentral";
+  NoProviderConnectedError,
+} from "@/lib/integrations/telephony";
 
 export type LeadContactResult =
   | { ok: true }
@@ -166,19 +166,19 @@ export async function callLead(leadId: string): Promise<LeadContactResult> {
   }
 
   try {
-    const res = await ringOut(userId, to);
+    const res = await placeCall(userId, to);
     await db().insert(schema.leadEvents).values({
       leadId,
       userId,
       type: "call",
-      payload: { to, ringOutId: res.id, via: "ringcentral" },
+      payload: { to, callId: res.id, via: res.via },
     });
     await maybeAutoAdvance(lead, userId);
     revalidatePath("/leads");
     revalidatePath("/leads/pipeline");
     return { ok: true };
   } catch (err) {
-    if (err instanceof RingCentralNotConnectedError)
+    if (err instanceof NoProviderConnectedError)
       return { ok: false, reason: "not_connected" };
     return {
       ok: false,
@@ -205,19 +205,19 @@ export async function smsLead(
   }
 
   try {
-    const res = await sendSms(userId, to, body);
+    const res = await sendText(userId, to, body);
     await db().insert(schema.leadEvents).values({
       leadId,
       userId,
       type: "sms",
-      payload: { to, text: body, messageId: res.id, via: "ringcentral" },
+      payload: { to, text: body, messageId: res.id, via: res.via },
     });
     await maybeAutoAdvance(lead, userId);
     revalidatePath("/leads");
     revalidatePath("/leads/pipeline");
     return { ok: true };
   } catch (err) {
-    if (err instanceof RingCentralNotConnectedError)
+    if (err instanceof NoProviderConnectedError)
       return { ok: false, reason: "not_connected" };
     return {
       ok: false,

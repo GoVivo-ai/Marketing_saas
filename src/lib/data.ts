@@ -444,12 +444,14 @@ export async function getCampaignById(
   return c ?? null;
 }
 
-/** Ad sets of a campaign with 30-day metrics + audience-location geometry. */
+/** Ad sets of a campaign with metrics over a range + audience-location geometry. */
 export async function getAdSetRows(
   workspaceId: string,
   campaignId: string,
+  range: { start: Date; end: Date },
 ): Promise<AdSetRow[]> {
-  const since30 = dateStr(daysAgo(30));
+  const startStr = dateStr(range.start);
+  const endStr = dateStr(range.end);
 
   const [adsets, rows] = await Promise.all([
     db()
@@ -484,7 +486,8 @@ export async function getAdSetRows(
       .where(
         and(
           eq(schema.adsetMetricsDaily.workspaceId, workspaceId),
-          gte(schema.adsetMetricsDaily.date, since30),
+          gte(schema.adsetMetricsDaily.date, startStr),
+          lte(schema.adsetMetricsDaily.date, endStr),
         ),
       ),
   ]);

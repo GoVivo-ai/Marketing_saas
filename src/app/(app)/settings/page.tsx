@@ -17,6 +17,7 @@ import {
 } from "@/lib/actions/connections";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/app/submit-button";
 import {
   Card,
   CardContent,
@@ -308,10 +309,13 @@ export default async function ConnectionsPage() {
                     </span>
                     <form action={syncConnectionNow}>
                       <input type="hidden" name="connectionId" value={conn.id} />
-                      <Button variant="outline" size="sm" type="submit">
-                        <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                      <SubmitButton
+                        variant="outline"
+                        pendingText="Syncing…"
+                        icon={<RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                      >
                         Sync now
-                      </Button>
+                      </SubmitButton>
                     </form>
                     <form action={disconnectConnection}>
                       <input type="hidden" name="connectionId" value={conn.id} />
@@ -336,9 +340,9 @@ export default async function ConnectionsPage() {
                       // A client is selected: connect straight to it, no picker.
                       <>
                         <input type="hidden" name="workspaceId" value={active.id} />
-                        <Button size="sm" type="submit">
+                        <SubmitButton pendingText="Connecting…">
                           Connect to {active.name}
-                        </Button>
+                        </SubmitButton>
                       </>
                     ) : (
                       <>
@@ -357,9 +361,9 @@ export default async function ConnectionsPage() {
                             </option>
                           ))}
                         </select>
-                        <Button size="sm" type="submit">
+                        <SubmitButton pendingText="Connecting…">
                           Connect
-                        </Button>
+                        </SubmitButton>
                       </>
                     )}
                   </form>

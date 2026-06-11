@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { getConnector } from "@/lib/integrations";
 import { decryptSecret } from "@/lib/crypto";
@@ -144,13 +144,40 @@ export async function syncConnection(
   try {
     const leads = await connector.fetchLeads(creds, range);
     for (const l of leads) {
+      // Resolve the lead's campaign. If its campaign wasn't in the account-level
+      // listing (e.g. archived/deleted) but the lead carries its details, create
+      // the campaign on the fly so the lead can still be attributed.
+      let campaignId = l.campaignExternalId
+        ? campaignIdByExternal.get(l.campaignExternalId)
+        : undefined;
+      if (!campaignId && l.campaignExternalId && l.campaignName) {
+        const [created] = await db()
+          .insert(schema.campaigns)
+          .values({
+            workspaceId: conn.workspaceId,
+            connectionId: conn.id,
+            platform: conn.platform,
+            externalId: l.campaignExternalId,
+            name: l.campaignName,
+            status: l.campaignStatus ?? "ARCHIVED",
+            objective: l.campaignObjective,
+          })
+          .onConflictDoUpdate({
+            target: [schema.campaigns.connectionId, schema.campaigns.externalId],
+            set: { name: l.campaignName },
+          })
+          .returning({ id: schema.campaigns.id });
+        if (created) {
+          campaignId = created.id;
+          campaignIdByExternal.set(l.campaignExternalId, created.id);
+        }
+      }
+
       const [inserted] = await db()
         .insert(schema.leads)
         .values({
           workspaceId: conn.workspaceId,
-          campaignId: l.campaignExternalId
-            ? campaignIdByExternal.get(l.campaignExternalId)
-            : undefined,
+          campaignId,
           platform: conn.platform,
           externalId: l.externalId,
           name: l.name,
@@ -160,10 +187,23 @@ export async function syncConnection(
           stageId: defaultStage?.id ?? null,
           createdAt: new Date(l.createdAt),
         })
-        .onConflictDoNothing()
-        .returning({ id: schema.leads.id });
+        // On re-sync, backfill the campaign for leads that were stored without
+        // one — but never clobber a campaign already set, the stage, or score.
+        .onConflictDoUpdate({
+          target: [
+            schema.leads.workspaceId,
+            schema.leads.platform,
+            schema.leads.externalId,
+          ],
+          set: {
+            campaignId: sql`coalesce(${schema.leads.campaignId}, excluded.campaign_id)`,
+          },
+        })
+        // xmax = 0 marks a fresh INSERT (vs. an ON CONFLICT update), so we
+        // only score genuinely new leads — not every re-synced row.
+        .returning({ id: schema.leads.id, isNew: sql<boolean>`(xmax = 0)` });
       leadCount++;
-      if (inserted) {
+      if (inserted?.isNew) {
         freshLeads.push({
           id: inserted.id,
           formData: (l.formData ?? {}) as Record<string, unknown>,

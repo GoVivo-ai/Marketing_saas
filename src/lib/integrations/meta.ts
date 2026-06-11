@@ -125,10 +125,17 @@ export const metaConnector: MarketingConnector = {
     creds: ConnectorCredentials,
     range: DateRange,
   ): Promise<NormalizedLead[]> {
-    // 1) Lead-gen forms live under ads; fetch ads with their leadgen forms.
-    type AdRow = { id: string; campaign_id?: string };
+    // 1) Lead-gen forms live under ads; fetch ads with their parent campaign.
+    // We expand `campaign{…}` so each lead carries its campaign details even
+    // when that campaign is archived/deleted (and thus missing from the
+    // account-level campaign listing).
+    type AdRow = {
+      id: string;
+      campaign_id?: string;
+      campaign?: { id: string; name?: string; status?: string; objective?: string };
+    };
     const ads = await graphGetAll<AdRow>(
-      `${GRAPH}/${creds.accountId}/ads?fields=id,campaign_id&limit=200`,
+      `${GRAPH}/${creds.accountId}/ads?fields=id,campaign_id,campaign{id,name,status,objective}&limit=200`,
       creds.accessToken,
     );
 
@@ -158,7 +165,10 @@ export const metaConnector: MarketingConnector = {
           r.field_data?.find((f) => f.name.toLowerCase().includes(key))?.values?.[0];
         all.push({
           externalId: r.id,
-          campaignExternalId: ad.campaign_id,
+          campaignExternalId: ad.campaign_id ?? ad.campaign?.id,
+          campaignName: ad.campaign?.name,
+          campaignStatus: ad.campaign?.status,
+          campaignObjective: ad.campaign?.objective,
           createdAt: r.created_time,
           name: field("name") ?? field("nombre"),
           email: field("email"),

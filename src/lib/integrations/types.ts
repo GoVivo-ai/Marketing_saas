@@ -43,6 +43,14 @@ export interface NormalizedDailyMetrics {
 export interface NormalizedLead {
   externalId: string;
   campaignExternalId?: string;
+  /**
+   * Campaign details carried with the lead so the sync can link (and, if
+   * needed, create) the campaign even when it's archived/deleted and absent
+   * from the account-level campaign listing.
+   */
+  campaignName?: string;
+  campaignStatus?: string;
+  campaignObjective?: string;
   createdAt: string; // ISO timestamp
   name?: string;
   email?: string;

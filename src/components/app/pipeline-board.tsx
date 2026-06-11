@@ -12,7 +12,7 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { toast } from "sonner";
-import { Phone, Sparkles, GripVertical } from "lucide-react";
+import { Phone, Sparkles, GripVertical, Loader2 } from "lucide-react";
 import { moveLeadToStage } from "@/lib/actions/leads";
 import type { Stage, PipelineCard } from "@/lib/data";
 import {
@@ -50,8 +50,9 @@ export function PipelineBoard({
   const [count, setCount] = useState<Record<string, number>>(counts);
   const [selected, setSelected] = useState<PipelineCard | null>(null);
   const [, startTransition] = useTransition();
+  // Press-and-hold to drag; a quick click opens the lead detail.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
   );
 
   function relocate(b: Board, cardId: string, from: string, to: string): Board {
@@ -87,24 +88,26 @@ export function PipelineBoard({
 
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          Drag a lead between stages to move it through the funnel.
-        </p>
-        {canManage && <StageManager workspaceId={workspaceId} stages={stages} />}
-      </div>
+      <div className="flex h-[calc(100vh-11rem)] flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Press and hold a card to drag it between stages.
+          </p>
+          {canManage && <StageManager workspaceId={workspaceId} stages={stages} />}
+        </div>
 
-      <div className="flex gap-4 overflow-x-auto pb-4">
-        {stages.map((stage) => (
-          <StageColumn
-            key={stage.id}
-            stage={stage}
-            cards={board[stage.id] ?? []}
-            total={count[stage.id] ?? 0}
-            cap={cap}
-            onCardClick={setSelected}
-          />
-        ))}
+        <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto pb-2">
+          {stages.map((stage) => (
+            <StageColumn
+              key={stage.id}
+              stage={stage}
+              cards={board[stage.id] ?? []}
+              total={count[stage.id] ?? 0}
+              cap={cap}
+              onCardClick={setSelected}
+            />
+          ))}
+        </div>
       </div>
 
       <CardDetailSheet
@@ -136,8 +139,8 @@ function StageColumn({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   return (
-    <div className="flex w-72 shrink-0 flex-col">
-      <div className="mb-2 flex items-center gap-2 px-1">
+    <div className="flex h-full w-72 shrink-0 flex-col">
+      <div className="mb-2 flex shrink-0 items-center gap-2 px-1">
         <span
           className="h-2.5 w-2.5 rounded-full"
           style={{ backgroundColor: stage.color ?? "#94a3b8" }}
@@ -149,7 +152,7 @@ function StageColumn({
       </div>
       <div
         ref={setNodeRef}
-        className={`flex min-h-[60vh] flex-col gap-2 rounded-xl border p-2 transition-colors ${
+        className={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-xl border p-2 transition-colors ${
           isOver ? "border-primary/50 bg-primary/5" : "bg-card/40"
         }`}
       >
@@ -180,35 +183,35 @@ function LeadCard({ card, onClick }: { card: PipelineCard; onClick: () => void }
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
-      className={`group rounded-lg border bg-card p-3 shadow-sm ${
-        isDragging ? "opacity-50" : ""
+      onClick={onClick}
+      className={`cursor-grab touch-none rounded-lg border bg-card p-3 shadow-sm select-none active:cursor-grabbing ${
+        isDragging ? "opacity-50 shadow-lg" : ""
       }`}
+      {...listeners}
+      {...attributes}
     >
-      <div className="flex items-start gap-2">
-        <button
-          type="button"
-          className="mt-0.5 cursor-grab text-muted-foreground/50 active:cursor-grabbing"
-          {...listeners}
-          {...attributes}
-          aria-label="Drag"
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
-        <button type="button" onClick={onClick} className="min-w-0 flex-1 text-left">
+      <div className="flex items-start gap-1.5">
+        <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/40" />
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{card.name}</p>
           <p className="truncate text-xs text-muted-foreground">{card.campaign}</p>
           <div className="mt-2 flex items-center gap-2">
-            {card.aiScore != null && (
+            {card.aiScore != null ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
                 <Sparkles className="h-3 w-3" />
                 {card.aiScore}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Procesando
               </span>
             )}
             {card.phone !== "—" && (
               <Phone className="h-3.5 w-3.5 text-muted-foreground" />
             )}
           </div>
-        </button>
+        </div>
       </div>
     </div>
   );

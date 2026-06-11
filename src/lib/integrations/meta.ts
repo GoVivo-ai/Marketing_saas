@@ -114,7 +114,12 @@ export const metaConnector: MarketingConnector = {
         spend: Number(r.spend ?? 0),
         impressions: Number(r.impressions ?? 0),
         clicks: Number(r.clicks ?? 0),
-        leads: action("lead") + action("onsite_conversion.lead_grouped"),
+        // Meta reports the SAME lead under multiple action_types: the
+        // canonical `lead` (what Ads Manager shows as "Results/Leads") and
+        // duplicate mirrors like `onsite_conversion.lead_grouped`. Summing
+        // them double-counts every lead. Use `lead` as the source of truth,
+        // falling back to the grouped on-Meta count only when `lead` is absent.
+        leads: action("lead") || action("onsite_conversion.lead_grouped"),
         conversions: action("offsite_conversion.fb_pixel_purchase"),
         extra: { reach: Number(r.reach ?? 0), frequency: Number(r.frequency ?? 0) },
       };
@@ -204,3 +209,130 @@ export const metaConnector: MarketingConnector = {
     return all;
   },
 };
+
+// ─────────────────────────────────────────────────────────────────────────
+// Ad-set level fetchers (Meta-specific — not part of the cross-platform
+// connector interface). Ad sets carry the audience-location targeting we plot
+// on the campaign map, plus one-level-deeper performance metrics.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface NormalizedAdSet {
+  externalId: string;
+  campaignExternalId: string;
+  name: string;
+  status: string;
+  /** First targeted city (Meta allows several, but geo-per-city accounts use one). */
+  city?: {
+    name: string;
+    region?: string;
+    country?: string;
+    radius?: number;
+    distanceUnit?: string;
+  };
+}
+
+export interface NormalizedAdSetMetrics {
+  adsetExternalId: string;
+  date: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  leads: number;
+  conversions: number;
+  extra: { reach: number; frequency: number };
+}
+
+// Non-deleted statuses, so paused/archived ad sets (and their targeting +
+// historical metrics) are still pulled — mirrors the leads fetch above.
+const ADSET_STATUSES = encodeURIComponent(
+  JSON.stringify([
+    "ACTIVE",
+    "PAUSED",
+    "ARCHIVED",
+    "CAMPAIGN_PAUSED",
+    "WITH_ISSUES",
+  ]),
+);
+
+export async function listAdSets(
+  creds: ConnectorCredentials,
+): Promise<NormalizedAdSet[]> {
+  type City = {
+    name: string;
+    region?: string;
+    country?: string;
+    radius?: number;
+    distance_unit?: string;
+  };
+  type Row = {
+    id: string;
+    name: string;
+    status: string;
+    campaign_id: string;
+    targeting?: { geo_locations?: { cities?: City[] } };
+  };
+  const rows = await graphGetAll<Row>(
+    `${GRAPH}/${creds.accountId}/adsets` +
+      `?fields=id,name,status,campaign_id,targeting{geo_locations}` +
+      `&effective_status=${ADSET_STATUSES}&limit=200`,
+    creds.accessToken,
+  );
+  return rows.map((r) => {
+    const c = r.targeting?.geo_locations?.cities?.[0];
+    return {
+      externalId: r.id,
+      campaignExternalId: r.campaign_id,
+      name: r.name,
+      status: r.status,
+      city: c
+        ? {
+            name: c.name,
+            region: c.region,
+            country: c.country,
+            radius: c.radius,
+            distanceUnit: c.distance_unit,
+          }
+        : undefined,
+    };
+  });
+}
+
+export async function fetchAdSetDailyMetrics(
+  creds: ConnectorCredentials,
+  range: DateRange,
+): Promise<NormalizedAdSetMetrics[]> {
+  type Row = {
+    adset_id: string;
+    date_start: string;
+    spend?: string;
+    impressions?: string;
+    clicks?: string;
+    reach?: string;
+    frequency?: string;
+    actions?: { action_type: string; value: string }[];
+  };
+  const timeRange = encodeURIComponent(
+    JSON.stringify({ since: range.since, until: range.until }),
+  );
+  const rows = await graphGetAll<Row>(
+    `${GRAPH}/${creds.accountId}/insights` +
+      `?level=adset&time_increment=1&time_range=${timeRange}` +
+      `&fields=adset_id,spend,impressions,clicks,reach,frequency,actions&limit=500`,
+    creds.accessToken,
+  );
+  return rows.map((r) => {
+    const action = (type: string) =>
+      Number(r.actions?.find((a) => a.action_type === type)?.value ?? 0);
+    return {
+      adsetExternalId: r.adset_id,
+      date: r.date_start,
+      spend: Number(r.spend ?? 0),
+      impressions: Number(r.impressions ?? 0),
+      clicks: Number(r.clicks ?? 0),
+      // Same lead de-dup as campaign metrics: never sum mirrored action types.
+      leads: action("lead") || action("onsite_conversion.lead_grouped"),
+      conversions: action("offsite_conversion.fb_pixel_purchase"),
+      extra: { reach: Number(r.reach ?? 0), frequency: Number(r.frequency ?? 0) },
+    };
+  });
+}

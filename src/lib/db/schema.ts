@@ -236,6 +236,72 @@ export const metricsDaily = pgTable(
   ],
 );
 
+/**
+ * Ad sets live one level below campaigns. In geo-targeted accounts each ad set
+ * targets a single city with a radius (its "audience location"), so we persist
+ * that targeting geometry — city name, region/state, radius and the geocoded
+ * lat/lng — to render each ad set as a circle on a map.
+ */
+export const adsets = pgTable(
+  "adsets",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => connections.id, { onDelete: "cascade" }),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    platform: platformEnum("platform").notNull(),
+    externalId: text("external_id").notNull(),
+    name: text("name").notNull(),
+    status: text("status").notNull().default("ACTIVE"),
+    // Audience location (first targeted city) — null when the ad set isn't
+    // city-targeted (e.g. region/country-level or custom locations).
+    cityName: text("city_name"),
+    cityRegion: text("city_region"),
+    cityCountry: text("city_country"),
+    radius: numeric("radius", { precision: 8, scale: 2 }),
+    distanceUnit: text("distance_unit"), // "mile" | "kilometer"
+    lat: numeric("lat", { precision: 9, scale: 6 }),
+    lng: numeric("lng", { precision: 9, scale: 6 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("adset_external_unique").on(t.connectionId, t.externalId),
+    index("adset_campaign_idx").on(t.campaignId),
+    index("adset_workspace_idx").on(t.workspaceId),
+  ],
+);
+
+/** One row per ad set per day — same grain as metricsDaily, one level deeper. */
+export const adsetMetricsDaily = pgTable(
+  "adset_metrics_daily",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    adsetId: text("adset_id")
+      .notNull()
+      .references(() => adsets.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    spend: numeric("spend", { precision: 12, scale: 2 }).notNull().default("0"),
+    impressions: integer("impressions").notNull().default(0),
+    clicks: integer("clicks").notNull().default(0),
+    leads: integer("leads").notNull().default(0),
+    conversions: integer("conversions").notNull().default(0),
+    extra: jsonb("extra"),
+  },
+  (t) => [
+    uniqueIndex("adset_metrics_daily_unique").on(t.adsetId, t.date),
+    index("adset_metrics_workspace_date_idx").on(t.workspaceId, t.date),
+  ],
+);
+
 // ─────────────────────────────────────────────────────────────────────────
 // Pipeline stages — customizable funnel columns, one ordered set per client
 // ─────────────────────────────────────────────────────────────────────────

@@ -14,35 +14,65 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { TrendingDown, TrendingUp, Minus } from "lucide-react";
+import Link from "next/link";
+import { TrendingDown, TrendingUp, Minus, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DateRangePicker } from "@/components/app/date-range-picker";
 import { getCampaignRows, getWorkspaceContext } from "@/lib/data";
+import { resolveDateRange } from "@/lib/date-range";
 
 export const dynamic = "force-dynamic";
 
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-export default async function CampaignsPage() {
+const RANGES = [
+  { value: "7", label: "Last 7 days" },
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 90 days" },
+];
+const DEFAULT_RANGE = "30";
+
+export default async function CampaignsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
+}) {
+  const sp = await searchParams;
+  const resolved = resolveDateRange(sp, {
+    presets: [7, 30, 90],
+    defaultPreset: DEFAULT_RANGE,
+    allowAllTime: false,
+  });
   const { active } = await getWorkspaceContext();
-  const rows = active ? await getCampaignRows(active.id) : [];
+  const rows = active
+    ? await getCampaignRows(active.id, { start: resolved.start!, end: resolved.end! })
+    : [];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {active ? `${active.name} — Campaigns` : "Campaigns"}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          All campaigns across platforms, normalized into one view
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {active ? `${active.name} — Campaigns` : "Campaigns"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            All campaigns across platforms, normalized into one view
+          </p>
+        </div>
+        <DateRangePicker
+          presets={RANGES}
+          defaultValue={DEFAULT_RANGE}
+          label={resolved.label}
+        />
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>All campaigns</CardTitle>
           <CardDescription>
-            Last 30 days · CPL trend compares the last 15 days vs the 15 before
+            {resolved.label} · CPL trend compares the recent half of the range
+            vs the earlier half
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -68,9 +98,16 @@ export default async function CampaignsPage() {
               </TableHeader>
               <TableBody>
                 {rows.map((c) => (
-                  <TableRow key={c.id}>
+                  <TableRow key={c.id} className="group">
                     <TableCell className="max-w-[260px]">
-                      <p className="truncate font-medium">{c.name}</p>
+                      <Link
+                        href={`/campaigns/${c.id}`}
+                        className="flex items-center gap-1 font-medium hover:underline"
+                        title="Ver conjuntos de anuncios por ciudad"
+                      >
+                        <span className="truncate">{c.name}</span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                      </Link>
                       <p className="text-xs text-muted-foreground">{c.objective ?? "—"}</p>
                     </TableCell>
                     <TableCell>

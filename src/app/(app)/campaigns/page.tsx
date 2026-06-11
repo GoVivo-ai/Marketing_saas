@@ -103,7 +103,7 @@ export default async function CampaignsPage({
                       <Link
                         href={`/campaigns/${c.id}`}
                         className="flex items-center gap-1 font-medium hover:underline"
-                        title="Ver conjuntos de anuncios por ciudad"
+                        title="View ad sets by city"
                       >
                         <span className="truncate">{c.name}</span>
                         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />

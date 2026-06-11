@@ -78,12 +78,12 @@ export function CityRadiusMap({ adsets, selectedId, onSelect }: Props) {
         const radiusLabel =
           a.radius != null
             ? `${a.radius} ${a.distanceUnit === "kilometer" ? "km" : "mi"}`
-            : "sin radio";
+            : "no radius";
         circle.bindPopup(
           `<strong>${a.city ?? a.name}</strong><br/>` +
             `${a.region ?? ""}<br/>` +
-            `Radio: ${radiusLabel}<br/>` +
-            `Gasto: ${usd(a.spend)} · Leads: ${a.leads}`,
+            `Radius: ${radiusLabel}<br/>` +
+            `Spend: ${usd(a.spend)} · Leads: ${a.leads}`,
         );
         circle.on("click", () => onSelectRef.current(a.id));
         circle.addTo(map);

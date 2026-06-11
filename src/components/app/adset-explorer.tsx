@@ -10,7 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { MapPin } from "lucide-react";
+import { MapPin, MapPinOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AdSetRow } from "@/lib/data";
 import { CityRadiusMap } from "./city-radius-map";
@@ -30,8 +30,7 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
   if (adsets.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-muted-foreground">
-        Esta campaña aún no tiene conjuntos de anuncios sincronizados. Corre el
-        sync para traerlos.
+        No ad sets synced for this campaign yet. Run a sync to pull them in.
       </p>
     );
   }
@@ -45,9 +44,8 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
           onSelect={setSelectedId}
         />
         <p className="mt-2 text-xs text-muted-foreground">
-          {locatedCount} de {adsets.length} conjuntos ubicados en el mapa · el
-          círculo muestra el radio de la audiencia. Haz clic en una ciudad para
-          enfocarla.
+          {locatedCount} of {adsets.length} ad sets placed on the map · the
+          circle shows the audience radius. Click a city to focus it.
         </p>
       </div>
 
@@ -56,9 +54,9 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Ciudad</TableHead>
-                <TableHead className="text-right">Radio</TableHead>
-                <TableHead className="text-right">Gasto</TableHead>
+                <TableHead>City</TableHead>
+                <TableHead className="text-right">Radius</TableHead>
+                <TableHead className="text-right">Spend</TableHead>
                 <TableHead className="text-right">Leads</TableHead>
                 <TableHead className="text-right">CPL</TableHead>
               </TableRow>
@@ -77,9 +75,19 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
                   >
                     <TableCell className="max-w-[180px]">
                       <div className="flex items-center gap-1.5">
-                        {located && (
-                          <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        )}
+                        {/* Reserve the icon slot in every row so labels stay
+                            aligned; ad sets without a located city show a faded
+                            "no location" marker instead of nothing. */}
+                        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                          {located ? (
+                            <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                          ) : (
+                            <MapPinOff
+                              className="h-3.5 w-3.5 text-muted-foreground/40"
+                              aria-label="No location"
+                            />
+                          )}
+                        </span>
                         <div className="min-w-0">
                           <p className="truncate font-medium">
                             {a.city ?? a.name}
@@ -90,7 +98,7 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
                         </div>
                         {a.status !== "ACTIVE" && (
                           <Badge variant="secondary" className="ml-auto shrink-0">
-                            {a.status === "PAUSED" ? "Pausado" : a.status}
+                            {a.status === "PAUSED" ? "Paused" : a.status}
                           </Badge>
                         )}
                       </div>

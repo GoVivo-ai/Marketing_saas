@@ -482,7 +482,9 @@ export function PlannerView({
       </div>
 
       {/* ---------- Per-city plan (user-chosen cities) ---------- */}
-      <Card>
+      {/* overflow-visible so the city-search suggestions can drop past the
+          card edge instead of being clipped by its rounded corners. */}
+      <Card className="overflow-visible">
         <CardHeader>
           <CardTitle>By city</CardTitle>
           <CardDescription>

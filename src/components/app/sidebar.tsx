@@ -77,7 +77,9 @@ export function AppSidebar({
   );
 
   return (
-    <aside className="flex h-screen w-60 shrink-0 flex-col border-r bg-card/50">
+    // The `dark` class scopes the navy brand look to the rail: the sidebar
+    // keeps the VIVO identity while the content canvas stays light gray.
+    <aside className="dark flex h-screen w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
       <div className="px-5 py-5">
         <div className="flex items-center gap-3">
           <VivoLogo className="h-7 w-auto shrink-0" />

@@ -4,6 +4,9 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { canManageWorkspace } from "@/lib/permissions";
+import { decryptSecret } from "@/lib/crypto";
+import { getSecret } from "@/lib/settings";
+import { searchGeoCities, type GeoCitySuggestion } from "@/lib/integrations/meta";
 
 export interface SavePlanInput {
   workspaceId: string;
@@ -21,7 +24,7 @@ export interface SavePlanInput {
   targetSales: number;
   notes?: string | null;
   /** Per-city goals (in the workspace's result unit). */
-  cityTargets?: { cityName: string; targetResults: number }[];
+  cityTargets?: { cityName: string; region?: string | null; targetResults: number }[];
   /** Optional campaign window ("YYYY-MM-DD"); null clears it (full month). */
   periodStart?: string | null;
   periodEnd?: string | null;
@@ -110,6 +113,7 @@ export async function savePlan(
       planId: planId!,
       month,
       cityName: c.cityName,
+      region: c.region?.trim() || null,
       targetResults: Math.round(clamp(c.targetResults)),
     }));
   if (rows.length) await db().insert(schema.planCityTargets).values(rows);
@@ -183,6 +187,7 @@ export async function duplicatePlan(
           planId: copyId,
           month: t.month,
           cityName: t.cityName,
+          region: t.region,
           targetResults: t.targetResults,
         })),
       );
@@ -190,4 +195,50 @@ export async function duplicatePlan(
 
   revalidatePath("/planner");
   return { ok: true, planId: copyId };
+}
+
+/**
+ * Type-ahead city search for the planner's add-city picker, backed by Meta's
+ * geo targeting database so names match synced ad sets exactly. `state` is a
+ * full state name (e.g. "Florida") to narrow the results.
+ */
+export async function searchPlanCities(
+  workspaceId: string,
+  q: string,
+  state?: string | null,
+): Promise<{ ok: boolean; cities?: GeoCitySuggestion[]; error?: string }> {
+  if (!(await canManageWorkspace(workspaceId))) {
+    return { ok: false, error: "You don't have permission to edit this plan." };
+  }
+  const query = q.trim();
+  if (query.length < 2) return { ok: true, cities: [] };
+
+  // The workspace's Meta connection token, else the agency-level token.
+  const [conn] = await db()
+    .select({ accessTokenEnc: schema.connections.accessTokenEnc })
+    .from(schema.connections)
+    .where(
+      and(
+        eq(schema.connections.workspaceId, workspaceId),
+        eq(schema.connections.platform, "meta"),
+        eq(schema.connections.status, "active"),
+      ),
+    )
+    .limit(1);
+  const token = conn?.accessTokenEnc
+    ? decryptSecret(conn.accessTokenEnc)
+    : await getSecret("meta_access_token");
+  if (!token) {
+    return { ok: false, error: "Meta is not connected — type the city manually." };
+  }
+
+  try {
+    const all = await searchGeoCities(token, query);
+    const cities = state
+      ? all.filter((c) => c.region?.toLowerCase() === state.toLowerCase())
+      : all;
+    return { ok: true, cities: cities.slice(0, 10) };
+  } catch {
+    return { ok: false, error: "City search failed — type the city manually." };
+  }
 }

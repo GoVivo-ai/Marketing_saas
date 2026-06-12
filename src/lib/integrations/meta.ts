@@ -351,3 +351,45 @@ export async function fetchAdSetDailyMetrics(
     };
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Targeting search — Meta's own geo database, so picked city names match
+// the ad-set targeting names that sync writes (and actuals join on).
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface GeoCitySuggestion {
+  /** Meta's targeting key for the city. */
+  key: string;
+  name: string;
+  /** Full region/state name, e.g. "Florida". */
+  region: string | null;
+  countryCode: string | null;
+}
+
+/** Type-ahead city search against Meta's ad geo targeting database. */
+export async function searchGeoCities(
+  accessToken: string,
+  q: string,
+  countryCode = "US",
+): Promise<GeoCitySuggestion[]> {
+  type Row = {
+    key: string;
+    name: string;
+    region?: string;
+    country_code?: string;
+  };
+  const params = new URLSearchParams({
+    type: "adgeolocation",
+    location_types: JSON.stringify(["city"]),
+    q,
+    country_code: countryCode,
+    limit: "25",
+  });
+  const page = await graphGet<Row>(`${GRAPH}/search?${params}`, accessToken);
+  return page.data.map((r) => ({
+    key: r.key,
+    name: r.name,
+    region: r.region ?? null,
+    countryCode: r.country_code ?? null,
+  }));
+}

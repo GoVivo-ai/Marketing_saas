@@ -363,6 +363,8 @@ export const planCityTargets = pgTable(
       .references(() => monthlyPlans.id, { onDelete: "cascade" }),
     month: date("month").notNull(),
     cityName: text("city_name").notNull(),
+    /** Full state/region name from Meta's geo db (e.g. "Florida"). */
+    region: text("region"),
     /** Target results (in the workspace's result unit) for this city. */
     targetResults: integer("target_results").notNull().default(0),
   },

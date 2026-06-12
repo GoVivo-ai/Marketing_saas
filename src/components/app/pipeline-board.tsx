@@ -52,11 +52,11 @@ export function PipelineBoard({
   const [selected, setSelected] = useState<PipelineCard | null>(null);
   const [activeCard, setActiveCard] = useState<PipelineCard | null>(null);
   const [, startTransition] = useTransition();
-  // Short press-and-hold to drag (80ms) so it feels snappy; a quick click
-  // still opens the lead detail. The small delay distinguishes a tap from a
-  // drag without making dragging feel laggy.
+  // Near-instant press-and-hold to drag (10ms); a quick click still opens the
+  // lead detail. The tiny delay barely distinguishes a tap from a drag, so
+  // dragging starts almost immediately.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { delay: 80, tolerance: 8 } }),
+    useSensor(PointerSensor, { activationConstraint: { delay: 10, tolerance: 8 } }),
   );
 
   function relocate(b: Board, cardId: string, from: string, to: string): Board {

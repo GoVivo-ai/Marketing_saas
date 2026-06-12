@@ -3,6 +3,7 @@ import { auth, signOut } from "@/lib/auth";
 import { getWorkspaceContext } from "@/lib/data";
 import { canManageWorkspace } from "@/lib/permissions";
 import { AppSidebar } from "@/components/app/sidebar";
+import { ThemeToggle } from "@/components/app/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Toaster } from "@/components/ui/sonner";
@@ -33,6 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b px-6">
+          <ThemeToggle />
           <div className="text-right leading-tight">
             <p className="text-sm font-medium">{session.user.name}</p>
             <p className="text-xs text-muted-foreground">{session.user.email}</p>

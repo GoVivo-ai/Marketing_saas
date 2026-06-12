@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Nunito, Nunito_Sans } from "next/font/google";
+import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
 // Brand typography: Nunito (headings) + Nunito Sans (body). Both variable fonts.
@@ -29,12 +30,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Light theme by default: neutral #f4f4f4 canvas with white cards, navy as
-  // an accent — the navy-on-everything dark theme reads oversaturated. Add the
-  // `dark` class back to <html> to force the dark look.
+  // Day/night themes: day is the neutral #f4f4f4 canvas with white cards and
+  // navy as an accent; night is the full navy brand theme. next-themes toggles
+  // the `dark` class on <html> (suppressHydrationWarning covers that swap).
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${nunito.variable} ${nunitoSans.variable} h-full antialiased`}
     >
       <head>
@@ -50,7 +52,11 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   );
 }

@@ -19,6 +19,7 @@ import {
   CalendarClock,
   Plus,
   X,
+  FilePlus2,
 } from "lucide-react";
 import {
   Card,
@@ -49,7 +50,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { PlannerData, CityPlanRow } from "@/lib/data";
-import { saveMonthlyPlan, deleteMonthlyPlan } from "@/lib/actions/planner";
+import { savePlan, deletePlan } from "@/lib/actions/planner";
 
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -92,16 +93,19 @@ export function PlannerView({
     actualResults: 0,
   };
 
+  // Editable plan name — blank falls back to the month label on save.
+  const [name, setName] = useState(data.plan.name);
   // Global assumptions.
   const [cpl, setCpl] = useState(data.plan.targetCpl ? String(data.plan.targetCpl) : "");
   const [rate, setRate] = useState(
     data.plan.conversionRate ? (data.plan.conversionRate * 100).toFixed(1) : "",
   );
-  // The cities being planned — pre-filled from synced/saved cities, fully
-  // editable: the user adds or removes whichever cities they choose.
-  const [cityList, setCityList] = useState<string[]>(data.cities.map((c) => c.cityName));
+  // The cities being planned. Blank canvas: a fresh draft starts empty; a
+  // loaded plan shows only its own cities. The user adds or removes any.
+  const planCities = data.plan.exists ? data.cities.filter((c) => c.targetResults > 0) : [];
+  const [cityList, setCityList] = useState<string[]>(planCities.map((c) => c.cityName));
   const [targets, setTargets] = useState<Record<string, string>>(
-    Object.fromEntries(data.cities.map((c) => [c.cityName, c.targetResults ? String(c.targetResults) : ""])),
+    Object.fromEntries(planCities.map((c) => [c.cityName, String(c.targetResults)])),
   );
   const [newCity, setNewCity] = useState("");
 
@@ -186,8 +190,10 @@ export function PlannerView({
 
   const save = async () => {
     setSaving(true);
-    const res = await saveMonthlyPlan({
+    const res = await savePlan({
       workspaceId,
+      planId: data.plan.id,
+      name,
       month: data.month,
       budget: totalBudget,
       targetCpl: planCpl,
@@ -200,26 +206,46 @@ export function PlannerView({
     });
     setSaving(false);
     if (res.ok) {
-      toast.success(`Plan saved for ${monthLabel}`);
-      router.refresh();
+      toast.success(`Plan saved — ${name.trim() || monthLabel}`);
+      if (!data.plan.id && res.planId) {
+        // The draft is now a saved plan: keep editing it.
+        router.push(`/planner?plan=${res.planId}`);
+      } else {
+        router.refresh();
+      }
     } else {
       toast.error(res.error ?? "Could not save the plan");
     }
   };
 
   const remove = async () => {
+    if (!data.plan.id) return;
     setDeleting(true);
-    const res = await deleteMonthlyPlan(workspaceId, data.month);
+    const res = await deletePlan(workspaceId, data.plan.id);
     setDeleting(false);
     if (res.ok) {
-      setCpl("");
-      setRate("");
-      setTargets({});
-      toast.success(`Plan deleted for ${monthLabel}`);
-      router.refresh();
+      toast.success(`Plan deleted — ${data.plan.name}`);
+      // Back to a blank canvas for the same month.
+      router.push(`/planner?month=${data.month}`);
     } else {
       toast.error(res.error ?? "Could not delete the plan");
     }
+  };
+
+  // Blank the canvas: leave the open plan, or reset a never-saved draft.
+  const startBlank = () => {
+    if (data.plan.id) {
+      startNav(() => router.push(`/planner?month=${data.month}`));
+      return;
+    }
+    setName("");
+    setCpl("");
+    setRate("");
+    setCityList([]);
+    setTargets({});
+    setNewCity("");
+    setPeriodStart("");
+    setPeriodEnd("");
   };
 
   const opsMax = Math.max(1, ...data.opsFunnel.map((s) => s.count));
@@ -239,7 +265,18 @@ export function PlannerView({
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={`Plan name (e.g. ${monthLabel})`}
+            className="h-9 w-56"
+            aria-label="Plan name"
+          />
+          <Button variant="outline" onClick={startBlank} disabled={navPending}>
+            <FilePlus2 className="mr-2 h-4 w-4" />
+            New plan
+          </Button>
           {data.plan.exists && (
             <Dialog>
               <DialogTrigger
@@ -254,8 +291,8 @@ export function PlannerView({
                 <DialogHeader>
                   <DialogTitle>Delete this plan?</DialogTitle>
                   <DialogDescription>
-                    This removes the saved plan for {monthLabel}. Your executed
-                    actuals are not affected.
+                    This removes “{data.plan.name}”. Your executed actuals are
+                    not affected.
                   </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
@@ -267,7 +304,7 @@ export function PlannerView({
           )}
           <Button onClick={save} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save plan
+            {data.plan.exists ? "Save changes" : "Save plan"}
           </Button>
         </div>
       </div>
@@ -420,7 +457,7 @@ export function PlannerView({
           <CardDescription>
             Choose the cities you&apos;re planning — add or remove any. Set a
             {" "}{label.toLowerCase()} goal and leads/budget size automatically.
-            Synced cities pre-fill with their actuals.
+            Synced cities show their actuals once added.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 px-0">

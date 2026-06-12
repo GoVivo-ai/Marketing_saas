@@ -43,6 +43,8 @@ export interface NormalizedDailyMetrics {
 export interface NormalizedLead {
   externalId: string;
   campaignExternalId?: string;
+  /** Ad set the lead came from — carries the audience-location radius. */
+  adsetExternalId?: string;
   /**
    * Campaign details carried with the lead so the sync can link (and, if
    * needed, create) the campaign even when it's archived/deleted and absent

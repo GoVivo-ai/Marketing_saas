@@ -102,6 +102,24 @@ export interface LeadRow {
   assignedTo: string | null;
   createdAt: Date;
   updatedAt: Date;
+  /** Where the lead sits relative to its ad set's audience radius. */
+  geo: LeadGeo | null;
+}
+
+/** A lead's position relative to the targeted audience radius. */
+export interface LeadGeo {
+  status: "within" | "near" | "outside" | "no_location" | "no_target";
+  /** City the lead reported in the form. */
+  leadCity: string | null;
+  /** City the ad set targeted. */
+  targetCity: string | null;
+  /** Effective radius used for the verdict (includes the default fallback). */
+  radius: number | null;
+  /** False when the ad set had no explicit radius and a default was assumed. */
+  radiusKnown: boolean;
+  unit: "mile" | "kilometer" | null;
+  /** Distance from the lead's city to the target centre, in `unit`. */
+  distance: number | null;
 }
 
 const dateStr = (d: Date) => d.toISOString().slice(0, 10);
@@ -781,11 +799,20 @@ export async function getLeadsPage(
       stageId: schema.leads.stageId,
       stageName: schema.stages.name,
       stageColor: schema.stages.color,
+      leadCity: schema.leads.geoCity,
+      leadLat: schema.leads.geoLat,
+      leadLng: schema.leads.geoLng,
+      targetCity: schema.adsets.cityName,
+      targetLat: schema.adsets.lat,
+      targetLng: schema.adsets.lng,
+      targetRadius: schema.adsets.radius,
+      targetUnit: schema.adsets.distanceUnit,
     })
     .from(schema.leads)
     .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
     .leftJoin(schema.users, eq(schema.leads.assignedToId, schema.users.id))
     .leftJoin(schema.stages, eq(schema.leads.stageId, schema.stages.id))
+    .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
     .where(where)
     .orderBy(desc(schema.leads.createdAt))
     .limit(pageSize)
@@ -810,9 +837,85 @@ export async function getLeadsPage(
     assignedTo: r.assignedTo,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
+    geo: leadGeo(r),
   }));
 
   return { rows: mapped, total, page, pageSize, totalPages };
+}
+
+/** Distance in km between two lat/lng points (haversine). */
+function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+/** Classify a lead against its ad set's audience radius (near = ≤ 1.5× radius). */
+function leadGeo(r: {
+  leadCity: string | null;
+  leadLat: string | null;
+  leadLng: string | null;
+  targetCity: string | null;
+  targetLat: string | null;
+  targetLng: string | null;
+  targetRadius: string | null;
+  targetUnit: string | null;
+}): LeadGeo | null {
+  const hasLead = r.leadLat != null && r.leadLng != null;
+  const hasTarget = r.targetLat != null && r.targetLng != null;
+  const unit = r.targetUnit === "kilometer" ? "kilometer" : "mile";
+
+  if (!hasTarget) {
+    return {
+      status: "no_target",
+      leadCity: r.leadCity,
+      targetCity: r.targetCity,
+      radius: null,
+      radiusKnown: false,
+      unit: null,
+      distance: null,
+    };
+  }
+  if (!hasLead) {
+    return {
+      status: "no_location",
+      leadCity: r.leadCity,
+      targetCity: r.targetCity,
+      radius: r.targetRadius != null ? Number(r.targetRadius) : null,
+      radiusKnown: r.targetRadius != null,
+      unit,
+      distance: null,
+    };
+  }
+
+  const km = haversineKm(
+    Number(r.leadLat),
+    Number(r.leadLng),
+    Number(r.targetLat),
+    Number(r.targetLng),
+  );
+  const distance = unit === "kilometer" ? km : km / 1.60934;
+  const radiusKnown = r.targetRadius != null;
+  // Most city targets have no explicit radius (Meta uses the city default);
+  // fall back to a sensible default so we can still give a verdict.
+  const radius = radiusKnown ? Number(r.targetRadius) : unit === "kilometer" ? 40 : 25;
+  const status =
+    distance <= radius ? "within" : distance <= radius * 1.5 ? "near" : "outside";
+
+  return {
+    status,
+    leadCity: r.leadCity,
+    targetCity: r.targetCity,
+    radius,
+    radiusKnown,
+    unit,
+    distance: Math.round(distance * 10) / 10,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────

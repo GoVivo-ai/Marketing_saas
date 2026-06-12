@@ -372,6 +372,14 @@ export const leads = pgTable(
     name: text("name"),
     email: text("email"),
     phone: text("phone"),
+    /** The ad set the lead came from — carries the audience-location radius. */
+    adsetId: text("adset_id").references(() => adsets.id, {
+      onDelete: "set null",
+    }),
+    /** City the lead reported in the form (raw), and its geocoded position. */
+    geoCity: text("geo_city"),
+    geoLat: numeric("geo_lat", { precision: 9, scale: 6 }),
+    geoLng: numeric("geo_lng", { precision: 9, scale: 6 }),
     /** Raw form answers exactly as the platform delivered them. */
     formData: jsonb("form_data"),
     status: leadStatusEnum("status").notNull().default("new"),
@@ -395,6 +403,17 @@ export const leads = pgTable(
     index("lead_workspace_status_idx").on(t.workspaceId, t.status),
   ],
 );
+
+/**
+ * Geocoding cache — maps a "City, Region, Country" query to coordinates so we
+ * geocode each distinct place once (OpenStreetMap Nominatim is rate-limited).
+ */
+export const geocache = pgTable("geocache", {
+  query: text("query").primaryKey(),
+  lat: numeric("lat", { precision: 9, scale: 6 }).notNull(),
+  lng: numeric("lng", { precision: 9, scale: 6 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 
 /** Append-only activity log per lead: notes, status changes, calls. */
 export const leadEvents = pgTable("lead_events", {

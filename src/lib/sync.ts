@@ -2,7 +2,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { getConnector } from "@/lib/integrations";
 import { listAdSets, fetchAdSetDailyMetrics } from "@/lib/integrations/meta";
-import { geocodeCity } from "@/lib/integrations/geocode";
+import { geocodeCity, geocodeCityCached } from "@/lib/integrations/geocode";
 import { decryptSecret } from "@/lib/crypto";
 import { getSecret } from "@/lib/settings";
 import { scoreLead } from "@/lib/ai/lead-scoring";
@@ -22,6 +22,19 @@ export interface SyncStats {
 }
 
 const dateStr = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Pull the lead's self-reported city from its form answers, if present. */
+function findCity(formData: Record<string, unknown> | null | undefined): string | null {
+  if (!formData) return null;
+  for (const [key, value] of Object.entries(formData)) {
+    const k = key.toLowerCase();
+    if ((k === "city" || k === "ciudad" || k === "town" || /\bcity\b|ciudad/.test(k)) && value) {
+      const v = String(value).trim();
+      if (v) return v;
+    }
+  }
+  return null;
+}
 
 /**
  * Pulls campaigns, daily metrics and leads for one connection and upserts
@@ -133,6 +146,12 @@ export async function syncConnection(
   // we only hit Nominatim when an ad set is new or its city changed.
   let adsetCount = 0;
   let adsetMetricRows = 0;
+  // External ad-set id → internal id, reused below to attribute leads to the
+  // ad set whose audience-location radius they fall under.
+  let adsetIdByExternal = new Map<string, string>();
+  // External ad-set id → its city region/country, used as a hint when
+  // geocoding the lead's (often bare) city name.
+  const adsetGeoByExternal = new Map<string, { region?: string; country?: string }>();
   if (conn.platform === "meta") {
     const prevAdsets = await db()
       .select({
@@ -149,6 +168,11 @@ export async function syncConnection(
     for (const a of adsets) {
       const campaignId = campaignIdByExternal.get(a.campaignExternalId);
       if (!campaignId) continue; // ad set's campaign isn't tracked — skip
+      if (a.city)
+        adsetGeoByExternal.set(a.externalId, {
+          region: a.city.region,
+          country: a.city.country,
+        });
 
       // Resolve coordinates: reuse the stored pin when the city is unchanged,
       // otherwise geocode the (new) city. Numeric columns come back as strings.
@@ -200,7 +224,7 @@ export async function syncConnection(
       .select({ id: schema.adsets.id, externalId: schema.adsets.externalId })
       .from(schema.adsets)
       .where(eq(schema.adsets.connectionId, conn.id));
-    const adsetIdByExternal = new Map(adsetRows.map((r) => [r.externalId, r.id]));
+    adsetIdByExternal = new Map(adsetRows.map((r) => [r.externalId, r.id]));
 
     const adsetMetrics = await fetchAdSetDailyMetrics(creds, range);
     for (const m of adsetMetrics) {
@@ -285,11 +309,32 @@ export async function syncConnection(
         }
       }
 
+      // Attribute the lead to its ad set (carries the radius) and geocode the
+      // city it reported in the form so we can flag in/near/outside the radius.
+      const adsetId = l.adsetExternalId
+        ? adsetIdByExternal.get(l.adsetExternalId) ?? null
+        : null;
+      const cityRaw = findCity(l.formData);
+      let geoLat: string | null = null;
+      let geoLng: string | null = null;
+      if (cityRaw) {
+        const hint = l.adsetExternalId ? adsetGeoByExternal.get(l.adsetExternalId) : undefined;
+        const geo = await geocodeCityCached(cityRaw, hint?.region, hint?.country);
+        if (geo) {
+          geoLat = geo.lat.toFixed(6);
+          geoLng = geo.lng.toFixed(6);
+        }
+      }
+
       const [inserted] = await db()
         .insert(schema.leads)
         .values({
           workspaceId: conn.workspaceId,
           campaignId,
+          adsetId,
+          geoCity: cityRaw,
+          geoLat,
+          geoLng,
           platform: conn.platform,
           externalId: l.externalId,
           name: l.name,
@@ -301,6 +346,8 @@ export async function syncConnection(
         })
         // On re-sync, backfill the campaign for leads that were stored without
         // one — but never clobber a campaign already set, the stage, or score.
+        // Ad-set attribution + geocoded location backfill too (keep old if the
+        // new value is null, e.g. a geocode miss).
         .onConflictDoUpdate({
           target: [
             schema.leads.workspaceId,
@@ -309,6 +356,10 @@ export async function syncConnection(
           ],
           set: {
             campaignId: sql`coalesce(${schema.leads.campaignId}, excluded.campaign_id)`,
+            adsetId: sql`coalesce(excluded.adset_id, ${schema.leads.adsetId})`,
+            geoCity: sql`coalesce(excluded.geo_city, ${schema.leads.geoCity})`,
+            geoLat: sql`coalesce(excluded.geo_lat, ${schema.leads.geoLat})`,
+            geoLng: sql`coalesce(excluded.geo_lng, ${schema.leads.geoLng})`,
           },
         })
         // xmax = 0 marks a fresh INSERT (vs. an ON CONFLICT update), so we

@@ -113,11 +113,17 @@ export function PipelineBoard({
     sum += count[nonLost[i].id] ?? 0;
     reached.set(nonLost[i].id, sum);
   }
-  const conversionAfter = (stage: Stage, next?: Stage): number | null => {
-    if (!next || stage.kind === "lost" || next.kind === "lost") return null;
-    const from = reached.get(stage.id) ?? 0;
+  const conversionFromPrev = (stage: Stage, prev?: Stage): number | null => {
+    if (!prev || stage.kind === "lost" || prev.kind === "lost") return null;
+    const from = reached.get(prev.id) ?? 0;
     if (from <= 0) return null;
-    return (reached.get(next.id) ?? 0) / from;
+    return (reached.get(stage.id) ?? 0) / from;
+  };
+
+  // Small rates matter here (e.g. 0.4% to Won) — keep a decimal under 10%.
+  const fmtPct = (frac: number) => {
+    const v = frac * 100;
+    return v >= 10 || v === 0 ? `${Math.round(v)}%` : `${v.toFixed(1)}%`;
   };
 
   const exportCsv = () => {
@@ -130,9 +136,7 @@ export function PipelineBoard({
       const lost = s.kind === "lost";
       const r = lost ? null : (reached.get(s.id) ?? 0);
       const conv =
-        !lost && prev != null && prev > 0 && r != null
-          ? `${Math.round((r / prev) * 100)}%`
-          : "";
+        !lost && prev != null && prev > 0 && r != null ? fmtPct(r / prev) : "";
       rows.push([s.name, s.kind, String(count[s.id] ?? 0), r != null ? String(r) : "", conv]);
       if (!lost && r != null) prev = r;
     }
@@ -167,30 +171,19 @@ export function PipelineBoard({
           </div>
         </div>
 
-        <div className="board-scroll flex min-h-0 min-w-0 flex-1 gap-3 overflow-x-auto pb-2">
+        <div className="board-scroll flex min-h-0 min-w-0 flex-1 gap-4 overflow-x-auto pb-2">
           {stages.map((stage, i) => {
-            const conv = conversionAfter(stage, stages[i + 1]);
+            const conv = conversionFromPrev(stage, stages[i - 1]);
             return (
-              <div key={stage.id} className="flex h-full min-w-0 shrink-0 gap-3">
-                <StageColumn
-                  stage={stage}
-                  cards={board[stage.id] ?? []}
-                  total={count[stage.id] ?? 0}
-                  cap={cap}
-                  onCardClick={setSelected}
-                />
-                {conv != null && (
-                  <div className="flex shrink-0 flex-col items-center justify-start pt-14">
-                    <span
-                      className="flex items-center gap-0.5 rounded-full border bg-card px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground shadow-sm"
-                      title="Of the leads that reached this stage, how many got to the next one (or beyond)"
-                    >
-                      {Math.round(conv * 100)}%
-                      <ChevronRight className="h-3 w-3" />
-                    </span>
-                  </div>
-                )}
-              </div>
+              <StageColumn
+                key={stage.id}
+                stage={stage}
+                cards={board[stage.id] ?? []}
+                total={count[stage.id] ?? 0}
+                cap={cap}
+                conversion={conv != null ? fmtPct(conv) : null}
+                onCardClick={setSelected}
+              />
             );
           })}
         </div>
@@ -220,12 +213,15 @@ function StageColumn({
   cards,
   total,
   cap,
+  conversion,
   onCardClick,
 }: {
   stage: Stage;
   cards: PipelineCard[];
   total: number;
   cap: number;
+  /** Formatted conversion rate from the previous stage (null on the first). */
+  conversion: string | null;
   onCardClick: (c: PipelineCard) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
@@ -237,15 +233,26 @@ function StageColumn({
       }`}
     >
       <div className="h-1 w-full shrink-0" style={{ backgroundColor: accent }} />
-      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5">
-        <span
-          className="h-2.5 w-2.5 rounded-full"
-          style={{ backgroundColor: accent }}
-        />
-        <span className="text-sm font-semibold">{stage.name}</span>
-        <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-          {total}
-        </span>
+      <div className="shrink-0 border-b px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <span
+            className="h-2.5 w-2.5 rounded-full"
+            style={{ backgroundColor: accent }}
+          />
+          <span className="text-sm font-semibold">{stage.name}</span>
+          <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            {total}
+          </span>
+        </div>
+        {conversion && (
+          <p
+            className="mt-0.5 pl-[18px] text-[11px] tabular-nums text-muted-foreground"
+            title="Of the leads that reached the previous stage, how many got here (or beyond)"
+          >
+            <ChevronRight className="mr-0.5 inline h-3 w-3" />
+            {conversion} from previous stage
+          </p>
+        )}
       </div>
       <div
         ref={setNodeRef}

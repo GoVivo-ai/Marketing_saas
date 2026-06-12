@@ -16,18 +16,31 @@ interface GraphPage<T> {
   paging?: { next?: string };
 }
 
+// Meta's Graph API regularly returns transient 500s (code 2,
+// is_transient:true — "An unexpected error has occurred. Please retry") and
+// 429 rate limits. Both are safe to retry; back off and try a few times before
+// surfacing the failure to the caller.
+const MAX_RETRIES = 4;
+
 async function graphGet<T>(url: string, token: string): Promise<GraphPage<T>> {
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    // Insights are not real-time; let Next cache identical calls briefly.
-    next: { revalidate: 300 },
-  });
-  if (!res.ok) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      // Insights are not real-time; let Next cache identical calls briefly.
+      next: { revalidate: 300 },
+    });
+    if (res.ok) return res.json();
+
     const body = await res.text();
     const retryable = res.status === 429 || res.status >= 500;
+    if (retryable && attempt < MAX_RETRIES) {
+      // Exponential backoff with jitter: ~0.5s, 1s, 2s, 4s.
+      const delay = 500 * 2 ** attempt + Math.floor(Math.random() * 250);
+      await new Promise((r) => setTimeout(r, delay));
+      continue;
+    }
     throw new ConnectorError("meta", `${res.status} ${body.slice(0, 300)}`, retryable);
   }
-  return res.json();
 }
 
 /** Follows Graph API cursor pagination until exhausted. */

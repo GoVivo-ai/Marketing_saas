@@ -13,6 +13,8 @@ export interface WorkspaceInfo {
   name: string;
   slug: string;
   accentColor: string | null;
+  /** Brand logo as a data URL (shown white next to the Vivo logo). */
+  logoUrl: string | null;
   /** Has at least one active platform connection. */
   connected: boolean;
 }
@@ -139,6 +141,7 @@ export async function getWorkspaceContext(): Promise<{
             name: schema.workspaces.name,
             slug: schema.workspaces.slug,
             accentColor: schema.workspaces.accentColor,
+            logoUrl: schema.workspaces.logoUrl,
           })
           .from(schema.workspaces)
           .innerJoin(
@@ -154,6 +157,7 @@ export async function getWorkspaceContext(): Promise<{
         name: schema.workspaces.name,
         slug: schema.workspaces.slug,
         accentColor: schema.workspaces.accentColor,
+        logoUrl: schema.workspaces.logoUrl,
       })
       .from(schema.workspaces)
       .where(eq(schema.workspaces.isActive, true));

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import {
   CircleCheck,
   Copy,
@@ -15,6 +15,8 @@ import {
   deleteOrgUser,
   resetOrgUserPassword,
   updateWorkspaceProfile,
+  uploadWorkspaceLogo,
+  removeWorkspaceLogo,
   type OrgActionState,
 } from "@/lib/actions/org";
 import { Button } from "@/components/ui/button";
@@ -236,5 +238,79 @@ export function CompanyProfileForm({
         Save profile
       </Button>
     </form>
+  );
+}
+
+/**
+ * Brand logo uploader. The logo is rendered white next to the Vivo logo in the
+ * sidebar, so the preview sits on a dark swatch to show how it will look.
+ */
+export function WorkspaceLogoForm({
+  workspaceId,
+  logoUrl,
+}: {
+  workspaceId: string;
+  logoUrl: string | null;
+}) {
+  const [state, action, pending] = useActionState(uploadWorkspaceLogo, initial);
+  const [removeState, removeAction, removing] = useActionState(
+    removeWorkspaceLogo,
+    initial,
+  );
+  const [preview, setPreview] = useState<string | null>(null);
+  const shown = preview ?? logoUrl;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-4">
+        <div className="flex h-16 w-32 shrink-0 items-center justify-center rounded-lg border bg-[#011640]">
+          {shown ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={shown}
+              alt="Logo preview"
+              className="h-9 w-auto max-w-[104px] object-contain"
+              style={{ filter: "brightness(0) invert(1)" }}
+            />
+          ) : (
+            <span className="text-xs text-muted-foreground">No logo</span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Shown in white next to the Vivo logo. PNG, JPG, WEBP, GIF or SVG · max
+          256 KB.
+        </p>
+      </div>
+
+      <form action={action} className="flex flex-wrap items-center gap-3">
+        <input type="hidden" name="workspaceId" value={workspaceId} />
+        <Input
+          type="file"
+          name="logo"
+          accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            setPreview(f ? URL.createObjectURL(f) : null);
+          }}
+          className="max-w-xs"
+        />
+        <Button type="submit" disabled={pending}>
+          {pending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+          Upload logo
+        </Button>
+        {logoUrl && (
+          <Button
+            type="submit"
+            formAction={removeAction}
+            variant="outline"
+            disabled={removing}
+          >
+            {removing && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+            Remove
+          </Button>
+        )}
+      </form>
+      <Feedback state={state.error || state.success ? state : removeState} />
+    </div>
   );
 }

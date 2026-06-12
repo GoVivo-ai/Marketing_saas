@@ -175,3 +175,58 @@ export async function updateWorkspaceProfile(
   revalidatePath("/", "layout");
   return { success: "Company profile saved." };
 }
+
+// The logo is stored inline as a data URL (it rides in the layout RSC on every
+// page), so keep it small and restrict to image types.
+const LOGO_MAX_BYTES = 256 * 1024;
+const LOGO_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "image/svg+xml",
+];
+
+/** Stores the workspace's brand logo (shown white next to the Vivo logo). */
+export async function uploadWorkspaceLogo(
+  _prev: OrgActionState,
+  formData: FormData,
+): Promise<OrgActionState> {
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  if (!(await canManageWorkspace(workspaceId)))
+    return { error: "You don't have permission to manage this organization." };
+
+  const file = formData.get("logo");
+  if (!(file instanceof File) || file.size === 0)
+    return { error: "Choose an image file." };
+  if (!LOGO_TYPES.includes(file.type))
+    return { error: "Logo must be a PNG, JPG, WEBP, GIF or SVG." };
+  if (file.size > LOGO_MAX_BYTES)
+    return { error: "Logo is too large — keep it under 256 KB." };
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  const dataUrl = `data:${file.type};base64,${buf.toString("base64")}`;
+  await db()
+    .update(schema.workspaces)
+    .set({ logoUrl: dataUrl })
+    .where(eq(schema.workspaces.id, workspaceId));
+  revalidatePath("/", "layout");
+  return { success: "Logo updated." };
+}
+
+/** Clears the workspace's brand logo. */
+export async function removeWorkspaceLogo(
+  _prev: OrgActionState,
+  formData: FormData,
+): Promise<OrgActionState> {
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  if (!(await canManageWorkspace(workspaceId)))
+    return { error: "You don't have permission to manage this organization." };
+
+  await db()
+    .update(schema.workspaces)
+    .set({ logoUrl: null })
+    .where(eq(schema.workspaces.id, workspaceId));
+  revalidatePath("/", "layout");
+  return { success: "Logo removed." };
+}

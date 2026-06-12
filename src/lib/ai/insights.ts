@@ -16,7 +16,12 @@ export const insightSchema = z.object({
         body: z
           .string()
           .describe(
-            "2-4 sentences. Reference concrete numbers and name the campaign/city/stage. End with one actionable next step.",
+            "2-4 sentences of analysis. Reference concrete numbers and name the campaign/city/stage. Do NOT include the next step here.",
+          ),
+        action: z
+          .string()
+          .describe(
+            "The single concrete next step, imperative and specific (e.g. 'Move ~$50/day from Redondo Beach to Paramount'). Max 120 chars.",
           ),
       }),
     )

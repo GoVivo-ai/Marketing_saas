@@ -248,6 +248,7 @@ export async function POST() {
         severity: i.severity,
         title: i.title,
         body: i.body,
+        data: { action: i.action },
       })),
     );
 

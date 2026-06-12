@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Megaphone,
+  Target,
   Inbox,
   Columns3,
   Sparkles,
@@ -20,6 +21,7 @@ import type { WorkspaceInfo } from "@/lib/data";
 
 const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
+  { href: "/planner", label: "Planner", icon: Target },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/leads", label: "Leads", icon: Inbox },
   { href: "/leads/pipeline", label: "Pipeline", icon: Columns3 },

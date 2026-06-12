@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -26,6 +26,7 @@ export function WorkspaceSwitcher({
   activeId: string | null;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [pending, startTransition] = useTransition();
   const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0];
 
@@ -35,7 +36,14 @@ export function WorkspaceSwitcher({
   // server action, so it keeps working across deployments (no skew errors).
   const select = (slug: string) => {
     document.cookie = `ws=${slug}; path=/; max-age=31536000; samesite=lax`;
-    startTransition(() => router.refresh());
+    // A deep link like /campaigns/<id> is scoped to the previous client; that
+    // id won't exist under the new one, so refreshing in place would 404. Send
+    // the user to the list page instead. Other routes just refresh in place.
+    const target = /^\/campaigns\/[^/]+$/.test(pathname) ? "/campaigns" : null;
+    startTransition(() => {
+      if (target) router.push(target);
+      router.refresh();
+    });
   };
 
   return (

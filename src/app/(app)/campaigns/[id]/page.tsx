@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import {
   Card,
@@ -48,8 +48,10 @@ export default async function CampaignDetailPage({
   const { active } = await getWorkspaceContext();
   if (!active) notFound();
 
+  // Missing campaign usually means a stale deep link from another client
+  // (e.g. after switching workspaces) — send them to the list, not a 404.
   const campaign = await getCampaignById(active.id, id);
-  if (!campaign) notFound();
+  if (!campaign) redirect("/campaigns");
 
   const adsets = await getAdSetRows(active.id, id, {
     start: resolved.start!,

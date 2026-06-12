@@ -1,5 +1,6 @@
 "use server";
 
+import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { canManageWorkspace } from "@/lib/permissions";
@@ -47,6 +48,31 @@ export async function saveMonthlyPlan(
       target: [schema.monthlyPlans.workspaceId, schema.monthlyPlans.month],
       set: { ...fields, updatedAt: new Date() },
     });
+
+  revalidatePath("/planner");
+  return { ok: true };
+}
+
+/** Deletes the saved plan for a workspace + month. Does not touch actuals. */
+export async function deleteMonthlyPlan(
+  workspaceId: string,
+  month: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!(await canManageWorkspace(workspaceId))) {
+    return { ok: false, error: "You don't have permission to edit this plan." };
+  }
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    return { ok: false, error: "Invalid month." };
+  }
+
+  await db()
+    .delete(schema.monthlyPlans)
+    .where(
+      and(
+        eq(schema.monthlyPlans.workspaceId, workspaceId),
+        eq(schema.monthlyPlans.month, `${month}-01`),
+      ),
+    );
 
   revalidatePath("/planner");
   return { ok: true };

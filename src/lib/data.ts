@@ -649,6 +649,80 @@ export async function getPlannerData(
   return { month: monthKey, plan, actuals };
 }
 
+/** One saved month: its plan headline figures next to what was executed. */
+export interface PlannerHistoryRow {
+  month: string; // "YYYY-MM"
+  budget: number;
+  targetLeads: number;
+  targetSales: number;
+  targetCpl: number;
+  spend: number;
+  leads: number;
+  sales: number;
+  cpl: number;
+}
+
+/** Every saved plan for a workspace with its actuals, newest month first. */
+export async function getPlannerHistory(
+  workspaceId: string,
+): Promise<PlannerHistoryRow[]> {
+  const plans = await db()
+    .select()
+    .from(schema.monthlyPlans)
+    .where(eq(schema.monthlyPlans.workspaceId, workspaceId))
+    .orderBy(desc(schema.monthlyPlans.month));
+  if (!plans.length) return [];
+
+  // Actuals grouped by month — two queries cover every saved month at once.
+  const [spendRows, salesRows] = await Promise.all([
+    db()
+      .select({
+        m: sql<string>`to_char(${schema.metricsDaily.date}, 'YYYY-MM')`,
+        spend: sql<string>`coalesce(sum(${schema.metricsDaily.spend}), 0)`,
+        leads: sql<string>`coalesce(sum(${schema.metricsDaily.leads}), 0)`,
+      })
+      .from(schema.metricsDaily)
+      .where(eq(schema.metricsDaily.workspaceId, workspaceId))
+      .groupBy(sql`to_char(${schema.metricsDaily.date}, 'YYYY-MM')`),
+    db()
+      .select({
+        m: sql<string>`to_char(${schema.leads.createdAt}, 'YYYY-MM')`,
+        n: sql<string>`count(*)`,
+      })
+      .from(schema.leads)
+      .innerJoin(schema.stages, eq(schema.leads.stageId, schema.stages.id))
+      .where(
+        and(
+          eq(schema.leads.workspaceId, workspaceId),
+          eq(schema.stages.kind, "won"),
+        ),
+      )
+      .groupBy(sql`to_char(${schema.leads.createdAt}, 'YYYY-MM')`),
+  ]);
+
+  const spendByMonth = new Map(spendRows.map((r) => [r.m, r]));
+  const salesByMonth = new Map(salesRows.map((r) => [r.m, Number(r.n)]));
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  return plans.map((p) => {
+    const month = String(p.month).slice(0, 7);
+    const sp = spendByMonth.get(month);
+    const spend = round2(Number(sp?.spend ?? 0));
+    const leads = Number(sp?.leads ?? 0);
+    return {
+      month,
+      budget: Number(p.budget),
+      targetLeads: p.targetLeads,
+      targetSales: p.targetSales,
+      targetCpl: Number(p.targetCpl),
+      spend,
+      leads,
+      sales: salesByMonth.get(month) ?? 0,
+      cpl: leads > 0 ? round2(spend / leads) : 0,
+    };
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Leads
 // ─────────────────────────────────────────────────────────────────────────

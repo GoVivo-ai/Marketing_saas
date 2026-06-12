@@ -16,6 +16,7 @@ import {
   Target,
   Receipt,
   ArrowRight,
+  Trash2,
 } from "lucide-react";
 import {
   Card,
@@ -26,9 +27,19 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { PlannerData } from "@/lib/data";
-import { saveMonthlyPlan } from "@/lib/actions/planner";
+import { saveMonthlyPlan, deleteMonthlyPlan } from "@/lib/actions/planner";
 
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -59,6 +70,7 @@ export function PlannerView({
   const router = useRouter();
   const [navPending, startNav] = useTransition();
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Linked calculator state. Initialised from the saved plan; derived fields
   // recompute as you edit, so budget ↔ CPL ↔ leads ↔ rate ↔ sales stay in sync.
@@ -135,6 +147,24 @@ export function PlannerView({
     }
   };
 
+  const remove = async () => {
+    setDeleting(true);
+    const res = await deleteMonthlyPlan(workspaceId, data.month);
+    setDeleting(false);
+    if (res.ok) {
+      // Clear the calculator so the deleted month reads as empty.
+      setBudget("");
+      setCpl("");
+      setLeads("");
+      setRate("");
+      setSales("");
+      toast.success(`Plan deleted for ${monthLabel}`);
+      router.refresh();
+    } else {
+      toast.error(res.error ?? "Could not delete the plan");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* ---------- Month nav + save ---------- */}
@@ -150,10 +180,47 @@ export function PlannerView({
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <Button onClick={save} disabled={saving}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Save plan
-        </Button>
+        <div className="flex items-center gap-2">
+          {data.plan.exists && (
+            <Dialog>
+              <DialogTrigger
+                render={
+                  <Button variant="destructive" disabled={deleting}>
+                    {deleting ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="mr-2 h-4 w-4" />
+                    )}
+                    Delete
+                  </Button>
+                }
+              />
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Delete this plan?</DialogTitle>
+                  <DialogDescription>
+                    This removes the saved plan for {monthLabel}. Your executed
+                    actuals are not affected.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <DialogClose render={<Button variant="outline">Cancel</Button>} />
+                  <DialogClose
+                    render={
+                      <Button variant="destructive" onClick={remove}>
+                        Delete plan
+                      </Button>
+                    }
+                  />
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+          <Button onClick={save} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save plan
+          </Button>
+        </div>
       </div>
 
       {/* ---------- Budget hero ---------- */}

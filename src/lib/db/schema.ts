@@ -128,6 +128,12 @@ export const workspaces = pgTable("workspaces", {
   industry: text("industry"),
   logoUrl: text("logo_url"),
   /**
+   * What a "conversion/result" is called for this client — the business
+   * outcome leads convert into (e.g. "Sales", "Hires", "Appointments").
+   * Generic so the Planner isn't hard-wired to one campaign type.
+   */
+  resultLabel: text("result_label").notNull().default("Sales"),
+  /**
    * Free-text criteria the client uses to define a good lead (e.g. budget,
    * location, role). Fed to the AI lead-scoring engine so scores reflect
    * what actually matters for this client's business.
@@ -329,6 +335,28 @@ export const monthlyPlans = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("monthly_plan_unique").on(t.workspaceId, t.month)],
+);
+
+/**
+ * Per-city goal within a monthly plan — one row per targeted city. The city is
+ * keyed by name (ad sets churn month to month, cities persist). Leads and
+ * budget per city are derived from this goal + the plan's CPL & conversion.
+ */
+export const planCityTargets = pgTable(
+  "plan_city_targets",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    month: date("month").notNull(),
+    cityName: text("city_name").notNull(),
+    /** Target results (in the workspace's result unit) for this city. */
+    targetResults: integer("target_results").notNull().default(0),
+  },
+  (t) => [
+    uniqueIndex("plan_city_unique").on(t.workspaceId, t.month, t.cityName),
+  ],
 );
 
 // ─────────────────────────────────────────────────────────────────────────

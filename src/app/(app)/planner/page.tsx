@@ -27,6 +27,13 @@ export default async function PlannerPage({
   const monthStart = parseMonth(month);
   const { active } = await getWorkspaceContext();
 
+  const loaded = active
+    ? await Promise.all([
+        getPlannerData(active.id, monthStart),
+        getPlannerHistory(active.id),
+      ])
+    : null;
+
   return (
     <div className="space-y-6">
       <div>
@@ -34,18 +41,15 @@ export default async function PlannerPage({
           {active ? `${active.name} — Planner` : "Planner"}
         </h1>
         <p className="text-sm text-muted-foreground">
-          Plan the month&apos;s funnel — budget, CPL, conversion and targets —
-          then compare it against what was actually executed.
+          Plan the month by city — goals, leads and budget — then compare it
+          against what was actually executed.
         </p>
       </div>
 
-      {active ? (
+      {active && loaded ? (
         <>
-          <PlannerView
-            workspaceId={active.id}
-            data={await getPlannerData(active.id, monthStart)}
-          />
-          <PlannerHistory rows={await getPlannerHistory(active.id)} />
+          <PlannerView workspaceId={active.id} data={loaded[0]} />
+          <PlannerHistory rows={loaded[1]} resultLabel={loaded[0].resultLabel} />
         </>
       ) : (
         <p className="py-8 text-center text-sm text-muted-foreground">

@@ -201,11 +201,13 @@ export function CompanyProfileForm({
   name,
   industry,
   qualificationCriteria,
+  resultLabel,
 }: {
   workspaceId: string;
   name: string;
   industry: string;
   qualificationCriteria: string;
+  resultLabel: string;
 }) {
   const [state, action, pending] = useActionState(updateWorkspaceProfile, initial);
   return (
@@ -220,6 +222,19 @@ export function CompanyProfileForm({
           <Label htmlFor="cp-industry">Industry</Label>
           <Input id="cp-industry" name="industry" defaultValue={industry} placeholder="Logistics" />
         </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="cp-result">Conversion goal name</Label>
+        <Input
+          id="cp-result"
+          name="resultLabel"
+          defaultValue={resultLabel}
+          placeholder="Sales"
+        />
+        <p className="text-xs text-muted-foreground">
+          What a closed result is called for this client (e.g. Sales, Hires,
+          Appointments). Used across the Planner.
+        </p>
       </div>
       <div className="space-y-2">
         <Label htmlFor="cp-criteria">Lead qualification criteria</Label>

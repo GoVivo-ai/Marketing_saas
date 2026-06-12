@@ -577,11 +577,24 @@ export interface MonthActuals {
   convRate: number;
 }
 
+/** One targeted city: its saved goal and what it actually executed. */
+export interface CityPlanRow {
+  cityName: string;
+  targetResults: number;
+  actualSpend: number;
+  actualLeads: number;
+  actualResults: number;
+}
+
 export interface PlannerData {
   /** Planned month as "YYYY-MM". */
   month: string;
+  /** What a "result" is called for this client (e.g. Sales, Hires). */
+  resultLabel: string;
   plan: MonthlyPlanData;
   actuals: MonthActuals;
+  /** Per-city goals + actuals (cities come from the workspace's ad sets). */
+  cities: CityPlanRow[];
 }
 
 /** Inclusive day bounds + exclusive next-month start for a given month. */
@@ -602,7 +615,8 @@ export async function getPlannerData(
   const endStr = dateStr(end);
   const monthKey = startStr.slice(0, 7);
 
-  const [planRow, metricRow, salesRow] = await Promise.all([
+  const [planRow, metricRow, salesRow, wsRow, cityTargets, citySpend, cityResults] =
+    await Promise.all([
     db()
       .select()
       .from(schema.monthlyPlans)
@@ -638,7 +652,96 @@ export async function getPlannerData(
           lt(schema.leads.createdAt, nextMonth),
         ),
       ),
+    // Workspace result label.
+    db()
+      .select({ resultLabel: schema.workspaces.resultLabel })
+      .from(schema.workspaces)
+      .where(eq(schema.workspaces.id, workspaceId))
+      .limit(1),
+    // Saved per-city goals for the month.
+    db()
+      .select({
+        cityName: schema.planCityTargets.cityName,
+        targetResults: schema.planCityTargets.targetResults,
+      })
+      .from(schema.planCityTargets)
+      .where(
+        and(
+          eq(schema.planCityTargets.workspaceId, workspaceId),
+          eq(schema.planCityTargets.month, startStr),
+        ),
+      ),
+    // Actual spend & leads per city (via ad sets) for the month.
+    db()
+      .select({
+        cityName: schema.adsets.cityName,
+        spend: sql<string>`coalesce(sum(${schema.adsetMetricsDaily.spend}), 0)`,
+        leads: sql<string>`coalesce(sum(${schema.adsetMetricsDaily.leads}), 0)`,
+      })
+      .from(schema.adsetMetricsDaily)
+      .innerJoin(schema.adsets, eq(schema.adsetMetricsDaily.adsetId, schema.adsets.id))
+      .where(
+        and(
+          eq(schema.adsetMetricsDaily.workspaceId, workspaceId),
+          gte(schema.adsetMetricsDaily.date, startStr),
+          lte(schema.adsetMetricsDaily.date, endStr),
+        ),
+      )
+      .groupBy(schema.adsets.cityName),
+    // Actual results (won leads) per city for the month.
+    db()
+      .select({
+        cityName: schema.adsets.cityName,
+        n: sql<string>`count(*)`,
+      })
+      .from(schema.leads)
+      .innerJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+      .innerJoin(schema.stages, eq(schema.leads.stageId, schema.stages.id))
+      .where(
+        and(
+          eq(schema.leads.workspaceId, workspaceId),
+          eq(schema.stages.kind, "won"),
+          gte(schema.leads.createdAt, start),
+          lt(schema.leads.createdAt, nextMonth),
+        ),
+      )
+      .groupBy(schema.adsets.cityName),
   ]);
+
+  // Build the per-city rows: union of cities that have a saved goal, spend or
+  // results this month, keyed case-insensitively but displayed in proper case.
+  const cityMap = new Map<
+    string,
+    { cityName: string; targetResults: number; actualSpend: number; actualLeads: number; actualResults: number }
+  >();
+  const upsertCity = (name: string | null) => {
+    if (!name) return null;
+    const key = name.toLowerCase();
+    let row = cityMap.get(key);
+    if (!row) {
+      row = { cityName: name, targetResults: 0, actualSpend: 0, actualLeads: 0, actualResults: 0 };
+      cityMap.set(key, row);
+    }
+    return row;
+  };
+  for (const t of cityTargets) {
+    const row = upsertCity(t.cityName);
+    if (row) row.targetResults = t.targetResults;
+  }
+  for (const s of citySpend) {
+    const row = upsertCity(s.cityName);
+    if (row) {
+      row.actualSpend = Math.round(Number(s.spend) * 100) / 100;
+      row.actualLeads = Number(s.leads);
+    }
+  }
+  for (const c of cityResults) {
+    const row = upsertCity(c.cityName);
+    if (row) row.actualResults = Number(c.n);
+  }
+  const cities = [...cityMap.values()].sort(
+    (a, b) => b.targetResults - a.targetResults || a.cityName.localeCompare(b.cityName),
+  );
 
   const p = planRow[0];
   const plan: MonthlyPlanData = {
@@ -664,7 +767,13 @@ export async function getPlannerData(
     convRate: leads > 0 ? sales / leads : 0,
   };
 
-  return { month: monthKey, plan, actuals };
+  return {
+    month: monthKey,
+    resultLabel: wsRow[0]?.resultLabel ?? "Sales",
+    plan,
+    actuals,
+    cities,
+  };
 }
 
 /** One saved month: its plan headline figures next to what was executed. */

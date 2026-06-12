@@ -11,12 +11,11 @@ import {
   Loader2,
   Wallet,
   DollarSign,
-  Users,
   Percent,
-  Target,
   Receipt,
   ArrowRight,
   Trash2,
+  MapPin,
 } from "lucide-react";
 import {
   Card,
@@ -25,6 +24,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,7 +45,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import type { PlannerData } from "@/lib/data";
+import type { PlannerData, CityPlanRow } from "@/lib/data";
 import { saveMonthlyPlan, deleteMonthlyPlan } from "@/lib/actions/planner";
 
 const usd = (n: number) =>
@@ -48,13 +55,11 @@ const usd2 = (n: number) =>
 const int = (n: number) => Math.round(n).toLocaleString("en-US");
 const pct = (frac: number) => `${(frac * 100).toFixed(1)}%`;
 
-const num = (s: string) => {
-  const n = parseFloat(s);
+const num = (s: string | undefined) => {
+  const n = parseFloat(s ?? "");
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
-const intStr = (n: number) => String(Math.max(0, Math.round(n)));
 
-/** Shift a "YYYY-MM" key by ±n months. */
 function shiftMonth(key: string, delta: number): string {
   const d = parse(key, "yyyy-MM", new Date());
   return format(new Date(d.getFullYear(), d.getMonth() + delta, 1), "yyyy-MM");
@@ -72,57 +77,53 @@ export function PlannerView({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // Linked calculator state. Initialised from the saved plan; derived fields
-  // recompute as you edit, so budget ↔ CPL ↔ leads ↔ rate ↔ sales stay in sync.
-  const [budget, setBudget] = useState(data.plan.budget ? String(data.plan.budget) : "");
+  const label = data.resultLabel || "Sales";
+
+  // When no cities are targeted yet (no ad sets), fall back to a single
+  // "Overall" row so the planner still works for non-geo campaigns.
+  const cityRows: CityPlanRow[] = data.cities.length
+    ? data.cities
+    : [
+        {
+          cityName: "Overall",
+          targetResults: data.plan.targetSales,
+          actualSpend: data.actuals.spend,
+          actualLeads: data.actuals.leads,
+          actualResults: data.actuals.sales,
+        },
+      ];
+
+  // Global assumptions.
   const [cpl, setCpl] = useState(data.plan.targetCpl ? String(data.plan.targetCpl) : "");
-  const [leads, setLeads] = useState(data.plan.targetLeads ? String(data.plan.targetLeads) : "");
   const [rate, setRate] = useState(
     data.plan.conversionRate ? (data.plan.conversionRate * 100).toFixed(1) : "",
   );
-  const [sales, setSales] = useState(data.plan.targetSales ? String(data.plan.targetSales) : "");
+  // Per-city result goals, keyed by city name.
+  const [targets, setTargets] = useState<Record<string, string>>(
+    Object.fromEntries(cityRows.map((c) => [c.cityName, c.targetResults ? String(c.targetResults) : ""])),
+  );
 
-  // Edit handlers — each keeps the edited field raw and recomputes dependents.
-  const onBudget = (v: string) => {
-    setBudget(v);
-    const l = num(cpl) > 0 ? num(v) / num(cpl) : 0;
-    setLeads(intStr(l));
-    setSales(intStr(l * (num(rate) / 100)));
-  };
-  const onCpl = (v: string) => {
-    setCpl(v);
-    const l = num(v) > 0 ? num(budget) / num(v) : 0;
-    setLeads(intStr(l));
-    setSales(intStr(l * (num(rate) / 100)));
-  };
-  const onLeads = (v: string) => {
-    setLeads(v);
-    setCpl(num(v) > 0 ? (num(budget) / num(v)).toFixed(2) : "");
-    setSales(intStr(num(v) * (num(rate) / 100)));
-  };
-  const onRate = (v: string) => {
-    setRate(v);
-    setSales(intStr(num(leads) * (num(v) / 100)));
-  };
-  const onSales = (v: string) => {
-    setSales(v);
-    setRate(num(leads) > 0 ? ((num(v) / num(leads)) * 100).toFixed(1) : "");
-  };
-
-  // Live plan figures (drive the inputs, the funnel and the comparison).
-  const planBudget = num(budget);
   const planCpl = num(cpl);
-  const planLeads = num(leads);
-  const planRate = num(rate) / 100;
-  const planSales = num(sales);
-  const planCpa = planSales > 0 ? planBudget / planSales : 0;
+  const planRate = num(rate) / 100; // fraction
+  const perLead = planRate > 0 ? 1 / planRate : 0; // leads per result
+
+  // Derive each city's leads & budget from its goal + the assumptions.
+  const derived = cityRows.map((c) => {
+    const goal = num(targets[c.cityName]);
+    const leads = goal * perLead;
+    const budget = leads * planCpl;
+    return { city: c, goal, leads, budget };
+  });
+  const totalResults = derived.reduce((s, d) => s + d.goal, 0);
+  const totalLeads = derived.reduce((s, d) => s + d.leads, 0);
+  const totalBudget = derived.reduce((s, d) => s + d.budget, 0);
+  const planCpa = totalResults > 0 ? totalBudget / totalResults : 0;
 
   const a = data.actuals;
   const monthLabel = format(parse(data.month, "yyyy-MM", new Date()), "MMMM yyyy");
-
-  const overBudget = planBudget > 0 && a.spend > planBudget;
-  const usedPct = planBudget > 0 ? (a.spend / planBudget) * 100 : 0;
-  const remaining = Math.max(0, planBudget - a.spend);
+  const overBudget = totalBudget > 0 && a.spend > totalBudget;
+  const usedPct = totalBudget > 0 ? (a.spend / totalBudget) * 100 : 0;
+  const remaining = Math.max(0, totalBudget - a.spend);
 
   const goMonth = (delta: number) =>
     startNav(() => router.push(`/planner?month=${shiftMonth(data.month, delta)}`));
@@ -132,11 +133,14 @@ export function PlannerView({
     const res = await saveMonthlyPlan({
       workspaceId,
       month: data.month,
-      budget: planBudget,
+      budget: totalBudget,
       targetCpl: planCpl,
       conversionRate: planRate,
-      targetLeads: planLeads,
-      targetSales: planSales,
+      targetLeads: totalLeads,
+      targetSales: totalResults,
+      cityTargets: derived
+        .filter((d) => d.city.cityName !== "Overall" || d.goal > 0)
+        .map((d) => ({ cityName: d.city.cityName, targetResults: d.goal })),
     });
     setSaving(false);
     if (res.ok) {
@@ -152,12 +156,9 @@ export function PlannerView({
     const res = await deleteMonthlyPlan(workspaceId, data.month);
     setDeleting(false);
     if (res.ok) {
-      // Clear the calculator so the deleted month reads as empty.
-      setBudget("");
       setCpl("");
-      setLeads("");
       setRate("");
-      setSales("");
+      setTargets({});
       toast.success(`Plan deleted for ${monthLabel}`);
       router.refresh();
     } else {
@@ -167,7 +168,7 @@ export function PlannerView({
 
   return (
     <div className="space-y-6">
-      {/* ---------- Month nav + save ---------- */}
+      {/* ---------- Month nav + actions ---------- */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1 rounded-lg border bg-card p-1">
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => goMonth(-1)} disabled={navPending} aria-label="Previous month">
@@ -186,11 +187,7 @@ export function PlannerView({
               <DialogTrigger
                 render={
                   <Button variant="destructive" disabled={deleting}>
-                    {deleting ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="mr-2 h-4 w-4" />
-                    )}
+                    {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
                     Delete
                   </Button>
                 }
@@ -205,13 +202,7 @@ export function PlannerView({
                 </DialogHeader>
                 <DialogFooter>
                   <DialogClose render={<Button variant="outline">Cancel</Button>} />
-                  <DialogClose
-                    render={
-                      <Button variant="destructive" onClick={remove}>
-                        Delete plan
-                      </Button>
-                    }
-                  />
+                  <DialogClose render={<Button variant="destructive" onClick={remove}>Delete plan</Button>} />
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -233,16 +224,16 @@ export function PlannerView({
               </p>
               <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">
                 {usd2(a.spend)}
-                <span className="ml-1 text-lg font-normal text-muted-foreground">/ {usd2(planBudget)}</span>
+                <span className="ml-1 text-lg font-normal text-muted-foreground">/ {usd2(totalBudget)}</span>
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Spent so far this month · across all campaigns
+                Spent so far this month · budget = sum of every city
               </p>
             </div>
             <div className="text-right">
               <p className="text-sm text-muted-foreground">{overBudget ? "Over budget" : "Remaining"}</p>
               <p className={cn("text-2xl font-semibold tabular-nums", overBudget && "text-destructive")}>
-                {overBudget ? usd2(a.spend - planBudget) : usd2(remaining)}
+                {overBudget ? usd2(a.spend - totalBudget) : usd2(remaining)}
               </p>
             </div>
           </div>
@@ -250,77 +241,140 @@ export function PlannerView({
             <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
               <div
                 className={cn("h-full rounded-full transition-all", overBudget ? "bg-destructive" : "bg-primary")}
-                style={{ width: `${planBudget > 0 ? Math.min(100, usedPct) : 0}%` }}
+                style={{ width: `${totalBudget > 0 ? Math.min(100, usedPct) : 0}%` }}
               />
             </div>
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{planBudget > 0 ? `${Math.round(usedPct)}% of budget used` : "Set a budget below"}</span>
-              {planBudget > 0 && <span>{overBudget ? "Pace exceeds plan" : `${usd2(remaining)} left`}</span>}
+              <span>{totalBudget > 0 ? `${Math.round(usedPct)}% of budget used` : "Set goals below"}</span>
+              {totalBudget > 0 && <span>{overBudget ? "Pace exceeds plan" : `${usd2(remaining)} left`}</span>}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* ---------- Compact calculator + live funnel ---------- */}
+      {/* ---------- Assumptions + funnel ---------- */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Plan</CardTitle>
-            <CardDescription>Edit any field — the rest recalculates.</CardDescription>
+            <CardTitle>Assumptions</CardTitle>
+            <CardDescription>
+              Set your CPL and {label.toLowerCase()} conversion. Each city&apos;s
+              goal below uses these to size leads and budget.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-1">
-            <Row icon={<Wallet className="h-4 w-4" />} label="Max budget" prefix="$" value={budget} onChange={onBudget} />
-            <Row icon={<DollarSign className="h-4 w-4" />} label="Target CPL" prefix="$" value={cpl} onChange={onCpl} />
-            <Row icon={<Users className="h-4 w-4" />} label="Target leads" value={leads} onChange={onLeads} />
-            <Row icon={<Percent className="h-4 w-4" />} label="Conversion" suffix="%" value={rate} onChange={onRate} />
-            <Row icon={<Target className="h-4 w-4" />} label="Target sales" value={sales} onChange={onSales} />
+            <Row icon={<DollarSign className="h-4 w-4" />} label="Target CPL" prefix="$" value={cpl} onChange={setCpl} />
+            <Row icon={<Percent className="h-4 w-4" />} label={`Lead → ${label.toLowerCase()} conversion`} suffix="%" value={rate} onChange={setRate} />
+            <div className="grid grid-cols-3 gap-3 pt-3">
+              <Summary label={label} value={int(totalResults)} />
+              <Summary label="Leads" value={int(totalLeads)} />
+              <Summary label="Budget" value={usd(totalBudget)} />
+            </div>
             <div className="flex items-center justify-between pt-3 text-sm">
               <span className="flex items-center gap-2 text-muted-foreground">
-                <Receipt className="h-4 w-4" /> Cost per sale (CPA)
+                <Receipt className="h-4 w-4" /> Cost per {label.toLowerCase().replace(/s$/, "")} (CPA)
               </span>
               <span className="font-semibold tabular-nums">{planCpa ? usd2(planCpa) : "—"}</span>
             </div>
           </CardContent>
         </Card>
 
-        {/* Live funnel — animates as you type. */}
         <Card>
           <CardHeader>
             <CardTitle>Funnel preview</CardTitle>
-            <CardDescription>Updates live as you enter the plan.</CardDescription>
+            <CardDescription>Total leads narrowing to {label.toLowerCase()}.</CardDescription>
           </CardHeader>
           <CardContent>
-            <PlannerFunnel
-              budget={planBudget}
-              cpl={planCpl}
-              leads={planLeads}
-              rate={planRate}
-              sales={planSales}
-              cpa={planCpa}
-            />
+            <Funnel leads={totalLeads} rate={planRate} results={totalResults} resultLabel={label} budget={totalBudget} cpl={planCpl} cpa={planCpa} />
           </CardContent>
         </Card>
       </div>
 
-      {/* ---------- Plan vs actual (full width) ---------- */}
+      {/* ---------- Per-city plan ---------- */}
+      <Card>
+        <CardHeader>
+          <CardTitle>By city</CardTitle>
+          <CardDescription>
+            Set a {label.toLowerCase()} goal per city — leads and budget size
+            automatically. Actuals come from synced spend, leads and pipeline
+            wins.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>City</TableHead>
+                <TableHead className="text-right">{label} goal</TableHead>
+                <TableHead className="text-right">Leads</TableHead>
+                <TableHead className="text-right">Budget</TableHead>
+                <TableHead className="text-right text-muted-foreground">Spent</TableHead>
+                <TableHead className="text-right text-muted-foreground">Leads</TableHead>
+                <TableHead className="text-right text-muted-foreground">{label}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {derived.map(({ city, goal, leads, budget }) => (
+                <TableRow key={city.cityName}>
+                  <TableCell className="font-medium">
+                    <span className="flex items-center gap-1.5">
+                      <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                      {city.cityName}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={targets[city.cityName] ?? ""}
+                      onChange={(e) =>
+                        setTargets((t) => ({ ...t, [city.cityName]: e.target.value }))
+                      }
+                      className="ml-auto h-8 w-20 text-right tabular-nums"
+                      placeholder="0"
+                    />
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{goal ? int(leads) : "—"}</TableCell>
+                  <TableCell className="text-right tabular-nums">{goal ? usd(budget) : "—"}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">{usd(city.actualSpend)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">{int(city.actualLeads)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">{int(city.actualResults)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+            <tfoot>
+              <TableRow className="border-t-2 font-medium">
+                <TableCell>Total</TableCell>
+                <TableCell className="text-right tabular-nums">{int(totalResults)}</TableCell>
+                <TableCell className="text-right tabular-nums">{int(totalLeads)}</TableCell>
+                <TableCell className="text-right tabular-nums">{usd(totalBudget)}</TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground">{usd(a.spend)}</TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground">{int(a.leads)}</TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground">{int(a.sales)}</TableCell>
+              </TableRow>
+            </tfoot>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* ---------- Plan vs actual ---------- */}
       <Card>
         <CardHeader>
           <CardTitle>Plan vs. actual</CardTitle>
           <CardDescription>
-            Executed in {monthLabel} — synced spend &amp; leads; sales = leads
-            won in the pipeline.
+            Executed in {monthLabel} — synced spend &amp; leads; {label.toLowerCase()} = pipeline wins.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-8 md:grid-cols-2">
             <div className="space-y-4">
               <SectionLabel>Results vs. target</SectionLabel>
-              <GoalBar icon={<Users className="h-3.5 w-3.5" />} label="Leads" plan={int(planLeads)} actual={int(a.leads)}
-                ratio={planLeads > 0 ? a.leads / planLeads : 0}
-                pct={planLeads > 0 ? `${Math.round((a.leads / planLeads) * 100)}%` : "—"} hasPlan={planLeads > 0} />
-              <GoalBar icon={<Target className="h-3.5 w-3.5" />} label="Sales" plan={int(planSales)} actual={int(a.sales)}
-                ratio={planSales > 0 ? a.sales / planSales : 0}
-                pct={planSales > 0 ? `${Math.round((a.sales / planSales) * 100)}%` : "—"} hasPlan={planSales > 0} />
+              <GoalBar label="Leads" plan={int(totalLeads)} actual={int(a.leads)}
+                ratio={totalLeads > 0 ? a.leads / totalLeads : 0}
+                pct={totalLeads > 0 ? `${Math.round((a.leads / totalLeads) * 100)}%` : "—"} hasPlan={totalLeads > 0} />
+              <GoalBar label={label} plan={int(totalResults)} actual={int(a.sales)}
+                ratio={totalResults > 0 ? a.sales / totalResults : 0}
+                pct={totalResults > 0 ? `${Math.round((a.sales / totalResults) * 100)}%` : "—"} hasPlan={totalResults > 0} />
             </div>
             <div className="space-y-3">
               <SectionLabel>Efficiency</SectionLabel>
@@ -340,52 +394,39 @@ export function PlannerView({
   );
 }
 
-/** Smooth two-tier funnel that narrows by the conversion rate; animates live. */
-function PlannerFunnel({
-  budget,
-  cpl,
+function Funnel({
   leads,
   rate,
-  sales,
+  results,
+  resultLabel,
+  budget,
+  cpl,
   cpa,
 }: {
-  budget: number;
-  cpl: number;
   leads: number;
   rate: number;
-  sales: number;
+  results: number;
+  resultLabel: string;
+  budget: number;
+  cpl: number;
   cpa: number;
 }) {
   if (leads <= 0) {
     return (
       <div className="flex h-[212px] items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
-        Enter a budget and CPL to preview the funnel.
+        Add a CPL and city goals to preview the funnel.
       </div>
     );
   }
-  // Narrow the sales tier by the conversion rate, with a floor so its label fits.
-  const salesWidth = Math.min(100, Math.max(34, leads > 0 ? (sales / leads) * 100 : 34));
-
+  const salesWidth = Math.min(100, Math.max(34, leads > 0 ? (results / leads) * 100 : 34));
   return (
     <div className="space-y-2 py-1">
-      <FunnelTier
-        widthPct={100}
-        tone="lead"
-        label="Leads"
-        value={int(leads)}
-        caption={`${usd(budget)} ÷ ${usd(cpl)} CPL`}
-      />
+      <FunnelTier widthPct={100} tone="lead" label="Leads" value={int(leads)} caption={`${usd(budget)} ÷ ${usd(cpl)} CPL`} />
       <div className="flex items-center justify-center gap-1 text-xs font-medium text-muted-foreground">
         <ChevronDown className="h-3.5 w-3.5" />
         {pct(rate)} convert
       </div>
-      <FunnelTier
-        widthPct={salesWidth}
-        tone="sale"
-        label="Sales"
-        value={int(sales)}
-        caption={cpa ? `${usd(cpa)} per sale` : "—"}
-      />
+      <FunnelTier widthPct={salesWidth} tone="sale" label={resultLabel} value={int(results)} caption={cpa ? `${usd(cpa)} each` : "—"} />
     </div>
   );
 }
@@ -408,9 +449,7 @@ function FunnelTier({
       <div
         className={cn(
           "rounded-xl px-4 py-3 text-white shadow-sm",
-          tone === "lead"
-            ? "bg-gradient-to-br from-[#04d98b] to-[#026a60]"
-            : "bg-gradient-to-br from-[#0a9d8f] to-[#011640]",
+          tone === "lead" ? "bg-gradient-to-br from-[#04d98b] to-[#026a60]" : "bg-gradient-to-br from-[#0a9d8f] to-[#011640]",
         )}
       >
         <div className="flex items-baseline justify-between gap-2">
@@ -423,14 +462,20 @@ function FunnelTier({
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function Summary({ label, value }: { label: string; value: string }) {
   return (
-    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{children}</p>
+    <div className="rounded-lg bg-muted/60 px-3 py-2">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-base font-semibold tabular-nums">{value}</p>
+    </div>
   );
 }
 
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{children}</p>;
+}
+
 function GoalBar({
-  icon,
   label,
   plan,
   actual,
@@ -438,7 +483,6 @@ function GoalBar({
   pct,
   hasPlan,
 }: {
-  icon: React.ReactNode;
   label: string;
   plan: string;
   actual: string;
@@ -450,10 +494,7 @@ function GoalBar({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between text-sm">
-        <span className="flex items-center gap-1.5 text-muted-foreground">
-          {icon}
-          {label}
-        </span>
+        <span className="text-muted-foreground">{label}</span>
         <span className="tabular-nums">
           <span className="text-muted-foreground">{plan}</span>
           <ArrowRight className="mx-1 inline h-3 w-3 text-muted-foreground/50" />
@@ -463,19 +504,11 @@ function GoalBar({
       <div className="flex items-center gap-2.5">
         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
           <div
-            className={cn(
-              "h-full rounded-full transition-all",
-              !hasPlan ? "bg-muted-foreground/30" : reached ? "bg-success" : "bg-primary",
-            )}
+            className={cn("h-full rounded-full transition-all", !hasPlan ? "bg-muted-foreground/30" : reached ? "bg-success" : "bg-primary")}
             style={{ width: `${Math.min(100, Math.max(0, ratio * 100))}%` }}
           />
         </div>
-        <span
-          className={cn(
-            "w-10 text-right text-xs font-semibold tabular-nums",
-            !hasPlan ? "text-muted-foreground" : reached ? "text-success" : "text-foreground",
-          )}
-        >
+        <span className={cn("w-10 text-right text-xs font-semibold tabular-nums", !hasPlan ? "text-muted-foreground" : reached ? "text-success" : "text-foreground")}>
           {pct}
         </span>
       </div>
@@ -499,15 +532,12 @@ function EffTile({
   return (
     <div className="rounded-lg border p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={cn("mt-1 text-base font-semibold tabular-nums", good && "text-success", bad && "text-destructive")}>
-        {actual}
-      </p>
+      <p className={cn("mt-1 text-base font-semibold tabular-nums", good && "text-success", bad && "text-destructive")}>{actual}</p>
       <p className="text-[11px] text-muted-foreground">plan {plan}</p>
     </div>
   );
 }
 
-/** Compact calculator row: label on the left, a narrow number input on the right. */
 function Row({
   icon,
   label,
@@ -531,9 +561,7 @@ function Row({
       </span>
       <div className="relative w-36">
         {prefix && (
-          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-            {prefix}
-          </span>
+          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">{prefix}</span>
         )}
         <Input
           type="number"
@@ -545,9 +573,7 @@ function Row({
           placeholder="0"
         />
         {suffix && (
-          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-            {suffix}
-          </span>
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">{suffix}</span>
         )}
       </div>
     </div>

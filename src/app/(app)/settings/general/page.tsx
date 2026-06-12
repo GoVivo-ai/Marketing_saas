@@ -39,7 +39,13 @@ export default async function GeneralSettingsPage() {
   const { active } = await getWorkspaceContext();
   const canManage = active ? await canManageWorkspace(active.id) : false;
   let company:
-    | { name: string; industry: string; criteria: string; logoUrl: string | null }
+    | {
+        name: string;
+        industry: string;
+        criteria: string;
+        logoUrl: string | null;
+        resultLabel: string;
+      }
     | null = null;
   if (active && canManage) {
     const [w] = await db()
@@ -48,6 +54,7 @@ export default async function GeneralSettingsPage() {
         industry: schema.workspaces.industry,
         criteria: schema.workspaces.qualificationCriteria,
         logoUrl: schema.workspaces.logoUrl,
+        resultLabel: schema.workspaces.resultLabel,
       })
       .from(schema.workspaces)
       .where(eq(schema.workspaces.id, active.id))
@@ -58,6 +65,7 @@ export default async function GeneralSettingsPage() {
         industry: w.industry ?? "",
         criteria: w.criteria ?? "",
         logoUrl: w.logoUrl ?? null,
+        resultLabel: w.resultLabel ?? "Sales",
       };
   }
 
@@ -93,6 +101,7 @@ export default async function GeneralSettingsPage() {
                 name={company.name}
                 industry={company.industry}
                 qualificationCriteria={company.criteria}
+                resultLabel={company.resultLabel}
               />
             </CardContent>
           </Card>

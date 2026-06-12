@@ -1,5 +1,10 @@
-import { getPlannerData, getWorkspaceContext } from "@/lib/data";
+import {
+  getPlannerData,
+  getPlannerHistory,
+  getWorkspaceContext,
+} from "@/lib/data";
 import { PlannerView } from "@/components/app/planner-view";
+import { PlannerHistory } from "@/components/app/planner-history";
 
 export const dynamic = "force-dynamic";
 
@@ -35,10 +40,13 @@ export default async function PlannerPage({
       </div>
 
       {active ? (
-        <PlannerView
-          workspaceId={active.id}
-          data={await getPlannerData(active.id, monthStart)}
-        />
+        <>
+          <PlannerView
+            workspaceId={active.id}
+            data={await getPlannerData(active.id, monthStart)}
+          />
+          <PlannerHistory rows={await getPlannerHistory(active.id)} />
+        </>
       ) : (
         <p className="py-8 text-center text-sm text-muted-foreground">
           Select a client to start planning.

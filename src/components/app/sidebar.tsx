@@ -84,13 +84,13 @@ export function AppSidebar({
           {clientLogo && (
             <>
               {/* Divider between the Vivo logo and the active client's logo. */}
-              <span className="h-7 w-px shrink-0 bg-border" />
+              <span className="h-9 w-px shrink-0 bg-border" />
               {/* Forced white so any brand logo reads cleanly on the dark rail. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={clientLogo}
                 alt={active?.name ?? "Client logo"}
-                className="h-7 w-auto max-w-[110px] shrink-0 object-contain"
+                className="h-10 w-auto max-w-[140px] shrink-0 object-contain"
                 style={{ filter: "brightness(0) invert(1)" }}
               />
             </>

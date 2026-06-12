@@ -111,6 +111,30 @@
 
 ---
 
+## ⏭ TOMORROW — Lead radius for ALL clients (old + new)
+
+The radius needs **two things per lead**: (1) the lead's own city (from the form)
+and (2) Meta-provided ad-set attribution (gives the target city + radius).
+
+**FTS findings (2026-06-12):**
+- 17/22 FTS ad sets are city-targeted (Worcester, Framingham, Brockton… MA/AZ) ✓
+- FTS leads split in two, each missing one piece:
+  - **170 recent** = attributed to their ad set, but the recruitment form has **no
+    city field** (asks "which areas are you willing to work in?") → no lead location.
+  - **485 (May 11–Jun 10)** = have a `city` field, but come from **archived/deleted
+    ads**, so the per-ad sync route doesn't re-attribute them → no target ad set.
+- So FTS can't show the radius for most leads yet. **Not a code bug — a data gap.**
+
+**The fix (do this):** backfill attribution by querying each existing lead **directly
+by its Meta lead id** for `adset_id` (`GET /{lead_id}?fields=adset_id,campaign_id`) —
+this works even when the ad is archived/deleted, unlike the current `/{ad}/leads`
+route. Then geocode the lead's stored city. Run it across all workspaces so **old
+leads** get covered too. Going forward, new synced leads already get both pieces.
+- ⚠️ Heuristic attribution by matching the lead's city to an ad-set city is **wrong**
+  (it would make every lead "within radius"). Attribution must come from Meta.
+- Recruitment-style forms with no city field (some FTS leads) simply can't show a
+  radius — that's a form-design limitation on the client side.
+
 ## Ideas / next up (not started)
 
 - Planner: optionally show a **global total** alongside the planned-cities total.

@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import { format, parse } from "date-fns";
 import { toast } from "sonner";
 import {
+  Funnel,
+  FunnelChart,
+  LabelList,
+  ResponsiveContainer,
+  Tooltip,
+} from "recharts";
+import {
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -95,7 +102,7 @@ export function PlannerView({
     setRate(num(leads) > 0 ? ((num(v) / num(leads)) * 100).toFixed(1) : "");
   };
 
-  // Live plan figures (drive both the inputs and the comparison "Plan" column).
+  // Live plan figures (drive the inputs, the funnel chart and the comparison).
   const planBudget = num(budget);
   const planCpl = num(cpl);
   const planLeads = num(leads);
@@ -138,27 +145,13 @@ export function PlannerView({
       {/* ---------- Month nav + save ---------- */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1 rounded-lg border bg-card p-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => goMonth(-1)}
-            disabled={navPending}
-            aria-label="Previous month"
-          >
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => goMonth(-1)} disabled={navPending} aria-label="Previous month">
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <span className="min-w-[130px] text-center text-sm font-semibold">
             {navPending ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : monthLabel}
           </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => goMonth(1)}
-            disabled={navPending}
-            aria-label="Next month"
-          >
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => goMonth(1)} disabled={navPending} aria-label="Next month">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
@@ -178,51 +171,36 @@ export function PlannerView({
               </p>
               <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">
                 {usd(a.spend)}
-                <span className="ml-1 text-lg font-normal text-muted-foreground">
-                  / {usd(planBudget)}
-                </span>
+                <span className="ml-1 text-lg font-normal text-muted-foreground">/ {usd(planBudget)}</span>
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Spent so far this month · across all campaigns
               </p>
             </div>
             <div className="text-right">
-              <p className="text-sm text-muted-foreground">
-                {overBudget ? "Over budget" : "Remaining"}
-              </p>
-              <p
-                className={cn(
-                  "text-2xl font-semibold tabular-nums",
-                  overBudget && "text-destructive",
-                )}
-              >
+              <p className="text-sm text-muted-foreground">{overBudget ? "Over budget" : "Remaining"}</p>
+              <p className={cn("text-2xl font-semibold tabular-nums", overBudget && "text-destructive")}>
                 {overBudget ? usd(a.spend - planBudget) : usd(remaining)}
               </p>
             </div>
           </div>
-
           <div className="mt-5 space-y-1.5">
             <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
               <div
-                className={cn(
-                  "h-full rounded-full transition-all",
-                  overBudget ? "bg-destructive" : "bg-primary",
-                )}
+                className={cn("h-full rounded-full transition-all", overBudget ? "bg-destructive" : "bg-primary")}
                 style={{ width: `${planBudget > 0 ? Math.min(100, usedPct) : 0}%` }}
               />
             </div>
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>{planBudget > 0 ? `${Math.round(usedPct)}% of budget used` : "Set a budget below"}</span>
-              {planBudget > 0 && (
-                <span>{overBudget ? "Pace exceeds plan" : `${usd(remaining)} left`}</span>
-              )}
+              {planBudget > 0 && <span>{overBudget ? "Pace exceeds plan" : `${usd(remaining)} left`}</span>}
             </div>
           </div>
         </CardContent>
       </Card>
 
+      {/* ---------- Calculator + live funnel ---------- */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* ---------- Calculator ---------- */}
         <Card>
           <CardHeader>
             <CardTitle>Plan</CardTitle>
@@ -243,25 +221,39 @@ export function PlannerView({
               <Field id="rate" label="Lead → sale conversion" icon={<Percent className="h-3.5 w-3.5" />} suffix="%" value={rate} onChange={onRate} />
               <Field id="sales" label="Target sales" icon={<Target className="h-3.5 w-3.5" />} value={sales} onChange={onSales} />
             </div>
-            <div className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2.5 text-sm">
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <Receipt className="h-3.5 w-3.5" /> Cost per sale (CPA)
-              </span>
-              <span className="font-semibold tabular-nums">{planCpa ? usd(planCpa) : "—"}</span>
-            </div>
           </CardContent>
         </Card>
 
-        {/* ---------- Plan vs actual ---------- */}
+        {/* Live funnel — updates as you type. */}
         <Card>
           <CardHeader>
-            <CardTitle>Plan vs. actual</CardTitle>
-            <CardDescription>
-              Executed in {monthLabel} — synced spend &amp; leads; sales = leads
-              won in the pipeline.
-            </CardDescription>
+            <CardTitle>Funnel preview</CardTitle>
+            <CardDescription>Updates live as you enter the plan.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent>
+            <PlannerFunnel
+              budget={planBudget}
+              cpl={planCpl}
+              leads={planLeads}
+              rate={planRate}
+              sales={planSales}
+              cpa={planCpa}
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ---------- Plan vs actual (full width) ---------- */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Plan vs. actual</CardTitle>
+          <CardDescription>
+            Executed in {monthLabel} — synced spend &amp; leads; sales = leads
+            won in the pipeline.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-8 md:grid-cols-2">
             <div className="space-y-4">
               <SectionLabel>Results vs. target</SectionLabel>
               <GoalBar
@@ -283,45 +275,111 @@ export function PlannerView({
                 hasPlan={planSales > 0}
               />
             </div>
-
             <div className="space-y-3">
               <SectionLabel>Efficiency</SectionLabel>
               <div className="grid grid-cols-3 gap-3">
-                <EffTile
-                  label="CPL"
-                  actual={a.cpl ? usd(a.cpl) : "—"}
-                  plan={planCpl ? usd(planCpl) : "—"}
-                  good={a.cpl > 0 && planCpl > 0 && a.cpl <= planCpl}
-                  bad={a.cpl > 0 && planCpl > 0 && a.cpl > planCpl}
-                />
-                <EffTile
-                  label="CPA"
-                  actual={a.cpa ? usd(a.cpa) : "—"}
-                  plan={planCpa ? usd(planCpa) : "—"}
-                  good={a.cpa > 0 && planCpa > 0 && a.cpa <= planCpa}
-                  bad={a.cpa > 0 && planCpa > 0 && a.cpa > planCpa}
-                />
-                <EffTile
-                  label="Conversion"
-                  actual={pct(a.convRate)}
-                  plan={planRate ? pct(planRate) : "—"}
-                  good={planRate > 0 && a.convRate >= planRate}
-                  bad={planRate > 0 && a.convRate < planRate && a.leads > 0}
-                />
+                <EffTile label="CPL" actual={a.cpl ? usd(a.cpl) : "—"} plan={planCpl ? usd(planCpl) : "—"}
+                  good={a.cpl > 0 && planCpl > 0 && a.cpl <= planCpl} bad={a.cpl > 0 && planCpl > 0 && a.cpl > planCpl} />
+                <EffTile label="CPA" actual={a.cpa ? usd(a.cpa) : "—"} plan={planCpa ? usd(planCpa) : "—"}
+                  good={a.cpa > 0 && planCpa > 0 && a.cpa <= planCpa} bad={a.cpa > 0 && planCpa > 0 && a.cpa > planCpa} />
+                <EffTile label="Conversion" actual={pct(a.convRate)} plan={planRate ? pct(planRate) : "—"}
+                  good={planRate > 0 && a.convRate >= planRate} bad={planRate > 0 && a.convRate < planRate && a.leads > 0} />
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+/** Interactive funnel: Budget → Leads → Sales, animating as the plan changes. */
+function PlannerFunnel({
+  budget,
+  cpl,
+  leads,
+  rate,
+  sales,
+  cpa,
+}: {
+  budget: number;
+  cpl: number;
+  leads: number;
+  rate: number;
+  sales: number;
+  cpa: number;
+}) {
+  const chartData = [
+    { stage: "Leads", value: leads, label: `Leads · ${int(leads)}`, fill: "var(--chart-2)" },
+    { stage: "Sales", value: sales, label: `Sales · ${int(sales)}`, fill: "var(--chart-4)" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Inputs flow */}
+      <div className="flex items-center justify-between gap-2 text-center text-xs">
+        <Pill label="Budget" value={budget ? usd(budget) : "—"} />
+        <Connector op={`÷ ${cpl ? usd(cpl) : "CPL"}`} />
+        <Pill label="Leads" value={int(leads)} accent />
+        <Connector op={`× ${rate ? pct(rate) : "rate"}`} />
+        <Pill label="Sales" value={int(sales)} accent />
+      </div>
+
+      {leads > 0 ? (
+        <ResponsiveContainer width="100%" height={220}>
+          <FunnelChart>
+            <Tooltip
+              cursor={false}
+              contentStyle={{
+                background: "var(--popover)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                fontSize: 12,
+                color: "var(--popover-foreground)",
+              }}
+            />
+            <Funnel dataKey="value" data={chartData} isAnimationActive animationDuration={400} stroke="var(--background)">
+              <LabelList position="right" dataKey="label" stroke="none" fill="var(--foreground)" fontSize={12} />
+            </Funnel>
+          </FunnelChart>
+        </ResponsiveContainer>
+      ) : (
+        <div className="flex h-[220px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+          Enter a budget and CPL to preview the funnel.
+        </div>
+      )}
+
+      <div className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2.5 text-sm">
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <Receipt className="h-3.5 w-3.5" /> Cost per sale (CPA)
+        </span>
+        <span className="font-semibold tabular-nums">{cpa ? usd(cpa) : "—"}</span>
       </div>
     </div>
   );
 }
 
+function Pill({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "flex-1 rounded-lg border px-2 py-1.5",
+        accent && "border-primary/30 bg-primary/5",
+      )}
+    >
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+function Connector({ op }: { op: string }) {
+  return <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">{op}</span>;
+}
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-      {children}
-    </p>
+    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{children}</p>
   );
 }
 
@@ -395,13 +453,7 @@ function EffTile({
   return (
     <div className="rounded-lg border p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p
-        className={cn(
-          "mt-1 text-base font-semibold tabular-nums",
-          good && "text-success",
-          bad && "text-destructive",
-        )}
-      >
+      <p className={cn("mt-1 text-base font-semibold tabular-nums", good && "text-success", bad && "text-destructive")}>
         {actual}
       </p>
       <p className="text-[11px] text-muted-foreground">plan {plan}</p>

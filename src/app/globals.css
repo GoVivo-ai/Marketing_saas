@@ -141,6 +141,21 @@
   }
 }
 
+/* Day/night theme switch — the new theme reveals as a circle growing from
+   the toggle (driven from theme-toggle.tsx). Kill the default crossfade so
+   the clip-path wipe is the only animation, old frame steady underneath. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  z-index: 1;
+}
+::view-transition-new(root) {
+  z-index: 2;
+}
+
 /* VIVO signature gradient (blue → green → yellow), echoing the logo wave. */
 .bg-vivo-gradient {
   background-image: linear-gradient(

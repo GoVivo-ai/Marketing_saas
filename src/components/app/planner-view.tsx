@@ -708,15 +708,14 @@ export function PlannerView({
               <div key={s.name} className="flex items-center gap-3">
                 <span className="w-40 shrink-0 truncate text-sm text-muted-foreground">{s.name}</span>
                 <div className="h-6 flex-1 overflow-hidden rounded-md bg-muted">
+                  {/* Count lives in the right-hand column only — once. */}
                   <div
                     className={cn(
-                      "flex h-full items-center justify-end rounded-md px-2 text-xs font-medium text-white transition-all",
+                      "h-full rounded-md transition-all",
                       s.kind === "won" ? "bg-success" : s.kind === "lost" ? "bg-muted-foreground/50" : "bg-primary",
                     )}
                     style={{ width: `${Math.max(s.count > 0 ? 8 : 0, (s.count / opsMax) * 100)}%` }}
-                  >
-                    {s.count > 0 ? int(s.count) : ""}
-                  </div>
+                  />
                 </div>
                 <span className="w-10 shrink-0 text-right text-sm font-semibold tabular-nums">{int(s.count)}</span>
               </div>

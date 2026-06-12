@@ -49,21 +49,26 @@ export async function createStage(formData: FormData) {
   revalidate();
 }
 
-/** Renames and/or recolors a stage. */
+/** Renames, recolors and/or reclassifies a stage (open/won/lost). */
 export async function updateStage(formData: FormData) {
   const stageId = String(formData.get("stageId") ?? "");
   await requireStageManager(stageId);
   const name = String(formData.get("name") ?? "").trim();
   const color = String(formData.get("color") ?? "").trim();
+  const kind = String(formData.get("kind") ?? "").trim();
   if (!name) throw new Error("Stage name is required");
   await db()
     .update(schema.stages)
-    .set({ name, color: color || null })
+    .set({
+      name,
+      color: color || null,
+      ...(["open", "won", "lost"].includes(kind) ? { kind } : {}),
+    })
     .where(eq(schema.stages.id, stageId));
   revalidate();
 }
 
-/** Moves a stage one slot left or right by swapping positions with its neighbor. */
+/** Moves a stage one slot earlier/later by swapping positions with its neighbor. */
 export async function moveStage(formData: FormData) {
   const stageId = String(formData.get("stageId") ?? "");
   const direction = String(formData.get("direction") ?? "");
@@ -75,7 +80,9 @@ export async function moveStage(formData: FormData) {
     .where(eq(schema.stages.workspaceId, workspaceId))
     .orderBy(asc(schema.stages.position));
   const idx = stages.findIndex((s) => s.id === stageId);
-  const swapWith = direction === "left" ? idx - 1 : idx + 1;
+  // "up" in the manager list = earlier in the funnel (left on the board).
+  const earlier = direction === "up" || direction === "left";
+  const swapWith = earlier ? idx - 1 : idx + 1;
   if (idx < 0 || swapWith < 0 || swapWith >= stages.length) return;
 
   const a = stages[idx];

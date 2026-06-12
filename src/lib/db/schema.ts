@@ -302,6 +302,35 @@ export const adsetMetricsDaily = pgTable(
   ],
 );
 
+/**
+ * Monthly campaign plan — one per workspace per month. Captures the planned
+ * funnel (max budget → target CPL → leads → conversion rate → sales) so it can
+ * be compared against what was actually executed that month.
+ */
+export const monthlyPlans = pgTable(
+  "monthly_plans",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** First day of the planned month (e.g. 2026-06-01). */
+    month: date("month").notNull(),
+    budget: numeric("budget", { precision: 14, scale: 2 }).notNull().default("0"),
+    targetCpl: numeric("target_cpl", { precision: 12, scale: 2 }).notNull().default("0"),
+    /** Lead → sale conversion rate, stored as a fraction (0.15 = 15%). */
+    conversionRate: numeric("conversion_rate", { precision: 6, scale: 4 })
+      .notNull()
+      .default("0"),
+    targetLeads: integer("target_leads").notNull().default(0),
+    targetSales: integer("target_sales").notNull().default(0),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("monthly_plan_unique").on(t.workspaceId, t.month)],
+);
+
 // ─────────────────────────────────────────────────────────────────────────
 // Pipeline stages — customizable funnel columns, one ordered set per client
 // ─────────────────────────────────────────────────────────────────────────

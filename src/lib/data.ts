@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 
@@ -523,6 +523,126 @@ export async function getAdSetRows(
       };
     })
     .sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Planner — monthly plan vs. actual executed
+// ─────────────────────────────────────────────────────────────────────────
+
+/** The planned funnel for a month (zeroed when no plan has been saved yet). */
+export interface MonthlyPlanData {
+  budget: number;
+  targetCpl: number;
+  /** Lead → sale conversion rate as a fraction (0.15 = 15%). */
+  conversionRate: number;
+  targetLeads: number;
+  targetSales: number;
+  notes: string | null;
+  /** False until the client saves a plan for this month. */
+  exists: boolean;
+}
+
+/** What was actually executed in the month, from synced metrics + pipeline. */
+export interface MonthActuals {
+  spend: number;
+  leads: number;
+  /** Leads that reached a "won" pipeline stage (created in the month). */
+  sales: number;
+  cpl: number;
+  /** Cost per sale. */
+  cpa: number;
+  /** Actual lead → sale rate as a fraction. */
+  convRate: number;
+}
+
+export interface PlannerData {
+  /** Planned month as "YYYY-MM". */
+  month: string;
+  plan: MonthlyPlanData;
+  actuals: MonthActuals;
+}
+
+/** Inclusive day bounds + exclusive next-month start for a given month. */
+function monthBounds(monthStart: Date) {
+  const start = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1);
+  const nextMonth = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+  const end = new Date(nextMonth.getTime() - 86_400_000); // last day of month
+  return { start, end, nextMonth };
+}
+
+/** Plan + actuals for one workspace and month, ready for the comparison view. */
+export async function getPlannerData(
+  workspaceId: string,
+  monthStart: Date,
+): Promise<PlannerData> {
+  const { start, end, nextMonth } = monthBounds(monthStart);
+  const startStr = dateStr(start);
+  const endStr = dateStr(end);
+  const monthKey = startStr.slice(0, 7);
+
+  const [planRow, metricRow, salesRow] = await Promise.all([
+    db()
+      .select()
+      .from(schema.monthlyPlans)
+      .where(
+        and(
+          eq(schema.monthlyPlans.workspaceId, workspaceId),
+          eq(schema.monthlyPlans.month, startStr),
+        ),
+      )
+      .limit(1),
+    db()
+      .select({
+        spend: sql<string>`coalesce(sum(${schema.metricsDaily.spend}), 0)`,
+        leads: sql<string>`coalesce(sum(${schema.metricsDaily.leads}), 0)`,
+      })
+      .from(schema.metricsDaily)
+      .where(
+        and(
+          eq(schema.metricsDaily.workspaceId, workspaceId),
+          gte(schema.metricsDaily.date, startStr),
+          lte(schema.metricsDaily.date, endStr),
+        ),
+      ),
+    db()
+      .select({ n: sql<string>`count(*)` })
+      .from(schema.leads)
+      .innerJoin(schema.stages, eq(schema.leads.stageId, schema.stages.id))
+      .where(
+        and(
+          eq(schema.leads.workspaceId, workspaceId),
+          eq(schema.stages.kind, "won"),
+          gte(schema.leads.createdAt, start),
+          lt(schema.leads.createdAt, nextMonth),
+        ),
+      ),
+  ]);
+
+  const p = planRow[0];
+  const plan: MonthlyPlanData = {
+    budget: p ? Number(p.budget) : 0,
+    targetCpl: p ? Number(p.targetCpl) : 0,
+    conversionRate: p ? Number(p.conversionRate) : 0,
+    targetLeads: p ? p.targetLeads : 0,
+    targetSales: p ? p.targetSales : 0,
+    notes: p?.notes ?? null,
+    exists: Boolean(p),
+  };
+
+  const spend = Number(metricRow[0]?.spend ?? 0);
+  const leads = Number(metricRow[0]?.leads ?? 0);
+  const sales = Number(salesRow[0]?.n ?? 0);
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const actuals: MonthActuals = {
+    spend: round2(spend),
+    leads,
+    sales,
+    cpl: leads > 0 ? round2(spend / leads) : 0,
+    cpa: sales > 0 ? round2(spend / sales) : 0,
+    convRate: leads > 0 ? sales / leads : 0,
+  };
+
+  return { month: monthKey, plan, actuals };
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -51,7 +51,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </Button>
           </form>
         </header>
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        {/* Key by workspace so switching clients remounts the page — client
+            components don't keep the previous client's data in local state. */}
+        <main key={active?.id ?? "none"} className="flex-1 overflow-y-auto p-6">
+          {children}
+        </main>
       </div>
       <Toaster />
     </div>

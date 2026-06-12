@@ -47,3 +47,36 @@ export async function geocodeCity(
     return null;
   }
 }
+
+/**
+ * Cached geocode: reads/writes the `geocache` table so each distinct place is
+ * resolved against Nominatim only once. Lazy `db` import keeps this module
+ * usable without a DB when callers only need the raw {@link geocodeCity}.
+ */
+export async function geocodeCityCached(
+  city: string,
+  region?: string | null,
+  country?: string | null,
+): Promise<LatLng | null> {
+  const q = [city, region, country].filter(Boolean).join(", ").toLowerCase().trim();
+  if (!q) return null;
+
+  const { db, schema } = await import("@/lib/db");
+  const { eq } = await import("drizzle-orm");
+
+  const [cached] = await db()
+    .select({ lat: schema.geocache.lat, lng: schema.geocache.lng })
+    .from(schema.geocache)
+    .where(eq(schema.geocache.query, q))
+    .limit(1);
+  if (cached) return { lat: Number(cached.lat), lng: Number(cached.lng) };
+
+  const geo = await geocodeCity(city, region, country);
+  if (!geo) return null;
+
+  await db()
+    .insert(schema.geocache)
+    .values({ query: q, lat: geo.lat.toFixed(6), lng: geo.lng.toFixed(6) })
+    .onConflictDoNothing();
+  return geo;
+}

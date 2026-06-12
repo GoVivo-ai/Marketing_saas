@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { format, formatDistanceToNow } from "date-fns";
-import { Mail, Phone, Loader2 } from "lucide-react";
+import { Mail, Phone, Loader2, MapPin, MapPinOff } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -22,7 +22,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { LeadContactActions } from "@/components/app/lead-contact-actions";
-import type { LeadRow } from "@/lib/data";
+import { cn } from "@/lib/utils";
+import type { LeadRow, LeadGeo } from "@/lib/data";
 
 const platformLabel: Record<string, string> = {
   meta: "Meta",
@@ -203,6 +204,13 @@ export function LeadsTable({
                   )}
                 </div>
 
+                {selected.geo && selected.geo.status !== "no_target" && (
+                  <>
+                    <Separator />
+                    <LeadArea geo={selected.geo} />
+                  </>
+                )}
+
                 <Separator />
 
                 <div className="space-y-2 text-sm">
@@ -260,5 +268,49 @@ export function LeadsTable({
         </SheetContent>
       </Sheet>
     </>
+  );
+}
+
+/** Lead's position relative to its ad set's audience radius. */
+function LeadArea({ geo }: { geo: LeadGeo }) {
+  const cfg = {
+    within: { label: "Within radius", cls: "text-success", Icon: MapPin },
+    near: { label: "Near the edge", cls: "text-amber-500", Icon: MapPin },
+    outside: { label: "Outside area", cls: "text-destructive", Icon: MapPin },
+    no_location: { label: "No location in form", cls: "text-muted-foreground", Icon: MapPinOff },
+    no_target: { label: "No targeted city", cls: "text-muted-foreground", Icon: MapPinOff },
+  }[geo.status];
+  const Icon = cfg.Icon;
+  const u = geo.unit === "kilometer" ? "km" : "mi";
+  const located = geo.status === "within" || geo.status === "near" || geo.status === "outside";
+
+  return (
+    <div className="space-y-2 text-sm">
+      <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Audience area
+      </h4>
+      <p className={cn("flex items-center gap-1.5 font-medium", cfg.cls)}>
+        <Icon className="h-4 w-4" /> {cfg.label}
+      </p>
+      {located && (
+        <div className="space-y-0.5 text-muted-foreground">
+          <p>
+            <span className="font-medium text-foreground">{geo.leadCity ?? "Lead"}</span>
+            {" → "}
+            <span className="font-medium text-foreground">{geo.targetCity}</span> (target)
+          </p>
+          <p>
+            ~{geo.distance} {u} from center · radius {geo.radius} {u}
+            {!geo.radiusKnown && " (default)"}
+          </p>
+        </div>
+      )}
+      {geo.status === "no_location" && (
+        <p className="text-muted-foreground">
+          The lead didn&apos;t provide a city
+          {geo.targetCity ? `, so we can't place it against ${geo.targetCity}` : ""}.
+        </p>
+      )}
+    </div>
   );
 }

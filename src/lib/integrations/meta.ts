@@ -137,6 +137,7 @@ export const metaConnector: MarketingConnector = {
     type AdRow = {
       id: string;
       campaign_id?: string;
+      adset_id?: string;
       campaign?: { id: string; name?: string; status?: string; objective?: string };
     };
     // By default Meta's /ads edge only returns ACTIVE/PAUSED ads, so leads from
@@ -161,7 +162,7 @@ export const metaConnector: MarketingConnector = {
       ]),
     );
     const ads = await graphGetAll<AdRow>(
-      `${GRAPH}/${creds.accountId}/ads?fields=id,campaign_id,campaign{id,name,status,objective}` +
+      `${GRAPH}/${creds.accountId}/ads?fields=id,campaign_id,adset_id,campaign{id,name,status,objective}` +
         `&effective_status=${adStatuses}&limit=200`,
       creds.accessToken,
     );
@@ -193,6 +194,7 @@ export const metaConnector: MarketingConnector = {
         all.push({
           externalId: r.id,
           campaignExternalId: ad.campaign_id ?? ad.campaign?.id,
+          adsetExternalId: ad.adset_id,
           campaignName: ad.campaign?.name,
           campaignStatus: ad.campaign?.status,
           campaignObjective: ad.campaign?.objective,

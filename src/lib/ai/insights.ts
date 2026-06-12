@@ -16,7 +16,7 @@ export const insightSchema = z.object({
         body: z
           .string()
           .describe(
-            "2-4 sentences. Reference concrete numbers and name the campaign. End with one actionable next step.",
+            "2-4 sentences. Reference concrete numbers and name the campaign/city/stage. End with one actionable next step.",
           ),
       }),
     )
@@ -33,13 +33,62 @@ export interface CampaignSnapshot {
   lastWeek: { spend: number; impressions: number; clicks: number; leads: number };
 }
 
+/** Per-city ad performance — the lever the team actually pulls (city lists). */
+export interface CityPerformance {
+  city: string;
+  state: string | null;
+  spend: number;
+  leads: number;
+  cpl: number | null;
+}
+
+/** The saved plan vs what's actually executing this month. */
+export interface PlanStatus {
+  planName: string;
+  month: string;
+  budget: number;
+  targetCpl: number;
+  targetLeads: number;
+  spendToDate: number;
+  leadsToDate: number;
+  actualCpl: number | null;
+  daysElapsed: number;
+  daysInMonth: number;
+}
+
+export interface FunnelStage {
+  stage: string;
+  kind: string;
+  leads: number;
+}
+
+export interface LeadQuality {
+  leadsLast30d: number;
+  scored: number;
+  avgScore: number | null;
+  /** Leads confirmed inside their ad set's audience radius. */
+  inRadius: number;
+  /** Leads with enough geo data to judge the radius at all. */
+  geoKnown: number;
+}
+
+/** Everything the analyst sees: campaigns, cities, plan pacing, funnel, quality. */
+export interface WorkspaceInsightData {
+  campaigns: CampaignSnapshot[];
+  cities: CityPerformance[];
+  plan: PlanStatus | null;
+  funnel: FunnelStage[];
+  leadQuality: LeadQuality | null;
+}
+
 /**
- * Analyzes week-over-week campaign performance and produces a small set of
- * high-signal insights: anomalies, budget recommendations and a summary.
+ * Produces a small set of decision-grade insights from the full workspace
+ * picture: week-over-week campaigns, per-city CPL, plan pacing, funnel
+ * bottlenecks and lead quality.
  */
 export async function generateInsights(
   workspaceName: string,
-  snapshots: CampaignSnapshot[],
+  data: WorkspaceInsightData,
   workspaceId?: string,
 ): Promise<GeneratedInsight[]> {
   const anthropic = await anthropicProvider(workspaceId);
@@ -48,13 +97,31 @@ export async function generateInsights(
     schema: insightSchema,
     prompt: [
       `You are the senior performance-marketing analyst for the agency Vivo.`,
-      `Client: ${workspaceName}.`,
-      `Below is week-over-week campaign data (current week vs previous week), as JSON.`,
-      `Detect what truly matters: cost-per-lead shifts, spend anomalies, scaling`,
-      `opportunities and underperformers. Be concrete and quantitative — every`,
-      `claim must cite a number from the data. Do not invent data.`,
+      `Client: ${workspaceName}. You are writing for the person who will adjust`,
+      `the campaigns today — every insight must change what they do, not describe data.`,
       ``,
-      JSON.stringify(snapshots, null, 2),
+      `You get the full picture as JSON:`,
+      `- campaigns: week-over-week spend/leads (current vs previous week)`,
+      `- cities: last-14-day spend, leads and CPL per targeted city — the team`,
+      `  allocates budget by city, so CPL gaps between cities are the #1 lever`,
+      `- plan: this month's saved plan vs executed (budget, CPL target, pacing)`,
+      `- funnel: pipeline stages with current lead counts (kind won = a sale)`,
+      `- leadQuality: AI scores and how many leads fall inside the targeted radius`,
+      ``,
+      `Priorities, in order:`,
+      `1. City budget reallocation: name the expensive city and the cheap one with`,
+      `   both CPLs and say how much to shift (e.g. "move ~$50/day from X to Y").`,
+      `2. Plan pacing: on track or not for budget and leads — project month-end from`,
+      `   the daily run rate and say what to change if it misses.`,
+      `3. Funnel bottleneck: the stage transition losing the most leads; quantify it.`,
+      `4. Lead quality / radius waste: low scores or many out-of-radius leads →`,
+      `   recommend tightening targeting (city lists instead of radius).`,
+      ``,
+      `Rules: every claim cites a number from the data; name campaigns, cities and`,
+      `stages explicitly; one concrete next step per insight; skip any section with`,
+      `no real signal — fewer, sharper insights beat filler. Do not invent data.`,
+      ``,
+      JSON.stringify(data, null, 2),
     ].join("\n"),
   });
   return object.insights;

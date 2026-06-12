@@ -43,7 +43,13 @@ function PlanActual({
   );
 }
 
-export function PlannerHistory({ rows }: { rows: PlannerHistoryRow[] }) {
+export function PlannerHistory({
+  rows,
+  resultLabel = "Sales",
+}: {
+  rows: PlannerHistoryRow[];
+  resultLabel?: string;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -65,7 +71,7 @@ export function PlannerHistory({ rows }: { rows: PlannerHistoryRow[] }) {
                 <TableHead>Month</TableHead>
                 <TableHead className="text-right">Budget → spent</TableHead>
                 <TableHead className="text-right">Leads</TableHead>
-                <TableHead className="text-right">Sales</TableHead>
+                <TableHead className="text-right">{resultLabel}</TableHead>
                 <TableHead className="text-right">CPL</TableHead>
               </TableRow>
             </TableHeader>

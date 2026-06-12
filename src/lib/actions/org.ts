@@ -166,10 +166,12 @@ export async function updateWorkspaceProfile(
   const industry = String(formData.get("industry") ?? "").trim() || null;
   const qualificationCriteria =
     String(formData.get("qualificationCriteria") ?? "").trim() || null;
+  // What this client calls a conversion/result (Sales, Hires, Appointments…).
+  const resultLabel = String(formData.get("resultLabel") ?? "").trim() || "Sales";
 
   await db()
     .update(schema.workspaces)
-    .set({ name, industry, qualificationCriteria })
+    .set({ name, industry, qualificationCriteria, resultLabel })
     .where(eq(schema.workspaces.id, workspaceId));
   // Name shows in the sidebar/switcher, so refresh the whole layout.
   revalidatePath("/", "layout");

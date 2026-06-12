@@ -32,7 +32,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         role={role}
         canManageActive={canManageActive}
       />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      {/* min-w-0 lets this flex item shrink to the viewport, so wide content
+          (e.g. a pipeline with many stages) scrolls inside instead of
+          stretching the page. */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b px-6">
           <ThemeToggle />
           <div className="text-right leading-tight">

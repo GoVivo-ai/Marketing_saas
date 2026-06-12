@@ -13,8 +13,9 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { toast } from "sonner";
-import { Phone, Sparkles, GripVertical, Loader2 } from "lucide-react";
+import { Phone, Sparkles, GripVertical, Loader2, ChevronRight, Download } from "lucide-react";
 import { moveLeadToStage } from "@/lib/actions/leads";
+import { Button } from "@/components/ui/button";
 import type { Stage, PipelineCard } from "@/lib/data";
 import {
   Sheet,
@@ -102,6 +103,49 @@ export function PipelineBoard({
     });
   }
 
+  // Funnel conversion: a (non-lost) lead at stage N has reached every earlier
+  // stage, so "reached" accumulates right-to-left and the rate between two
+  // adjacent stages is reached(next) / reached(current). Lost columns sit
+  // outside the funnel math.
+  const nonLost = stages.filter((s) => s.kind !== "lost");
+  const reached = new Map<string, number>();
+  for (let i = nonLost.length - 1, sum = 0; i >= 0; i--) {
+    sum += count[nonLost[i].id] ?? 0;
+    reached.set(nonLost[i].id, sum);
+  }
+  const conversionAfter = (stage: Stage, next?: Stage): number | null => {
+    if (!next || stage.kind === "lost" || next.kind === "lost") return null;
+    const from = reached.get(stage.id) ?? 0;
+    if (from <= 0) return null;
+    return (reached.get(next.id) ?? 0) / from;
+  };
+
+  const exportCsv = () => {
+    const esc = (c: string) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c);
+    const rows: string[][] = [
+      ["Stage", "Type", "Leads", "Reached stage or beyond", "Conversion from previous"],
+    ];
+    let prev: number | null = null;
+    for (const s of stages) {
+      const lost = s.kind === "lost";
+      const r = lost ? null : (reached.get(s.id) ?? 0);
+      const conv =
+        !lost && prev != null && prev > 0 && r != null
+          ? `${Math.round((r / prev) * 100)}%`
+          : "";
+      rows.push([s.name, s.kind, String(count[s.id] ?? 0), r != null ? String(r) : "", conv]);
+      if (!lost && r != null) prev = r;
+    }
+    const csv = rows.map((r) => r.map(esc).join(",")).join("\n");
+    // BOM so Excel opens the UTF-8 file with accents intact.
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `pipeline-stages-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   return (
     <DndContext
       sensors={sensors}
@@ -110,24 +154,45 @@ export function PipelineBoard({
       onDragCancel={() => setActiveCard(null)}
     >
       <div className="flex h-[calc(100vh-11rem)] flex-col gap-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <p className="text-sm text-muted-foreground">
             Press and hold a card to drag it between stages.
           </p>
-          {canManage && <StageManager workspaceId={workspaceId} stages={stages} />}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={exportCsv}>
+              <Download className="mr-1 h-3.5 w-3.5" />
+              Export CSV
+            </Button>
+            {canManage && <StageManager workspaceId={workspaceId} stages={stages} />}
+          </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto pb-2">
-          {stages.map((stage) => (
-            <StageColumn
-              key={stage.id}
-              stage={stage}
-              cards={board[stage.id] ?? []}
-              total={count[stage.id] ?? 0}
-              cap={cap}
-              onCardClick={setSelected}
-            />
-          ))}
+        <div className="board-scroll flex min-h-0 min-w-0 flex-1 gap-3 overflow-x-auto pb-2">
+          {stages.map((stage, i) => {
+            const conv = conversionAfter(stage, stages[i + 1]);
+            return (
+              <div key={stage.id} className="flex h-full min-w-0 shrink-0 gap-3">
+                <StageColumn
+                  stage={stage}
+                  cards={board[stage.id] ?? []}
+                  total={count[stage.id] ?? 0}
+                  cap={cap}
+                  onCardClick={setSelected}
+                />
+                {conv != null && (
+                  <div className="flex shrink-0 flex-col items-center justify-start pt-14">
+                    <span
+                      className="flex items-center gap-0.5 rounded-full border bg-card px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground shadow-sm"
+                      title="Of the leads that reached this stage, how many got to the next one (or beyond)"
+                    >
+                      {Math.round(conv * 100)}%
+                      <ChevronRight className="h-3 w-3" />
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

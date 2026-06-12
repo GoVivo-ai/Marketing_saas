@@ -427,8 +427,10 @@ export const leads = pgTable(
     stageId: text("stage_id").references(() => stages.id, {
       onDelete: "set null",
     }),
-    /** 0–100, assigned by the AI lead-scoring engine. */
+    /** 0–100, assigned by the AI lead-scoring engine (radius boost included). */
     aiScore: integer("ai_score"),
+    /** Portion of aiScore earned for being inside the ad set's radius. */
+    radiusBoost: integer("radius_boost").notNull().default(0),
     aiScoreReason: text("ai_score_reason"),
     /** Concrete next step for sales, generated alongside the score. */
     aiSuggestedAction: text("ai_suggested_action"),

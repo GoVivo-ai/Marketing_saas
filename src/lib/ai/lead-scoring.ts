@@ -1,7 +1,8 @@
 import { generateObject } from "ai";
 import { z } from "zod";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { radiusBoost } from "@/lib/geo";
 import { anthropicProvider, isAiConfigured } from "./provider";
 
 const MODEL = "claude-haiku-4-5-20251001"; // high volume, low latency — cheap model
@@ -47,6 +48,40 @@ export async function scoreLead(input: {
 }
 
 /**
+ * Radius boost per lead: leads inside their ad set's audience radius score
+ * higher (in-radius leads convert better — they live where the service
+ * operates). Returns a map of leadId → boost points (0/5/10).
+ */
+export async function radiusBoostByLeadId(
+  leadIds: string[],
+): Promise<Map<string, number>> {
+  if (!leadIds.length) return new Map();
+  const rows = await db()
+    .select({
+      id: schema.leads.id,
+      geoLat: schema.leads.geoLat,
+      geoLng: schema.leads.geoLng,
+      targetLat: schema.adsets.lat,
+      targetLng: schema.adsets.lng,
+      targetRadius: schema.adsets.radius,
+      targetUnit: schema.adsets.distanceUnit,
+    })
+    .from(schema.leads)
+    .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+    .where(inArray(schema.leads.id, leadIds));
+  return new Map(rows.map((r) => [r.id, radiusBoost(r)]));
+}
+
+/** Final score = AI base + radius boost, capped at 100 (with the boost actually applied). */
+export function withRadiusBoost(
+  base: number,
+  boost: number,
+): { score: number; applied: number } {
+  const score = Math.min(100, Math.round(base) + boost);
+  return { score, applied: score - Math.round(base) };
+}
+
+/**
  * Scores leads in a workspace that don't have a score yet (null aiScore).
  * Used to drain the backlog and retry leads that failed scoring at sync time,
  * so every lead eventually gets a score. Returns how many were scored.
@@ -79,6 +114,8 @@ export async function scorePendingLeads(
     )
     .limit(limit);
 
+  const boosts = await radiusBoostByLeadId(pending.map((l) => l.id));
+
   let scored = 0;
   for (const lead of pending) {
     try {
@@ -89,10 +126,12 @@ export async function scorePendingLeads(
         qualificationCriteria: ws.qualificationCriteria ?? undefined,
         formData: (lead.formData ?? {}) as Record<string, unknown>,
       });
+      const { score, applied } = withRadiusBoost(r.score, boosts.get(lead.id) ?? 0);
       await db()
         .update(schema.leads)
         .set({
-          aiScore: r.score,
+          aiScore: score,
+          radiusBoost: applied,
           aiScoreReason: r.reason,
           aiSuggestedAction: r.suggestedAction,
         })

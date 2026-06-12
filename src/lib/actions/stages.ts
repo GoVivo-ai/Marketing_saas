@@ -7,19 +7,6 @@ import { canManageWorkspace } from "@/lib/permissions";
 
 const PALETTE = ["#011640", "#026a60", "#04d98b", "#2bbf9a", "#64dc54", "#f2e205"];
 
-/** Resolves a stage's workspace and checks management permission. */
-async function requireStageManager(stageId: string): Promise<string> {
-  const [stage] = await db()
-    .select({ workspaceId: schema.stages.workspaceId })
-    .from(schema.stages)
-    .where(eq(schema.stages.id, stageId))
-    .limit(1);
-  if (!stage) throw new Error("Stage not found");
-  if (!(await canManageWorkspace(stage.workspaceId)))
-    throw new Error("You don't have permission to manage stages");
-  return stage.workspaceId;
-}
-
 function revalidate() {
   revalidatePath("/leads/pipeline");
   revalidatePath("/leads");
@@ -49,67 +36,66 @@ export async function createStage(formData: FormData) {
   revalidate();
 }
 
-/** Renames, recolors and/or reclassifies a stage (open/won/lost). */
-export async function updateStage(formData: FormData) {
-  const stageId = String(formData.get("stageId") ?? "");
-  await requireStageManager(stageId);
-  const name = String(formData.get("name") ?? "").trim();
-  const color = String(formData.get("color") ?? "").trim();
-  const kind = String(formData.get("kind") ?? "").trim();
-  if (!name) throw new Error("Stage name is required");
-  await db()
-    .update(schema.stages)
-    .set({
-      name,
-      color: color || null,
-      ...(["open", "won", "lost"].includes(kind) ? { kind } : {}),
-    })
-    .where(eq(schema.stages.id, stageId));
-  revalidate();
-}
-
-/** Moves a stage one slot earlier/later by swapping positions with its neighbor. */
-export async function moveStage(formData: FormData) {
-  const stageId = String(formData.get("stageId") ?? "");
-  const direction = String(formData.get("direction") ?? "");
-  const workspaceId = await requireStageManager(stageId);
+/**
+ * Saves the whole stage editor in one submit: every row's name/color/kind,
+ * plus an optional `move` ("up:<id>" / "down:<id>") or `delete` ("<id>") when
+ * an arrow or the delete confirmation submitted the form — so reordering or
+ * deleting never loses pending edits.
+ */
+export async function saveStages(formData: FormData) {
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  if (!(await canManageWorkspace(workspaceId)))
+    throw new Error("You don't have permission to manage stages");
 
   const stages = await db()
-    .select({ id: schema.stages.id, position: schema.stages.position })
+    .select()
     .from(schema.stages)
     .where(eq(schema.stages.workspaceId, workspaceId))
     .orderBy(asc(schema.stages.position));
-  const idx = stages.findIndex((s) => s.id === stageId);
-  // "up" in the manager list = earlier in the funnel (left on the board).
-  const earlier = direction === "up" || direction === "left";
-  const swapWith = earlier ? idx - 1 : idx + 1;
-  if (idx < 0 || swapWith < 0 || swapWith >= stages.length) return;
 
-  const a = stages[idx];
-  const b = stages[swapWith];
-  await db().update(schema.stages).set({ position: b.position }).where(eq(schema.stages.id, a.id));
-  await db().update(schema.stages).set({ position: a.position }).where(eq(schema.stages.id, b.id));
-  revalidate();
-}
+  // 1) Field edits — apply for every row present in the form.
+  for (const s of stages) {
+    if (!formData.has(`name:${s.id}`)) continue;
+    const name = String(formData.get(`name:${s.id}`) ?? "").trim();
+    const color = String(formData.get(`color:${s.id}`) ?? "").trim() || null;
+    const rawKind = String(formData.get(`kind:${s.id}`) ?? "").trim();
+    const kind = ["open", "won", "lost"].includes(rawKind) ? rawKind : s.kind;
+    if (!name) continue; // never blank out a stage name
+    if (name !== s.name || color !== s.color || kind !== s.kind) {
+      await db()
+        .update(schema.stages)
+        .set({ name, color, kind })
+        .where(eq(schema.stages.id, s.id));
+    }
+  }
 
-/** Deletes a stage after re-homing its leads to an adjacent stage. */
-export async function deleteStage(formData: FormData) {
-  const stageId = String(formData.get("stageId") ?? "");
-  const workspaceId = await requireStageManager(stageId);
+  // 2) Optional reorder — "up" = earlier in the funnel (left on the board).
+  const move = String(formData.get("move") ?? "");
+  if (move) {
+    const [direction, stageId] = move.split(":");
+    const idx = stages.findIndex((s) => s.id === stageId);
+    const swapWith = direction === "up" ? idx - 1 : idx + 1;
+    if (idx >= 0 && swapWith >= 0 && swapWith < stages.length) {
+      const a = stages[idx];
+      const b = stages[swapWith];
+      await db().update(schema.stages).set({ position: b.position }).where(eq(schema.stages.id, a.id));
+      await db().update(schema.stages).set({ position: a.position }).where(eq(schema.stages.id, b.id));
+    }
+  }
 
-  const stages = await db()
-    .select({ id: schema.stages.id, position: schema.stages.position })
-    .from(schema.stages)
-    .where(eq(schema.stages.workspaceId, workspaceId))
-    .orderBy(asc(schema.stages.position));
-  if (stages.length <= 1) throw new Error("A pipeline needs at least one stage");
+  // 3) Optional delete — re-home its leads to the adjacent stage first.
+  const del = String(formData.get("delete") ?? "");
+  if (del && stages.length > 1) {
+    const idx = stages.findIndex((s) => s.id === del);
+    if (idx >= 0) {
+      const target = stages[idx - 1] ?? stages[idx + 1];
+      await db()
+        .update(schema.leads)
+        .set({ stageId: target.id })
+        .where(eq(schema.leads.stageId, del));
+      await db().delete(schema.stages).where(eq(schema.stages.id, del));
+    }
+  }
 
-  const idx = stages.findIndex((s) => s.id === stageId);
-  const target = stages[idx - 1] ?? stages[idx + 1];
-  await db()
-    .update(schema.leads)
-    .set({ stageId: target.id })
-    .where(eq(schema.leads.stageId, stageId));
-  await db().delete(schema.stages).where(eq(schema.stages.id, stageId));
   revalidate();
 }

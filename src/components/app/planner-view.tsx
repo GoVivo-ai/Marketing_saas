@@ -5,15 +5,9 @@ import { useRouter } from "next/navigation";
 import { format, parse } from "date-fns";
 import { toast } from "sonner";
 import {
-  Funnel,
-  FunnelChart,
-  LabelList,
-  ResponsiveContainer,
-  Tooltip,
-} from "recharts";
-import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Loader2,
   Wallet,
   DollarSign,
@@ -32,12 +26,13 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import type { PlannerData } from "@/lib/data";
 import { saveMonthlyPlan } from "@/lib/actions/planner";
 
 const usd = (n: number) =>
+  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const usd2 = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const int = (n: number) => Math.round(n).toLocaleString("en-US");
 const pct = (frac: number) => `${(frac * 100).toFixed(1)}%`;
@@ -102,7 +97,7 @@ export function PlannerView({
     setRate(num(leads) > 0 ? ((num(v) / num(leads)) * 100).toFixed(1) : "");
   };
 
-  // Live plan figures (drive the inputs, the funnel chart and the comparison).
+  // Live plan figures (drive the inputs, the funnel and the comparison).
   const planBudget = num(budget);
   const planCpl = num(cpl);
   const planLeads = num(leads);
@@ -170,8 +165,8 @@ export function PlannerView({
                 <Wallet className="h-4 w-4" /> Budget · {monthLabel}
               </p>
               <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">
-                {usd(a.spend)}
-                <span className="ml-1 text-lg font-normal text-muted-foreground">/ {usd(planBudget)}</span>
+                {usd2(a.spend)}
+                <span className="ml-1 text-lg font-normal text-muted-foreground">/ {usd2(planBudget)}</span>
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Spent so far this month · across all campaigns
@@ -180,7 +175,7 @@ export function PlannerView({
             <div className="text-right">
               <p className="text-sm text-muted-foreground">{overBudget ? "Over budget" : "Remaining"}</p>
               <p className={cn("text-2xl font-semibold tabular-nums", overBudget && "text-destructive")}>
-                {overBudget ? usd(a.spend - planBudget) : usd(remaining)}
+                {overBudget ? usd2(a.spend - planBudget) : usd2(remaining)}
               </p>
             </div>
           </div>
@@ -193,38 +188,35 @@ export function PlannerView({
             </div>
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>{planBudget > 0 ? `${Math.round(usedPct)}% of budget used` : "Set a budget below"}</span>
-              {planBudget > 0 && <span>{overBudget ? "Pace exceeds plan" : `${usd(remaining)} left`}</span>}
+              {planBudget > 0 && <span>{overBudget ? "Pace exceeds plan" : `${usd2(remaining)} left`}</span>}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* ---------- Calculator + live funnel ---------- */}
+      {/* ---------- Compact calculator + live funnel ---------- */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Plan</CardTitle>
-            <CardDescription>
-              Edit any field — the rest recalculates. Budget ÷ CPL = leads;
-              leads × conversion = sales.
-            </CardDescription>
+            <CardDescription>Edit any field — the rest recalculates.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="space-y-3">
-              <SectionLabel>Investment</SectionLabel>
-              <Field id="budget" label="Max budget" icon={<Wallet className="h-3.5 w-3.5" />} prefix="$" value={budget} onChange={onBudget} />
-              <Field id="cpl" label="Target CPL" icon={<DollarSign className="h-3.5 w-3.5" />} prefix="$" value={cpl} onChange={onCpl} />
-            </div>
-            <div className="space-y-3">
-              <SectionLabel>Funnel</SectionLabel>
-              <Field id="leads" label="Target leads" icon={<Users className="h-3.5 w-3.5" />} value={leads} onChange={onLeads} />
-              <Field id="rate" label="Lead → sale conversion" icon={<Percent className="h-3.5 w-3.5" />} suffix="%" value={rate} onChange={onRate} />
-              <Field id="sales" label="Target sales" icon={<Target className="h-3.5 w-3.5" />} value={sales} onChange={onSales} />
+          <CardContent className="space-y-1">
+            <Row icon={<Wallet className="h-4 w-4" />} label="Max budget" prefix="$" value={budget} onChange={onBudget} />
+            <Row icon={<DollarSign className="h-4 w-4" />} label="Target CPL" prefix="$" value={cpl} onChange={onCpl} />
+            <Row icon={<Users className="h-4 w-4" />} label="Target leads" value={leads} onChange={onLeads} />
+            <Row icon={<Percent className="h-4 w-4" />} label="Conversion" suffix="%" value={rate} onChange={onRate} />
+            <Row icon={<Target className="h-4 w-4" />} label="Target sales" value={sales} onChange={onSales} />
+            <div className="flex items-center justify-between pt-3 text-sm">
+              <span className="flex items-center gap-2 text-muted-foreground">
+                <Receipt className="h-4 w-4" /> Cost per sale (CPA)
+              </span>
+              <span className="font-semibold tabular-nums">{planCpa ? usd2(planCpa) : "—"}</span>
             </div>
           </CardContent>
         </Card>
 
-        {/* Live funnel — updates as you type. */}
+        {/* Live funnel — animates as you type. */}
         <Card>
           <CardHeader>
             <CardTitle>Funnel preview</CardTitle>
@@ -256,31 +248,19 @@ export function PlannerView({
           <div className="grid gap-8 md:grid-cols-2">
             <div className="space-y-4">
               <SectionLabel>Results vs. target</SectionLabel>
-              <GoalBar
-                icon={<Users className="h-3.5 w-3.5" />}
-                label="Leads"
-                plan={int(planLeads)}
-                actual={int(a.leads)}
+              <GoalBar icon={<Users className="h-3.5 w-3.5" />} label="Leads" plan={int(planLeads)} actual={int(a.leads)}
                 ratio={planLeads > 0 ? a.leads / planLeads : 0}
-                pct={planLeads > 0 ? `${Math.round((a.leads / planLeads) * 100)}%` : "—"}
-                hasPlan={planLeads > 0}
-              />
-              <GoalBar
-                icon={<Target className="h-3.5 w-3.5" />}
-                label="Sales"
-                plan={int(planSales)}
-                actual={int(a.sales)}
+                pct={planLeads > 0 ? `${Math.round((a.leads / planLeads) * 100)}%` : "—"} hasPlan={planLeads > 0} />
+              <GoalBar icon={<Target className="h-3.5 w-3.5" />} label="Sales" plan={int(planSales)} actual={int(a.sales)}
                 ratio={planSales > 0 ? a.sales / planSales : 0}
-                pct={planSales > 0 ? `${Math.round((a.sales / planSales) * 100)}%` : "—"}
-                hasPlan={planSales > 0}
-              />
+                pct={planSales > 0 ? `${Math.round((a.sales / planSales) * 100)}%` : "—"} hasPlan={planSales > 0} />
             </div>
             <div className="space-y-3">
               <SectionLabel>Efficiency</SectionLabel>
               <div className="grid grid-cols-3 gap-3">
-                <EffTile label="CPL" actual={a.cpl ? usd(a.cpl) : "—"} plan={planCpl ? usd(planCpl) : "—"}
+                <EffTile label="CPL" actual={a.cpl ? usd2(a.cpl) : "—"} plan={planCpl ? usd2(planCpl) : "—"}
                   good={a.cpl > 0 && planCpl > 0 && a.cpl <= planCpl} bad={a.cpl > 0 && planCpl > 0 && a.cpl > planCpl} />
-                <EffTile label="CPA" actual={a.cpa ? usd(a.cpa) : "—"} plan={planCpa ? usd(planCpa) : "—"}
+                <EffTile label="CPA" actual={a.cpa ? usd2(a.cpa) : "—"} plan={planCpa ? usd2(planCpa) : "—"}
                   good={a.cpa > 0 && planCpa > 0 && a.cpa <= planCpa} bad={a.cpa > 0 && planCpa > 0 && a.cpa > planCpa} />
                 <EffTile label="Conversion" actual={pct(a.convRate)} plan={planRate ? pct(planRate) : "—"}
                   good={planRate > 0 && a.convRate >= planRate} bad={planRate > 0 && a.convRate < planRate && a.leads > 0} />
@@ -293,7 +273,7 @@ export function PlannerView({
   );
 }
 
-/** Interactive funnel: Budget → Leads → Sales, animating as the plan changes. */
+/** Smooth two-tier funnel that narrows by the conversion rate; animates live. */
 function PlannerFunnel({
   budget,
   cpl,
@@ -309,72 +289,71 @@ function PlannerFunnel({
   sales: number;
   cpa: number;
 }) {
-  const chartData = [
-    { stage: "Leads", value: leads, label: `Leads · ${int(leads)}`, fill: "var(--chart-2)" },
-    { stage: "Sales", value: sales, label: `Sales · ${int(sales)}`, fill: "var(--chart-4)" },
-  ];
+  if (leads <= 0) {
+    return (
+      <div className="flex h-[212px] items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
+        Enter a budget and CPL to preview the funnel.
+      </div>
+    );
+  }
+  // Narrow the sales tier by the conversion rate, with a floor so its label fits.
+  const salesWidth = Math.min(100, Math.max(34, leads > 0 ? (sales / leads) * 100 : 34));
 
   return (
-    <div className="space-y-4">
-      {/* Inputs flow */}
-      <div className="flex items-center justify-between gap-2 text-center text-xs">
-        <Pill label="Budget" value={budget ? usd(budget) : "—"} />
-        <Connector op={`÷ ${cpl ? usd(cpl) : "CPL"}`} />
-        <Pill label="Leads" value={int(leads)} accent />
-        <Connector op={`× ${rate ? pct(rate) : "rate"}`} />
-        <Pill label="Sales" value={int(sales)} accent />
+    <div className="space-y-2 py-1">
+      <FunnelTier
+        widthPct={100}
+        tone="lead"
+        label="Leads"
+        value={int(leads)}
+        caption={`${usd(budget)} ÷ ${usd(cpl)} CPL`}
+      />
+      <div className="flex items-center justify-center gap-1 text-xs font-medium text-muted-foreground">
+        <ChevronDown className="h-3.5 w-3.5" />
+        {pct(rate)} convert
       </div>
+      <FunnelTier
+        widthPct={salesWidth}
+        tone="sale"
+        label="Sales"
+        value={int(sales)}
+        caption={cpa ? `${usd(cpa)} per sale` : "—"}
+      />
+    </div>
+  );
+}
 
-      {leads > 0 ? (
-        <ResponsiveContainer width="100%" height={220}>
-          <FunnelChart>
-            <Tooltip
-              cursor={false}
-              contentStyle={{
-                background: "var(--popover)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                fontSize: 12,
-                color: "var(--popover-foreground)",
-              }}
-            />
-            <Funnel dataKey="value" data={chartData} isAnimationActive animationDuration={400} stroke="var(--background)">
-              <LabelList position="right" dataKey="label" stroke="none" fill="var(--foreground)" fontSize={12} />
-            </Funnel>
-          </FunnelChart>
-        </ResponsiveContainer>
-      ) : (
-        <div className="flex h-[220px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-          Enter a budget and CPL to preview the funnel.
+function FunnelTier({
+  widthPct,
+  tone,
+  label,
+  value,
+  caption,
+}: {
+  widthPct: number;
+  tone: "lead" | "sale";
+  label: string;
+  value: string;
+  caption: string;
+}) {
+  return (
+    <div className="mx-auto transition-all duration-300" style={{ width: `${widthPct}%` }}>
+      <div
+        className={cn(
+          "rounded-xl px-4 py-3 text-white shadow-sm",
+          tone === "lead"
+            ? "bg-gradient-to-br from-[#04d98b] to-[#026a60]"
+            : "bg-gradient-to-br from-[#0a9d8f] to-[#011640]",
+        )}
+      >
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-sm font-medium text-white/90">{label}</span>
+          <span className="text-xl font-bold tabular-nums">{value}</span>
         </div>
-      )}
-
-      <div className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2.5 text-sm">
-        <span className="flex items-center gap-1.5 text-muted-foreground">
-          <Receipt className="h-3.5 w-3.5" /> Cost per sale (CPA)
-        </span>
-        <span className="font-semibold tabular-nums">{cpa ? usd(cpa) : "—"}</span>
+        <p className="mt-0.5 truncate text-[11px] text-white/70">{caption}</p>
       </div>
     </div>
   );
-}
-
-function Pill({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div
-      className={cn(
-        "flex-1 rounded-lg border px-2 py-1.5",
-        accent && "border-primary/30 bg-primary/5",
-      )}
-    >
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="truncate text-sm font-semibold tabular-nums">{value}</p>
-    </div>
-  );
-}
-
-function Connector({ op }: { op: string }) {
-  return <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">{op}</span>;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -461,47 +440,45 @@ function EffTile({
   );
 }
 
-function Field({
-  id,
+/** Compact calculator row: label on the left, a narrow number input on the right. */
+function Row({
+  icon,
   label,
   value,
   onChange,
   prefix,
   suffix,
-  icon,
 }: {
-  id: string;
+  icon: React.ReactNode;
   label: string;
   value: string;
   onChange: (v: string) => void;
   prefix?: string;
   suffix?: string;
-  icon?: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id} className="flex items-center gap-1.5 text-muted-foreground">
+    <div className="flex items-center justify-between gap-3 border-b py-2 last:border-0">
+      <span className="flex items-center gap-2 text-sm text-muted-foreground">
         {icon}
         {label}
-      </Label>
-      <div className="relative">
+      </span>
+      <div className="relative w-36">
         {prefix && (
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
             {prefix}
           </span>
         )}
         <Input
-          id={id}
           type="number"
           inputMode="decimal"
           min={0}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={cn("tabular-nums", prefix && "pl-7", suffix && "pr-8")}
+          className={cn("h-9 text-right tabular-nums", prefix && "pl-6", suffix && "pr-7")}
           placeholder="0"
         />
         {suffix && (
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
             {suffix}
           </span>
         )}

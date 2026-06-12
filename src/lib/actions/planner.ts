@@ -18,7 +18,13 @@ export interface SavePlanInput {
   notes?: string | null;
   /** Per-city goals (in the workspace's result unit). */
   cityTargets?: { cityName: string; targetResults: number }[];
+  /** Optional campaign window ("YYYY-MM-DD"); null clears it (full month). */
+  periodStart?: string | null;
+  periodEnd?: string | null;
 }
+
+const isoDate = (s: string | null | undefined) =>
+  s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 
 const clamp = (n: number) => (Number.isFinite(n) && n > 0 ? n : 0);
 
@@ -41,6 +47,8 @@ export async function saveMonthlyPlan(
     targetLeads: Math.round(clamp(input.targetLeads)),
     targetSales: Math.round(clamp(input.targetSales)),
     notes: input.notes?.trim() || null,
+    periodStart: isoDate(input.periodStart),
+    periodEnd: isoDate(input.periodEnd),
   };
 
   await db()

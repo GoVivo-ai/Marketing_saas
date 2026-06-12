@@ -564,6 +564,16 @@ export interface MonthlyPlanData {
   exists: boolean;
 }
 
+/** The reporting window the actuals were computed over. */
+export interface PlannerPeriod {
+  /** "YYYY-MM-DD" inclusive start. */
+  start: string;
+  /** "YYYY-MM-DD" inclusive end. */
+  end: string;
+  /** True when a custom campaign window (not the whole month) is in effect. */
+  custom: boolean;
+}
+
 /** What was actually executed in the month, from synced metrics + pipeline. */
 export interface MonthActuals {
   spend: number;
@@ -586,6 +596,13 @@ export interface CityPlanRow {
   actualResults: number;
 }
 
+/** A pipeline stage with how many of the month's leads sit in it. */
+export interface OpsStage {
+  name: string;
+  kind: string;
+  count: number;
+}
+
 export interface PlannerData {
   /** Planned month as "YYYY-MM". */
   month: string;
@@ -595,6 +612,10 @@ export interface PlannerData {
   actuals: MonthActuals;
   /** Per-city goals + actuals (cities come from the workspace's ad sets). */
   cities: CityPlanRow[];
+  /** Operations funnel — the workspace's pipeline stages with lead counts. */
+  opsFunnel: OpsStage[];
+  /** The window (custom campaign period or full month) actuals cover. */
+  period: PlannerPeriod;
 }
 
 /** Inclusive day bounds + exclusive next-month start for a given month. */
@@ -610,23 +631,37 @@ export async function getPlannerData(
   workspaceId: string,
   monthStart: Date,
 ): Promise<PlannerData> {
-  const { start, end, nextMonth } = monthBounds(monthStart);
-  const startStr = dateStr(start);
-  const endStr = dateStr(end);
-  const monthKey = startStr.slice(0, 7);
+  const m = monthBounds(monthStart);
+  const monthStartStr = dateStr(m.start);
+  const monthKey = monthStartStr.slice(0, 7);
 
-  const [planRow, metricRow, salesRow, wsRow, cityTargets, citySpend, cityResults] =
-    await Promise.all([
+  // Fetch the plan first so its optional campaign window can scope the actuals.
+  const [planRow, wsRow] = await Promise.all([
     db()
       .select()
       .from(schema.monthlyPlans)
       .where(
         and(
           eq(schema.monthlyPlans.workspaceId, workspaceId),
-          eq(schema.monthlyPlans.month, startStr),
+          eq(schema.monthlyPlans.month, monthStartStr),
         ),
       )
       .limit(1),
+    db()
+      .select({ resultLabel: schema.workspaces.resultLabel })
+      .from(schema.workspaces)
+      .where(eq(schema.workspaces.id, workspaceId))
+      .limit(1),
+  ]);
+  const p = planRow[0];
+  // Effective window: the saved campaign period, else the whole calendar month.
+  const startStr = p?.periodStart ?? monthStartStr;
+  const endStr = p?.periodEnd ?? dateStr(m.end);
+  const start = new Date(`${startStr}T00:00:00`);
+  const nextMonth = new Date(new Date(`${endStr}T00:00:00`).getTime() + 86_400_000);
+
+  const [metricRow, salesRow, cityTargets, citySpend, cityResults, opsRows] =
+    await Promise.all([
     db()
       .select({
         spend: sql<string>`coalesce(sum(${schema.metricsDaily.spend}), 0)`,
@@ -652,13 +687,7 @@ export async function getPlannerData(
           lt(schema.leads.createdAt, nextMonth),
         ),
       ),
-    // Workspace result label.
-    db()
-      .select({ resultLabel: schema.workspaces.resultLabel })
-      .from(schema.workspaces)
-      .where(eq(schema.workspaces.id, workspaceId))
-      .limit(1),
-    // Saved per-city goals for the month.
+    // Saved per-city goals — keyed to the plan's anchor month.
     db()
       .select({
         cityName: schema.planCityTargets.cityName,
@@ -668,7 +697,7 @@ export async function getPlannerData(
       .where(
         and(
           eq(schema.planCityTargets.workspaceId, workspaceId),
-          eq(schema.planCityTargets.month, startStr),
+          eq(schema.planCityTargets.month, monthStartStr),
         ),
       ),
     // Actual spend & leads per city (via ad sets) for the month.
@@ -706,7 +735,33 @@ export async function getPlannerData(
         ),
       )
       .groupBy(schema.adsets.cityName),
+    // Ops funnel: every pipeline stage with this month's lead count.
+    db()
+      .select({
+        name: schema.stages.name,
+        kind: schema.stages.kind,
+        position: schema.stages.position,
+        count: sql<number>`count(${schema.leads.id})::int`,
+      })
+      .from(schema.stages)
+      .leftJoin(
+        schema.leads,
+        and(
+          eq(schema.leads.stageId, schema.stages.id),
+          gte(schema.leads.createdAt, start),
+          lt(schema.leads.createdAt, nextMonth),
+        ),
+      )
+      .where(eq(schema.stages.workspaceId, workspaceId))
+      .groupBy(schema.stages.id, schema.stages.name, schema.stages.kind, schema.stages.position)
+      .orderBy(asc(schema.stages.position)),
   ]);
+
+  const opsFunnel: OpsStage[] = opsRows.map((r) => ({
+    name: r.name,
+    kind: r.kind,
+    count: Number(r.count),
+  }));
 
   // Build the per-city rows: union of cities that have a saved goal, spend or
   // results this month, keyed case-insensitively but displayed in proper case.
@@ -743,7 +798,6 @@ export async function getPlannerData(
     (a, b) => b.targetResults - a.targetResults || a.cityName.localeCompare(b.cityName),
   );
 
-  const p = planRow[0];
   const plan: MonthlyPlanData = {
     budget: p ? Number(p.budget) : 0,
     targetCpl: p ? Number(p.targetCpl) : 0,
@@ -773,6 +827,12 @@ export async function getPlannerData(
     plan,
     actuals,
     cities,
+    opsFunnel,
+    period: {
+      start: startStr,
+      end: endStr,
+      custom: Boolean(p?.periodStart && p?.periodEnd),
+    },
   };
 }
 

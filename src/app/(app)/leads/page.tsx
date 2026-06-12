@@ -6,10 +6,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { DateRangePicker } from "@/components/app/date-range-picker";
+import { LeadsCampaignFilter } from "@/components/app/leads-campaign-filter";
 import { Pagination } from "@/components/app/pagination";
 import { auth } from "@/lib/auth";
 import { isAnyTelephonyConnected } from "@/lib/integrations/telephony";
-import { getLeadsPage, getWorkspaceContext } from "@/lib/data";
+import {
+  getLeadCampaignOptions,
+  getLeadsPage,
+  getWorkspaceContext,
+} from "@/lib/data";
 import { resolveDateRange } from "@/lib/date-range";
 import { LeadsTable } from "./leads-table";
 
@@ -26,7 +31,13 @@ const DEFAULT_RANGE = "all";
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; from?: string; to?: string; page?: string }>;
+  searchParams: Promise<{
+    range?: string;
+    from?: string;
+    to?: string;
+    page?: string;
+    campaign?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const resolved = resolveDateRange(sp, {
@@ -35,6 +46,7 @@ export default async function LeadsPage({
     allowAllTime: true,
   });
   const requestedPage = Math.max(1, Number(sp.page) || 1);
+  const campaignId = sp.campaign ?? null;
 
   const session = await auth();
   const contactConnected = session?.user?.id
@@ -42,15 +54,19 @@ export default async function LeadsPage({
     : false;
 
   const { active } = await getWorkspaceContext();
-  const result = active
-    ? await getLeadsPage(active.id, {
-        start: resolved.start,
-        end: resolved.end,
-        page: requestedPage,
-      })
-    : { rows: [], total: 0, page: 1, pageSize: 25, totalPages: 1 };
+  const [result, campaigns] = active
+    ? await Promise.all([
+        getLeadsPage(active.id, {
+          start: resolved.start,
+          end: resolved.end,
+          page: requestedPage,
+          campaignId,
+        }),
+        getLeadCampaignOptions(active.id),
+      ])
+    : [{ rows: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }, []];
 
-  const isFiltered = resolved.start != null;
+  const isFiltered = resolved.start != null || campaignId != null;
 
   return (
     <div className="space-y-6">
@@ -64,11 +80,14 @@ export default async function LeadsPage({
             spreadsheets.
           </p>
         </div>
-        <DateRangePicker
-          presets={RANGES}
-          defaultValue={DEFAULT_RANGE}
-          label={resolved.label}
-        />
+        <div className="flex items-center gap-2">
+          <LeadsCampaignFilter campaigns={campaigns} activeId={campaignId} />
+          <DateRangePicker
+            presets={RANGES}
+            defaultValue={DEFAULT_RANGE}
+            label={resolved.label}
+          />
+        </div>
       </div>
 
       <Card>

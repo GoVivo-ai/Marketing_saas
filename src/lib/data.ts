@@ -923,6 +923,18 @@ export interface LeadsPage {
   totalPages: number;
 }
 
+/** Campaigns that have at least one lead — for the leads filter dropdown. */
+export async function getLeadCampaignOptions(
+  workspaceId: string,
+): Promise<{ id: string; name: string }[]> {
+  const rows = await db()
+    .selectDistinct({ id: schema.campaigns.id, name: schema.campaigns.name })
+    .from(schema.leads)
+    .innerJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
+    .where(eq(schema.leads.workspaceId, workspaceId));
+  return rows.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export async function getLeadsPage(
   workspaceId: string,
   opts: {
@@ -930,14 +942,16 @@ export async function getLeadsPage(
     end?: Date | null;
     page?: number;
     pageSize?: number;
+    campaignId?: string | null;
   } = {},
 ): Promise<LeadsPage> {
-  const { start, end, pageSize = 25 } = opts;
+  const { start, end, pageSize = 25, campaignId } = opts;
   // start/end null or omitted → unbounded on that side (all time when both).
   // Filtered against the lead's createdAt timestamp.
   const filters = [eq(schema.leads.workspaceId, workspaceId)];
   if (start) filters.push(gte(schema.leads.createdAt, start));
   if (end) filters.push(lte(schema.leads.createdAt, end));
+  if (campaignId) filters.push(eq(schema.leads.campaignId, campaignId));
   const where = and(...filters);
 
   const [{ total }] = await db()

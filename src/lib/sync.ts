@@ -5,7 +5,7 @@ import { listAdSets, fetchAdSetDailyMetrics } from "@/lib/integrations/meta";
 import { geocodeCity, geocodeCityCached } from "@/lib/integrations/geocode";
 import { decryptSecret } from "@/lib/crypto";
 import { getSecret } from "@/lib/settings";
-import { scoreLead } from "@/lib/ai/lead-scoring";
+import { scoreLead, radiusBoostByLeadId, withRadiusBoost } from "@/lib/ai/lead-scoring";
 import { isAiConfigured } from "@/lib/ai/provider";
 
 export interface SyncStats {
@@ -382,6 +382,8 @@ export async function syncConnection(
   // single lead's failure never aborts the rest of the batch.
   let leadsScored = 0;
   if (freshLeads.length && workspace && (await isAiConfigured(conn.workspaceId))) {
+    // In-radius leads score higher — they live where the service operates.
+    const boosts = await radiusBoostByLeadId(freshLeads.map((l) => l.id));
     for (const lead of freshLeads) {
       try {
         const result = await scoreLead({
@@ -391,10 +393,15 @@ export async function syncConnection(
           qualificationCriteria: workspace.qualificationCriteria ?? undefined,
           formData: lead.formData,
         });
+        const { score, applied } = withRadiusBoost(
+          result.score,
+          boosts.get(lead.id) ?? 0,
+        );
         await db()
           .update(schema.leads)
           .set({
-            aiScore: result.score,
+            aiScore: score,
+            radiusBoost: applied,
             aiScoreReason: result.reason,
             aiSuggestedAction: result.suggestedAction,
           })

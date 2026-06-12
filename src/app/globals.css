@@ -168,6 +168,28 @@
   );
 }
 
+/* Horizontal board scrollbar (pipeline stages) — thin and built on theme
+   tokens, so it follows day/night automatically. */
+.board-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.board-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+.board-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.board-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.board-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: var(--muted-foreground);
+}
+
 /* Thin, brand-token scrollbar for the pipeline columns. */
 .pipeline-scroll {
   scrollbar-width: thin;

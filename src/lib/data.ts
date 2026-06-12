@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { and, asc, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
+import { haversineKm } from "@/lib/geo";
 
 /**
  * Read-side data layer for the product pages. Every function is scoped to
@@ -1041,18 +1042,6 @@ export async function getLeadsPage(
   }));
 
   return { rows: mapped, total, page, pageSize, totalPages };
-}
-
-/** Distance in km between two lat/lng points (haversine). */
-function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const R = 6371;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(s));
 }
 
 /** Classify a lead against its ad set's audience radius (near = ≤ 1.5× radius). */

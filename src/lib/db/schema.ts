@@ -309,9 +309,10 @@ export const adsetMetricsDaily = pgTable(
 );
 
 /**
- * Monthly campaign plan — one per workspace per month. Captures the planned
- * funnel (max budget → target CPL → leads → conversion rate → sales) so it can
- * be compared against what was actually executed that month.
+ * Saved campaign plan — a workspace can keep any number of named plans. Each
+ * plan is anchored to a month and captures the planned funnel (max budget →
+ * target CPL → leads → conversion rate → sales) so it can be compared against
+ * what was actually executed.
  */
 export const monthlyPlans = pgTable(
   "monthly_plans",
@@ -320,6 +321,8 @@ export const monthlyPlans = pgTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** User-facing plan name, freely editable (e.g. "June push — Miami"). */
+    name: text("name").notNull().default(""),
     /** First day of the planned month (e.g. 2026-06-01) — the plan's anchor. */
     month: date("month").notNull(),
     /**
@@ -340,11 +343,11 @@ export const monthlyPlans = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("monthly_plan_unique").on(t.workspaceId, t.month)],
+  (t) => [index("monthly_plan_workspace_month_idx").on(t.workspaceId, t.month)],
 );
 
 /**
- * Per-city goal within a monthly plan — one row per targeted city. The city is
+ * Per-city goal within a saved plan — one row per targeted city. The city is
  * keyed by name (ad sets churn month to month, cities persist). Leads and
  * budget per city are derived from this goal + the plan's CPL & conversion.
  */
@@ -355,14 +358,15 @@ export const planCityTargets = pgTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
+    planId: text("plan_id")
+      .notNull()
+      .references(() => monthlyPlans.id, { onDelete: "cascade" }),
     month: date("month").notNull(),
     cityName: text("city_name").notNull(),
     /** Target results (in the workspace's result unit) for this city. */
     targetResults: integer("target_results").notNull().default(0),
   },
-  (t) => [
-    uniqueIndex("plan_city_unique").on(t.workspaceId, t.month, t.cityName),
-  ],
+  (t) => [uniqueIndex("plan_city_unique").on(t.planId, t.cityName)],
 );
 
 // ─────────────────────────────────────────────────────────────────────────

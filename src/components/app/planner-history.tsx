@@ -1,5 +1,11 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { format, parse } from "date-fns";
+import { toast } from "sonner";
+import { Copy, Loader2, Trash2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -15,8 +21,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { PlannerHistoryRow } from "@/lib/data";
+import { deletePlan, duplicatePlan } from "@/lib/actions/planner";
 
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -44,19 +62,48 @@ function PlanActual({
 }
 
 export function PlannerHistory({
+  workspaceId,
   rows,
   resultLabel = "Sales",
 }: {
+  workspaceId: string;
   rows: PlannerHistoryRow[];
   resultLabel?: string;
 }) {
+  const router = useRouter();
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const duplicate = async (row: PlannerHistoryRow) => {
+    setBusyId(row.id);
+    const res = await duplicatePlan(workspaceId, row.id);
+    setBusyId(null);
+    if (res.ok && res.planId) {
+      toast.success(`Duplicated “${row.name}”`);
+      router.push(`/planner?plan=${res.planId}`);
+    } else {
+      toast.error(res.error ?? "Could not duplicate the plan");
+    }
+  };
+
+  const remove = async (row: PlannerHistoryRow) => {
+    setBusyId(row.id);
+    const res = await deletePlan(workspaceId, row.id);
+    setBusyId(null);
+    if (res.ok) {
+      toast.success(`Plan deleted — ${row.name}`);
+      router.refresh();
+    } else {
+      toast.error(res.error ?? "Could not delete the plan");
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Saved plans</CardTitle>
         <CardDescription>
-          Every month you&apos;ve planned and how it actually performed. Click a
-          month to open it.
+          Every plan you&apos;ve saved and how it actually performed. Open one
+          to keep working on it, duplicate it as a starting point, or delete it.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -68,25 +115,31 @@ export function PlannerHistory({
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Plan</TableHead>
                 <TableHead>Month</TableHead>
                 <TableHead className="text-right">Budget → spent</TableHead>
                 <TableHead className="text-right">Leads</TableHead>
                 <TableHead className="text-right">{resultLabel}</TableHead>
                 <TableHead className="text-right">CPL</TableHead>
+                <TableHead className="w-20" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((r) => {
                 const overBudget = r.budget > 0 && r.spend > r.budget;
+                const busy = busyId === r.id;
                 return (
-                  <TableRow key={r.month}>
+                  <TableRow key={r.id}>
                     <TableCell>
                       <Link
-                        href={`/planner?month=${r.month}`}
+                        href={`/planner?plan=${r.id}`}
                         className="font-medium hover:underline"
                       >
-                        {format(parse(r.month, "yyyy-MM", new Date()), "MMM yyyy")}
+                        {r.name || format(parse(r.month, "yyyy-MM", new Date()), "MMM yyyy")}
                       </Link>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {format(parse(r.month, "yyyy-MM", new Date()), "MMM yyyy")}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       <span className="text-muted-foreground">{usd(r.budget)}</span>
@@ -132,6 +185,54 @@ export function PlannerHistory({
                       >
                         {r.cpl ? usd(r.cpl) : "—"}
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => duplicate(r)}
+                          disabled={busy}
+                          aria-label={`Duplicate ${r.name}`}
+                        >
+                          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Dialog>
+                          <DialogTrigger
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                disabled={busy}
+                                aria-label={`Delete ${r.name}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            }
+                          />
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Delete this plan?</DialogTitle>
+                              <DialogDescription>
+                                This removes “{r.name}”. Your executed actuals
+                                are not affected.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter>
+                              <DialogClose render={<Button variant="outline">Cancel</Button>} />
+                              <DialogClose
+                                render={
+                                  <Button variant="destructive" onClick={() => remove(r)}>
+                                    Delete plan
+                                  </Button>
+                                }
+                              />
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );

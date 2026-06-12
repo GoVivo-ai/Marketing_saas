@@ -551,8 +551,12 @@ export async function getAdSetRows(
 // Planner — monthly plan vs. actual executed
 // ─────────────────────────────────────────────────────────────────────────
 
-/** The planned funnel for a month (zeroed when no plan has been saved yet). */
+/** The planned funnel (zeroed when the canvas is blank — no plan loaded). */
 export interface MonthlyPlanData {
+  /** Saved plan id, null while the canvas is a blank draft. */
+  id: string | null;
+  /** User-facing plan name. */
+  name: string;
   budget: number;
   targetCpl: number;
   /** Lead → sale conversion rate as a fraction (0.15 = 15%). */
@@ -560,7 +564,7 @@ export interface MonthlyPlanData {
   targetLeads: number;
   targetSales: number;
   notes: string | null;
-  /** False until the client saves a plan for this month. */
+  /** False until a saved plan is loaded into the canvas. */
   exists: boolean;
 }
 
@@ -626,27 +630,31 @@ function monthBounds(monthStart: Date) {
   return { start, end, nextMonth };
 }
 
-/** Plan + actuals for one workspace and month, ready for the comparison view. */
+/**
+ * Plan + actuals for one workspace, ready for the comparison view. With a
+ * `planId` the saved plan is loaded into the canvas (its month becomes the
+ * anchor); without one the canvas is a blank draft for `monthStart`.
+ */
 export async function getPlannerData(
   workspaceId: string,
   monthStart: Date,
+  planId?: string,
 ): Promise<PlannerData> {
-  const m = monthBounds(monthStart);
-  const monthStartStr = dateStr(m.start);
-  const monthKey = monthStartStr.slice(0, 7);
-
-  // Fetch the plan first so its optional campaign window can scope the actuals.
+  // Fetch the plan first: its month anchors the view and its optional
+  // campaign window scopes the actuals.
   const [planRow, wsRow] = await Promise.all([
-    db()
-      .select()
-      .from(schema.monthlyPlans)
-      .where(
-        and(
-          eq(schema.monthlyPlans.workspaceId, workspaceId),
-          eq(schema.monthlyPlans.month, monthStartStr),
-        ),
-      )
-      .limit(1),
+    planId
+      ? db()
+          .select()
+          .from(schema.monthlyPlans)
+          .where(
+            and(
+              eq(schema.monthlyPlans.id, planId),
+              eq(schema.monthlyPlans.workspaceId, workspaceId),
+            ),
+          )
+          .limit(1)
+      : Promise.resolve([]),
     db()
       .select({ resultLabel: schema.workspaces.resultLabel })
       .from(schema.workspaces)
@@ -654,6 +662,10 @@ export async function getPlannerData(
       .limit(1),
   ]);
   const p = planRow[0];
+
+  const m = monthBounds(p ? new Date(`${p.month}T00:00:00`) : monthStart);
+  const monthStartStr = dateStr(m.start);
+  const monthKey = monthStartStr.slice(0, 7);
   // Effective window: the saved campaign period, else the whole calendar month.
   const startStr = p?.periodStart ?? monthStartStr;
   const endStr = p?.periodEnd ?? dateStr(m.end);
@@ -687,19 +699,16 @@ export async function getPlannerData(
           lt(schema.leads.createdAt, nextMonth),
         ),
       ),
-    // Saved per-city goals — keyed to the plan's anchor month.
-    db()
-      .select({
-        cityName: schema.planCityTargets.cityName,
-        targetResults: schema.planCityTargets.targetResults,
-      })
-      .from(schema.planCityTargets)
-      .where(
-        and(
-          eq(schema.planCityTargets.workspaceId, workspaceId),
-          eq(schema.planCityTargets.month, monthStartStr),
-        ),
-      ),
+    // Saved per-city goals — keyed to the loaded plan (none on a blank canvas).
+    p
+      ? db()
+          .select({
+            cityName: schema.planCityTargets.cityName,
+            targetResults: schema.planCityTargets.targetResults,
+          })
+          .from(schema.planCityTargets)
+          .where(eq(schema.planCityTargets.planId, p.id))
+      : Promise.resolve([]),
     // Actual spend & leads per city (via ad sets) for the month.
     db()
       .select({
@@ -799,6 +808,8 @@ export async function getPlannerData(
   );
 
   const plan: MonthlyPlanData = {
+    id: p?.id ?? null,
+    name: p?.name ?? "",
     budget: p ? Number(p.budget) : 0,
     targetCpl: p ? Number(p.targetCpl) : 0,
     conversionRate: p ? Number(p.conversionRate) : 0,
@@ -836,8 +847,10 @@ export async function getPlannerData(
   };
 }
 
-/** One saved month: its plan headline figures next to what was executed. */
+/** One saved plan: its headline figures next to what was executed. */
 export interface PlannerHistoryRow {
+  id: string;
+  name: string;
   month: string; // "YYYY-MM"
   budget: number;
   targetLeads: number;
@@ -857,7 +870,7 @@ export async function getPlannerHistory(
     .select()
     .from(schema.monthlyPlans)
     .where(eq(schema.monthlyPlans.workspaceId, workspaceId))
-    .orderBy(desc(schema.monthlyPlans.month));
+    .orderBy(desc(schema.monthlyPlans.month), desc(schema.monthlyPlans.createdAt));
   if (!plans.length) return [];
 
   // Actuals grouped by month — two queries cover every saved month at once.
@@ -897,6 +910,8 @@ export async function getPlannerHistory(
     const spend = round2(Number(sp?.spend ?? 0));
     const leads = Number(sp?.leads ?? 0);
     return {
+      id: p.id,
+      name: p.name,
       month,
       budget: Number(p.budget),
       targetLeads: p.targetLeads,

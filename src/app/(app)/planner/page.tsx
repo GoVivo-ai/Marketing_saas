@@ -21,15 +21,15 @@ function parseMonth(m?: string): Date {
 export default async function PlannerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>;
+  searchParams: Promise<{ month?: string; plan?: string }>;
 }) {
-  const { month } = await searchParams;
+  const { month, plan } = await searchParams;
   const monthStart = parseMonth(month);
   const { active } = await getWorkspaceContext();
 
   const loaded = active
     ? await Promise.all([
-        getPlannerData(active.id, monthStart),
+        getPlannerData(active.id, monthStart, plan),
         getPlannerHistory(active.id),
       ])
     : null;
@@ -48,8 +48,17 @@ export default async function PlannerPage({
 
       {active && loaded ? (
         <>
-          <PlannerView workspaceId={active.id} data={loaded[0]} />
-          <PlannerHistory rows={loaded[1]} resultLabel={loaded[0].resultLabel} />
+          {/* Keyed so the canvas state resets when the plan or month changes. */}
+          <PlannerView
+            key={`${active.id}:${loaded[0].month}:${loaded[0].plan.id ?? "draft"}`}
+            workspaceId={active.id}
+            data={loaded[0]}
+          />
+          <PlannerHistory
+            workspaceId={active.id}
+            rows={loaded[1]}
+            resultLabel={loaded[0].resultLabel}
+          />
         </>
       ) : (
         <p className="py-8 text-center text-sm text-muted-foreground">

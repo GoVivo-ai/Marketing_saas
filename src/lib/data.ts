@@ -594,6 +594,8 @@ export interface MonthActuals {
 /** One targeted city: its saved goal and what it actually executed. */
 export interface CityPlanRow {
   cityName: string;
+  /** Full state/region name (e.g. "Florida"), when known. */
+  region: string | null;
   targetResults: number;
   actualSpend: number;
   actualLeads: number;
@@ -704,6 +706,7 @@ export async function getPlannerData(
       ? db()
           .select({
             cityName: schema.planCityTargets.cityName,
+            region: schema.planCityTargets.region,
             targetResults: schema.planCityTargets.targetResults,
           })
           .from(schema.planCityTargets)
@@ -713,6 +716,7 @@ export async function getPlannerData(
     db()
       .select({
         cityName: schema.adsets.cityName,
+        region: sql<string | null>`max(${schema.adsets.cityRegion})`,
         spend: sql<string>`coalesce(sum(${schema.adsetMetricsDaily.spend}), 0)`,
         leads: sql<string>`coalesce(sum(${schema.adsetMetricsDaily.leads}), 0)`,
       })
@@ -774,26 +778,24 @@ export async function getPlannerData(
 
   // Build the per-city rows: union of cities that have a saved goal, spend or
   // results this month, keyed case-insensitively but displayed in proper case.
-  const cityMap = new Map<
-    string,
-    { cityName: string; targetResults: number; actualSpend: number; actualLeads: number; actualResults: number }
-  >();
-  const upsertCity = (name: string | null) => {
+  const cityMap = new Map<string, CityPlanRow>();
+  const upsertCity = (name: string | null, region?: string | null) => {
     if (!name) return null;
     const key = name.toLowerCase();
     let row = cityMap.get(key);
     if (!row) {
-      row = { cityName: name, targetResults: 0, actualSpend: 0, actualLeads: 0, actualResults: 0 };
+      row = { cityName: name, region: null, targetResults: 0, actualSpend: 0, actualLeads: 0, actualResults: 0 };
       cityMap.set(key, row);
     }
+    if (region && !row.region) row.region = region;
     return row;
   };
   for (const t of cityTargets) {
-    const row = upsertCity(t.cityName);
+    const row = upsertCity(t.cityName, t.region);
     if (row) row.targetResults = t.targetResults;
   }
   for (const s of citySpend) {
-    const row = upsertCity(s.cityName);
+    const row = upsertCity(s.cityName, s.region);
     if (row) {
       row.actualSpend = Math.round(Number(s.spend) * 100) / 100;
       row.actualLeads = Number(s.leads);

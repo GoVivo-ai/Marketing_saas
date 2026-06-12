@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { format, parse } from "date-fns";
 import { toast } from "sonner";
@@ -48,9 +48,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { PlannerData, CityPlanRow } from "@/lib/data";
-import { savePlan, deletePlan } from "@/lib/actions/planner";
+import { savePlan, deletePlan, searchPlanCities } from "@/lib/actions/planner";
+import { US_STATES, stateCode } from "@/lib/us-states";
 
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -107,23 +115,56 @@ export function PlannerView({
   const [targets, setTargets] = useState<Record<string, string>>(
     Object.fromEntries(planCities.map((c) => [c.cityName, String(c.targetResults)])),
   );
+  // Each city's state — picked cities carry Meta's region; synced ones too.
+  const [cityRegions, setCityRegions] = useState<Record<string, string | null>>(
+    Object.fromEntries(planCities.map((c) => [c.cityName, c.region])),
+  );
   const [newCity, setNewCity] = useState("");
+
+  // Add-city picker: state dropdown + type-ahead against Meta's geo db.
+  const [stateSel, setStateSel] = useState<string>("");
+  const [suggestions, setSuggestions] = useState<{ name: string; region: string | null }[]>([]);
+  const [searching, setSearching] = useState(false);
+  const skipSearch = useRef(false);
+  useEffect(() => {
+    if (skipSearch.current) {
+      skipSearch.current = false;
+      return;
+    }
+    const q = newCity.trim();
+    if (q.length < 2) return;
+    const t = setTimeout(async () => {
+      setSearching(true);
+      const res = await searchPlanCities(workspaceId, q, stateSel || null);
+      setSearching(false);
+      setSuggestions(res.ok ? (res.cities ?? []) : []);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [newCity, stateSel, workspaceId]);
 
   // Optional custom campaign window (empty → the whole calendar month).
   const [periodStart, setPeriodStart] = useState(data.period.custom ? data.period.start : "");
   const [periodEnd, setPeriodEnd] = useState(data.period.custom ? data.period.end : "");
 
-  const addCity = () => {
-    const n = newCity.trim();
+  const addCity = (name: string, region: string | null) => {
+    const n = name.trim();
     if (n && !cityList.some((c) => c.toLowerCase() === n.toLowerCase())) {
-      setCityList([...cityList, n]);
+      setCityList((l) => [...l, n]);
+      setCityRegions((r) => ({ ...r, [n]: region }));
     }
+    skipSearch.current = true;
     setNewCity("");
+    setSuggestions([]);
   };
   const removeCity = (name: string) => {
     setCityList(cityList.filter((c) => c !== name));
     setTargets((t) => {
       const next = { ...t };
+      delete next[name];
+      return next;
+    });
+    setCityRegions((r) => {
+      const next = { ...r };
       delete next[name];
       return next;
     });
@@ -138,7 +179,7 @@ export function PlannerView({
     const leads = goal * perLead;
     const budget = leads * planCpl;
     const act = actualsByCity.get(name.toLowerCase()) ?? blankActuals;
-    return { name, goal, leads, budget, act };
+    return { name, region: cityRegions[name] ?? null, goal, leads, budget, act };
   });
   const totalResults = derived.reduce((s, d) => s + d.goal, 0);
   const totalLeads = derived.reduce((s, d) => s + d.leads, 0);
@@ -200,7 +241,7 @@ export function PlannerView({
       conversionRate: planRate,
       targetLeads: totalLeads,
       targetSales: totalResults,
-      cityTargets: derived.map((d) => ({ cityName: d.name, targetResults: d.goal })),
+      cityTargets: derived.map((d) => ({ cityName: d.name, region: d.region, targetResults: d.goal })),
       periodStart: periodStart && periodEnd ? periodStart : null,
       periodEnd: periodStart && periodEnd ? periodEnd : null,
     });
@@ -232,21 +273,9 @@ export function PlannerView({
     }
   };
 
-  // Blank the canvas: leave the open plan, or reset a never-saved draft.
-  const startBlank = () => {
-    if (data.plan.id) {
-      startNav(() => router.push(`/planner?month=${data.month}`));
-      return;
-    }
-    setName("");
-    setCpl("");
-    setRate("");
-    setCityList([]);
-    setTargets({});
-    setNewCity("");
-    setPeriodStart("");
-    setPeriodEnd("");
-  };
+  // Blank the canvas: close the open plan and start a fresh draft.
+  const startBlank = () =>
+    startNav(() => router.push(`/planner?month=${data.month}`));
 
   const opsMax = Math.max(1, ...data.opsFunnel.map((s) => s.count));
 
@@ -273,10 +302,12 @@ export function PlannerView({
             className="h-9 w-56"
             aria-label="Plan name"
           />
-          <Button variant="outline" onClick={startBlank} disabled={navPending}>
-            <FilePlus2 className="mr-2 h-4 w-4" />
-            New plan
-          </Button>
+          {data.plan.exists && (
+            <Button variant="outline" onClick={startBlank} disabled={navPending}>
+              <FilePlus2 className="mr-2 h-4 w-4" />
+              New plan
+            </Button>
+          )}
           {data.plan.exists && (
             <Dialog>
               <DialogTrigger
@@ -482,12 +513,17 @@ export function PlannerView({
                   </TableCell>
                 </TableRow>
               )}
-              {derived.map(({ name, goal, leads, budget, act }) => (
+              {derived.map(({ name, region, goal, leads, budget, act }) => (
                 <TableRow key={name}>
                   <TableCell className="font-medium">
                     <span className="flex items-center gap-1.5">
                       <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
                       {name}
+                      {region && (
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {stateCode(region)}
+                        </span>
+                      )}
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
@@ -535,23 +571,78 @@ export function PlannerView({
           </Table>
 
           <div className="space-y-2 px-6">
-            <div className="flex items-center gap-2">
-              <Input
-                value={newCity}
-                onChange={(e) => setNewCity(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addCity();
-                  }
-                }}
-                placeholder="Add a city…"
-                className="h-9 max-w-xs"
-              />
-              <Button variant="outline" size="sm" onClick={addCity} disabled={!newCity.trim()}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={stateSel} onValueChange={(v) => setStateSel(v ?? "")}>
+                <SelectTrigger className="h-9 w-44" aria-label="State">
+                  <SelectValue placeholder="All states" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All states</SelectItem>
+                  {US_STATES.map((s) => (
+                    <SelectItem key={s.code} value={s.name}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="relative">
+                <Input
+                  value={newCity}
+                  onChange={(e) => {
+                    setNewCity(e.target.value);
+                    if (e.target.value.trim().length < 2) {
+                      setSuggestions([]);
+                      setSearching(false);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (suggestions.length > 0) {
+                        addCity(suggestions[0].name, suggestions[0].region);
+                      } else {
+                        addCity(newCity, stateSel || null);
+                      }
+                    }
+                  }}
+                  placeholder={stateSel ? `Search a city in ${stateSel}…` : "Search a city…"}
+                  className="h-9 w-64"
+                />
+                {(suggestions.length > 0 || searching) && newCity.trim().length >= 2 && (
+                  <div className="absolute left-0 top-10 z-20 w-72 overflow-hidden rounded-lg border bg-popover shadow-md">
+                    {searching && suggestions.length === 0 ? (
+                      <p className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…
+                      </p>
+                    ) : (
+                      suggestions.map((s) => (
+                        <button
+                          key={`${s.name}|${s.region}`}
+                          type="button"
+                          onClick={() => addCity(s.name, s.region)}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent"
+                        >
+                          <span>{s.name}</span>
+                          <span className="text-xs text-muted-foreground">{s.region}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => addCity(newCity, stateSel || null)}
+                disabled={!newCity.trim()}
+              >
                 <Plus className="mr-1 h-4 w-4" /> Add city
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Cities come from Meta&apos;s targeting database, so names match
+              your synced campaigns exactly. Pick a state to narrow the search.
+            </p>
             {planScoped && derived.some((d) => d.goal === 0 && d.act.actualSpend > 0) && (
               <p className="text-xs text-muted-foreground">
                 Totals &amp; the comparison cover cities with a goal. Cities with

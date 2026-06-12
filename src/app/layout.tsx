@@ -29,10 +29,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Light theme by default: neutral #f4f4f4 canvas with white cards, navy as
+  // an accent — the navy-on-everything dark theme reads oversaturated. Add the
+  // `dark` class back to <html> to force the dark look.
   return (
     <html
       lang="en"
-      className={`${nunito.variable} ${nunitoSans.variable} dark h-full antialiased`}
+      className={`${nunito.variable} ${nunitoSans.variable} h-full antialiased`}
     >
       <head>
         {/*

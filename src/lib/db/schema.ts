@@ -320,8 +320,14 @@ export const monthlyPlans = pgTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    /** First day of the planned month (e.g. 2026-06-01). */
+    /** First day of the planned month (e.g. 2026-06-01) — the plan's anchor. */
     month: date("month").notNull(),
+    /**
+     * Optional campaign window. When set, actuals & pacing use this range
+     * instead of the whole calendar month (campaigns rarely line up with it).
+     */
+    periodStart: date("period_start"),
+    periodEnd: date("period_end"),
     budget: numeric("budget", { precision: 14, scale: 2 }).notNull().default("0"),
     targetCpl: numeric("target_cpl", { precision: 12, scale: 2 }).notNull().default("0"),
     /** Lead → sale conversion rate, stored as a fraction (0.15 = 15%). */

@@ -16,6 +16,9 @@ import {
   ArrowRight,
   Trash2,
   MapPin,
+  CalendarClock,
+  Plus,
+  X,
 } from "lucide-react";
 import {
   Card,
@@ -53,6 +56,7 @@ const usd = (n: number) =>
 const usd2 = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const int = (n: number) => Math.round(n).toLocaleString("en-US");
+const dec1 = (n: number) => (Math.round(n * 10) / 10).toLocaleString("en-US");
 const pct = (frac: number) => `${(frac * 100).toFixed(1)}%`;
 
 const num = (s: string | undefined) => {
@@ -78,52 +82,104 @@ export function PlannerView({
   const [deleting, setDeleting] = useState(false);
 
   const label = data.resultLabel || "Sales";
+  const result1 = label.replace(/s$/i, ""); // singular-ish for "per X"
 
-  // When no cities are targeted yet (no ad sets), fall back to a single
-  // "Overall" row so the planner still works for non-geo campaigns.
-  const cityRows: CityPlanRow[] = data.cities.length
-    ? data.cities
-    : [
-        {
-          cityName: "Overall",
-          targetResults: data.plan.targetSales,
-          actualSpend: data.actuals.spend,
-          actualLeads: data.actuals.leads,
-          actualResults: data.actuals.sales,
-        },
-      ];
+  // Actuals per city (from synced ad sets), looked up case-insensitively.
+  const actualsByCity = new Map(data.cities.map((c) => [c.cityName.toLowerCase(), c]));
+  const blankActuals: Pick<CityPlanRow, "actualSpend" | "actualLeads" | "actualResults"> = {
+    actualSpend: 0,
+    actualLeads: 0,
+    actualResults: 0,
+  };
 
   // Global assumptions.
   const [cpl, setCpl] = useState(data.plan.targetCpl ? String(data.plan.targetCpl) : "");
   const [rate, setRate] = useState(
     data.plan.conversionRate ? (data.plan.conversionRate * 100).toFixed(1) : "",
   );
-  // Per-city result goals, keyed by city name.
+  // The cities being planned — pre-filled from synced/saved cities, fully
+  // editable: the user adds or removes whichever cities they choose.
+  const [cityList, setCityList] = useState<string[]>(data.cities.map((c) => c.cityName));
   const [targets, setTargets] = useState<Record<string, string>>(
-    Object.fromEntries(cityRows.map((c) => [c.cityName, c.targetResults ? String(c.targetResults) : ""])),
+    Object.fromEntries(data.cities.map((c) => [c.cityName, c.targetResults ? String(c.targetResults) : ""])),
   );
+  const [newCity, setNewCity] = useState("");
+
+  // Optional custom campaign window (empty → the whole calendar month).
+  const [periodStart, setPeriodStart] = useState(data.period.custom ? data.period.start : "");
+  const [periodEnd, setPeriodEnd] = useState(data.period.custom ? data.period.end : "");
+
+  const addCity = () => {
+    const n = newCity.trim();
+    if (n && !cityList.some((c) => c.toLowerCase() === n.toLowerCase())) {
+      setCityList([...cityList, n]);
+    }
+    setNewCity("");
+  };
+  const removeCity = (name: string) => {
+    setCityList(cityList.filter((c) => c !== name));
+    setTargets((t) => {
+      const next = { ...t };
+      delete next[name];
+      return next;
+    });
+  };
 
   const planCpl = num(cpl);
-  const planRate = num(rate) / 100; // fraction
-  const perLead = planRate > 0 ? 1 / planRate : 0; // leads per result
+  const planRate = num(rate) / 100;
+  const perLead = planRate > 0 ? 1 / planRate : 0;
 
-  // Derive each city's leads & budget from its goal + the assumptions.
-  const derived = cityRows.map((c) => {
-    const goal = num(targets[c.cityName]);
+  const derived = cityList.map((name) => {
+    const goal = num(targets[name]);
     const leads = goal * perLead;
     const budget = leads * planCpl;
-    return { city: c, goal, leads, budget };
+    const act = actualsByCity.get(name.toLowerCase()) ?? blankActuals;
+    return { name, goal, leads, budget, act };
   });
   const totalResults = derived.reduce((s, d) => s + d.goal, 0);
   const totalLeads = derived.reduce((s, d) => s + d.leads, 0);
   const totalBudget = derived.reduce((s, d) => s + d.budget, 0);
   const planCpa = totalResults > 0 ? totalBudget / totalResults : 0;
 
-  const a = data.actuals;
+  // Compare like-for-like: once you set goals, actuals are scoped to the
+  // planned cities. Before any goal exists, show the whole period so you can
+  // still see real data.
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const goaledCities = derived.filter((d) => d.goal > 0);
+  const planScoped = goaledCities.length > 0;
+  const a = planScoped
+    ? (() => {
+        const spend = r2(goaledCities.reduce((s, d) => s + d.act.actualSpend, 0));
+        const leads = goaledCities.reduce((s, d) => s + d.act.actualLeads, 0);
+        const sales = goaledCities.reduce((s, d) => s + d.act.actualResults, 0);
+        return {
+          spend,
+          leads,
+          sales,
+          cpl: leads > 0 ? r2(spend / leads) : 0,
+          cpa: sales > 0 ? r2(spend / sales) : 0,
+          convRate: leads > 0 ? sales / leads : 0,
+        };
+      })()
+    : data.actuals;
   const monthLabel = format(parse(data.month, "yyyy-MM", new Date()), "MMMM yyyy");
   const overBudget = totalBudget > 0 && a.spend > totalBudget;
   const usedPct = totalBudget > 0 ? (a.spend / totalBudget) * 100 : 0;
   const remaining = Math.max(0, totalBudget - a.spend);
+
+  // ---- Phase 2: pacing over the effective window (campaign period or month) ----
+  const pStart = new Date(`${data.period.start}T00:00:00`);
+  const pEnd = new Date(`${data.period.end}T00:00:00`);
+  const totalDays = Math.max(1, Math.round((pEnd.getTime() - pStart.getTime()) / 86_400_000) + 1);
+  const today = new Date();
+  const dayMs = 86_400_000;
+  const elapsed =
+    today < pStart ? 0 : today > pEnd ? totalDays : Math.floor((today.getTime() - pStart.getTime()) / dayMs) + 1;
+  const daysLeft = Math.max(0, totalDays - elapsed);
+  const spendPerDay = elapsed > 0 ? a.spend / elapsed : 0;
+  const leadsPerDay = elapsed > 0 ? a.leads / elapsed : 0;
+  const leadsNeededPerDay = daysLeft > 0 ? Math.max(0, (totalLeads - a.leads) / daysLeft) : 0;
+  const projLeads = elapsed > 0 ? (a.leads / elapsed) * totalDays : a.leads;
 
   const goMonth = (delta: number) =>
     startNav(() => router.push(`/planner?month=${shiftMonth(data.month, delta)}`));
@@ -138,9 +194,9 @@ export function PlannerView({
       conversionRate: planRate,
       targetLeads: totalLeads,
       targetSales: totalResults,
-      cityTargets: derived
-        .filter((d) => d.city.cityName !== "Overall" || d.goal > 0)
-        .map((d) => ({ cityName: d.city.cityName, targetResults: d.goal })),
+      cityTargets: derived.map((d) => ({ cityName: d.name, targetResults: d.goal })),
+      periodStart: periodStart && periodEnd ? periodStart : null,
+      periodEnd: periodStart && periodEnd ? periodEnd : null,
     });
     setSaving(false);
     if (res.ok) {
@@ -165,6 +221,8 @@ export function PlannerView({
       toast.error(res.error ?? "Could not delete the plan");
     }
   };
+
+  const opsMax = Math.max(1, ...data.opsFunnel.map((s) => s.count));
 
   return (
     <div className="space-y-6">
@@ -214,43 +272,108 @@ export function PlannerView({
         </div>
       </div>
 
-      {/* ---------- Budget hero ---------- */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Wallet className="h-4 w-4" /> Budget · {monthLabel}
-              </p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">
-                {usd2(a.spend)}
-                <span className="ml-1 text-lg font-normal text-muted-foreground">/ {usd2(totalBudget)}</span>
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Spent so far this month · budget = sum of every city
-              </p>
+      {/* ---------- Budget hero + pacing ---------- */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardContent className="p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Wallet className="h-4 w-4" /> Budget · {monthLabel}
+                </p>
+                <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">
+                  {usd2(a.spend)}
+                  <span className="ml-1 text-lg font-normal text-muted-foreground">/ {usd2(totalBudget)}</span>
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Spent so far · budget = sum of every city</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-muted-foreground">{overBudget ? "Over budget" : "Remaining"}</p>
+                <p className={cn("text-2xl font-semibold tabular-nums", overBudget && "text-destructive")}>
+                  {overBudget ? usd2(a.spend - totalBudget) : usd2(remaining)}
+                </p>
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-sm text-muted-foreground">{overBudget ? "Over budget" : "Remaining"}</p>
-              <p className={cn("text-2xl font-semibold tabular-nums", overBudget && "text-destructive")}>
-                {overBudget ? usd2(a.spend - totalBudget) : usd2(remaining)}
-              </p>
+            <div className="mt-5 space-y-1.5">
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn("h-full rounded-full transition-all", overBudget ? "bg-destructive" : "bg-primary")}
+                  style={{ width: `${totalBudget > 0 ? Math.min(100, usedPct) : 0}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>{totalBudget > 0 ? `${Math.round(usedPct)}% of budget used` : "Set goals below"}</span>
+                {totalBudget > 0 && <span>{overBudget ? "Pace exceeds plan" : `${usd2(remaining)} left`}</span>}
+              </div>
             </div>
-          </div>
-          <div className="mt-5 space-y-1.5">
-            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn("h-full rounded-full transition-all", overBudget ? "bg-destructive" : "bg-primary")}
-                style={{ width: `${totalBudget > 0 ? Math.min(100, usedPct) : 0}%` }}
+          </CardContent>
+        </Card>
+
+        {/* Pacing */}
+        <Card>
+          <CardContent className="p-6">
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <CalendarClock className="h-4 w-4" /> Pacing
+            </p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums">
+              Day {elapsed}
+              <span className="text-base font-normal text-muted-foreground"> of {totalDays}</span>
+            </p>
+            <p className="text-xs text-muted-foreground">{daysLeft} days left</p>
+            <div className="mt-4 space-y-1.5 text-sm">
+              <PaceRow label="Spend / day" value={usd2(spendPerDay)} />
+              <PaceRow label="Leads / day" value={dec1(leadsPerDay)} />
+              <PaceRow
+                label="Leads/day to hit goal"
+                value={daysLeft > 0 ? dec1(leadsNeededPerDay) : "—"}
+                accent={leadsNeededPerDay > leadsPerDay}
+              />
+              <PaceRow
+                label="Projected leads"
+                value={int(projLeads)}
+                sub={totalLeads > 0 ? `${Math.round((projLeads / totalLeads) * 100)}% of plan` : undefined}
               />
             </div>
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{totalBudget > 0 ? `${Math.round(usedPct)}% of budget used` : "Set goals below"}</span>
-              {totalBudget > 0 && <span>{overBudget ? "Pace exceeds plan" : `${usd2(remaining)} left`}</span>}
+
+            {/* Phase 4: optional campaign window */}
+            <div className="mt-4 border-t pt-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground">Campaign period</p>
+                {(periodStart || periodEnd) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPeriodStart("");
+                      setPeriodEnd("");
+                    }}
+                    className="text-[11px] text-muted-foreground hover:text-foreground"
+                  >
+                    Full month
+                  </button>
+                )}
+              </div>
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={periodStart}
+                  onChange={(e) => setPeriodStart(e.target.value)}
+                  className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs outline-none focus-visible:border-ring"
+                />
+                <span className="text-muted-foreground">–</span>
+                <input
+                  type="date"
+                  value={periodEnd}
+                  onChange={(e) => setPeriodEnd(e.target.value)}
+                  className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs outline-none focus-visible:border-ring"
+                />
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {data.period.custom ? "Custom window active." : "Defaults to the full month."} Save to apply.
+              </p>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* ---------- Assumptions + funnel ---------- */}
       <div className="grid gap-6 lg:grid-cols-2">
@@ -258,8 +381,8 @@ export function PlannerView({
           <CardHeader>
             <CardTitle>Assumptions</CardTitle>
             <CardDescription>
-              Set your CPL and {label.toLowerCase()} conversion. Each city&apos;s
-              goal below uses these to size leads and budget.
+              CPL and {label.toLowerCase()} conversion. Each city&apos;s goal
+              below uses these to size leads and budget.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-1">
@@ -272,7 +395,7 @@ export function PlannerView({
             </div>
             <div className="flex items-center justify-between pt-3 text-sm">
               <span className="flex items-center gap-2 text-muted-foreground">
-                <Receipt className="h-4 w-4" /> Cost per {label.toLowerCase().replace(/s$/, "")} (CPA)
+                <Receipt className="h-4 w-4" /> Cost per {result1.toLowerCase()} (CPA)
               </span>
               <span className="font-semibold tabular-nums">{planCpa ? usd2(planCpa) : "—"}</span>
             </div>
@@ -290,17 +413,17 @@ export function PlannerView({
         </Card>
       </div>
 
-      {/* ---------- Per-city plan ---------- */}
+      {/* ---------- Per-city plan (user-chosen cities) ---------- */}
       <Card>
         <CardHeader>
           <CardTitle>By city</CardTitle>
           <CardDescription>
-            Set a {label.toLowerCase()} goal per city — leads and budget size
-            automatically. Actuals come from synced spend, leads and pipeline
-            wins.
+            Choose the cities you&apos;re planning — add or remove any. Set a
+            {" "}{label.toLowerCase()} goal and leads/budget size automatically.
+            Synced cities pre-fill with their actuals.
           </CardDescription>
         </CardHeader>
-        <CardContent className="px-0">
+        <CardContent className="space-y-4 px-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -311,49 +434,94 @@ export function PlannerView({
                 <TableHead className="text-right text-muted-foreground">Spent</TableHead>
                 <TableHead className="text-right text-muted-foreground">Leads</TableHead>
                 <TableHead className="text-right text-muted-foreground">{label}</TableHead>
+                <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {derived.map(({ city, goal, leads, budget }) => (
-                <TableRow key={city.cityName}>
+              {derived.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="py-6 text-center text-sm text-muted-foreground">
+                    No cities yet. Add the cities you want to plan below.
+                  </TableCell>
+                </TableRow>
+              )}
+              {derived.map(({ name, goal, leads, budget, act }) => (
+                <TableRow key={name}>
                   <TableCell className="font-medium">
                     <span className="flex items-center gap-1.5">
                       <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                      {city.cityName}
+                      {name}
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
                     <Input
                       type="number"
                       min={0}
-                      value={targets[city.cityName] ?? ""}
-                      onChange={(e) =>
-                        setTargets((t) => ({ ...t, [city.cityName]: e.target.value }))
-                      }
+                      value={targets[name] ?? ""}
+                      onChange={(e) => setTargets((t) => ({ ...t, [name]: e.target.value }))}
                       className="ml-auto h-8 w-20 text-right tabular-nums"
                       placeholder="0"
                     />
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{goal ? int(leads) : "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">{goal ? usd(budget) : "—"}</TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">{usd(city.actualSpend)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">{int(city.actualLeads)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">{int(city.actualResults)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">{usd(act.actualSpend)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">{int(act.actualLeads)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">{int(act.actualResults)}</TableCell>
+                  <TableCell className="text-right">
+                    <button
+                      type="button"
+                      onClick={() => removeCity(name)}
+                      className="text-muted-foreground/60 hover:text-destructive"
+                      aria-label={`Remove ${name}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
-            <tfoot>
-              <TableRow className="border-t-2 font-medium">
-                <TableCell>Total</TableCell>
-                <TableCell className="text-right tabular-nums">{int(totalResults)}</TableCell>
-                <TableCell className="text-right tabular-nums">{int(totalLeads)}</TableCell>
-                <TableCell className="text-right tabular-nums">{usd(totalBudget)}</TableCell>
-                <TableCell className="text-right tabular-nums text-muted-foreground">{usd(a.spend)}</TableCell>
-                <TableCell className="text-right tabular-nums text-muted-foreground">{int(a.leads)}</TableCell>
-                <TableCell className="text-right tabular-nums text-muted-foreground">{int(a.sales)}</TableCell>
-              </TableRow>
-            </tfoot>
+            {derived.length > 0 && (
+              <tfoot>
+                <TableRow className="border-t-2 font-medium">
+                  <TableCell>Total</TableCell>
+                  <TableCell className="text-right tabular-nums">{int(totalResults)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{int(totalLeads)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{usd(totalBudget)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">{usd(a.spend)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">{int(a.leads)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">{int(a.sales)}</TableCell>
+                  <TableCell />
+                </TableRow>
+              </tfoot>
+            )}
           </Table>
+
+          <div className="space-y-2 px-6">
+            <div className="flex items-center gap-2">
+              <Input
+                value={newCity}
+                onChange={(e) => setNewCity(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addCity();
+                  }
+                }}
+                placeholder="Add a city…"
+                className="h-9 max-w-xs"
+              />
+              <Button variant="outline" size="sm" onClick={addCity} disabled={!newCity.trim()}>
+                <Plus className="mr-1 h-4 w-4" /> Add city
+              </Button>
+            </div>
+            {planScoped && derived.some((d) => d.goal === 0 && d.act.actualSpend > 0) && (
+              <p className="text-xs text-muted-foreground">
+                Totals &amp; the comparison cover cities with a goal. Cities with
+                spend but no goal aren&apos;t counted — set a goal to include them.
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -390,6 +558,54 @@ export function PlannerView({
           </div>
         </CardContent>
       </Card>
+
+      {/* ---------- Phase 3: operations funnel (pipeline stages) ---------- */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Operations funnel</CardTitle>
+          <CardDescription>
+            This month&apos;s leads by pipeline stage — from first contact to{" "}
+            {label.toLowerCase()}.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2.5">
+          {data.opsFunnel.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No pipeline stages set up yet.
+            </p>
+          ) : (
+            data.opsFunnel.map((s) => (
+              <div key={s.name} className="flex items-center gap-3">
+                <span className="w-40 shrink-0 truncate text-sm text-muted-foreground">{s.name}</span>
+                <div className="h-6 flex-1 overflow-hidden rounded-md bg-muted">
+                  <div
+                    className={cn(
+                      "flex h-full items-center justify-end rounded-md px-2 text-xs font-medium text-white transition-all",
+                      s.kind === "won" ? "bg-success" : s.kind === "lost" ? "bg-muted-foreground/50" : "bg-primary",
+                    )}
+                    style={{ width: `${Math.max(s.count > 0 ? 8 : 0, (s.count / opsMax) * 100)}%` }}
+                  >
+                    {s.count > 0 ? int(s.count) : ""}
+                  </div>
+                </div>
+                <span className="w-10 shrink-0 text-right text-sm font-semibold tabular-nums">{int(s.count)}</span>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function PaceRow({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-right">
+        <span className={cn("font-semibold tabular-nums", accent && "text-amber-500")}>{value}</span>
+        {sub && <span className="ml-1 text-xs text-muted-foreground">{sub}</span>}
+      </span>
     </div>
   );
 }

@@ -150,6 +150,48 @@ export function PlannerView({
         </Button>
       </div>
 
+      {/* Budget pacing — plan budget vs. spend to date across every campaign. */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Budget · {monthLabel}</CardTitle>
+          <CardDescription>
+            Planned budget vs. what&apos;s been spent so far this month, across
+            all campaigns.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Stat label="Plan budget" value={usd(planBudget)} />
+            <Stat label="Spent so far" value={usd(a.spend)} />
+            <Stat
+              label="Remaining"
+              value={usd(Math.max(0, planBudget - a.spend))}
+              tone={planBudget > 0 && a.spend > planBudget ? "bad" : "default"}
+            />
+            <Stat
+              label="Used"
+              value={planBudget > 0 ? `${Math.round((a.spend / planBudget) * 100)}%` : "—"}
+            />
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all",
+                planBudget > 0 && a.spend > planBudget ? "bg-destructive" : "bg-primary",
+              )}
+              style={{
+                width: `${planBudget > 0 ? Math.min(100, (a.spend / planBudget) * 100) : 0}%`,
+              }}
+            />
+          </div>
+          {planBudget > 0 && a.spend > planBudget && (
+            <p className="text-xs text-destructive">
+              Over budget by {usd(a.spend - planBudget)}.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-2">
         {/* ---------- Calculator ---------- */}
         <Card>
@@ -223,6 +265,30 @@ function attain(actual: number, plan: number): string {
 function pace(spend: number, budget: number): string {
   if (!budget) return "—";
   return `${Math.round((spend / budget) * 100)}% used`;
+}
+
+function Stat({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "bad";
+}) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p
+        className={cn(
+          "text-lg font-semibold tabular-nums",
+          tone === "bad" && "text-destructive",
+        )}
+      >
+        {value}
+      </p>
+    </div>
+  );
 }
 
 function Field({

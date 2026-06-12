@@ -41,6 +41,9 @@ export function AppSidebar({
   canManageActive?: boolean;
 }) {
   const pathname = usePathname();
+  const active =
+    workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces[0];
+  const clientLogo = active?.logoUrl ?? null;
 
   // Connections only for those who can manage the active workspace (agency or
   // the client owner). The team link is the agency roster for agency users and
@@ -76,7 +79,23 @@ export function AppSidebar({
   return (
     <aside className="flex h-screen w-60 shrink-0 flex-col border-r bg-card/50">
       <div className="px-5 py-5">
-        <VivoLogo className="h-7 w-auto" />
+        <div className="flex items-center gap-3">
+          <VivoLogo className="h-7 w-auto shrink-0" />
+          {clientLogo && (
+            <>
+              {/* Divider between the Vivo logo and the active client's logo. */}
+              <span className="h-7 w-px shrink-0 bg-border" />
+              {/* Forced white so any brand logo reads cleanly on the dark rail. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={clientLogo}
+                alt={active?.name ?? "Client logo"}
+                className="h-7 w-auto max-w-[110px] shrink-0 object-contain"
+                style={{ filter: "brightness(0) invert(1)" }}
+              />
+            </>
+          )}
+        </div>
         <p className="mt-1.5 text-xs text-muted-foreground">MarTech Platform</p>
       </div>
 

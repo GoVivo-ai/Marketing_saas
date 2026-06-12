@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { eq } from "drizzle-orm";
-import { Building2, KeyRound, Users } from "lucide-react";
+import { Building2, KeyRound, Users, ImageIcon } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
@@ -15,7 +15,7 @@ import {
 import { ChangePasswordForm } from "@/components/app/change-password-form";
 import { RingCentralConnectCard } from "@/components/app/ringcentral-connect-card";
 import { DialpadConnectCard } from "@/components/app/dialpad-connect-card";
-import { CompanyProfileForm } from "@/components/app/org-forms";
+import { CompanyProfileForm, WorkspaceLogoForm } from "@/components/app/org-forms";
 import {
   Card,
   CardContent,
@@ -38,13 +38,16 @@ export default async function GeneralSettingsPage() {
 
   const { active } = await getWorkspaceContext();
   const canManage = active ? await canManageWorkspace(active.id) : false;
-  let company: { name: string; industry: string; criteria: string } | null = null;
+  let company:
+    | { name: string; industry: string; criteria: string; logoUrl: string | null }
+    | null = null;
   if (active && canManage) {
     const [w] = await db()
       .select({
         name: schema.workspaces.name,
         industry: schema.workspaces.industry,
         criteria: schema.workspaces.qualificationCriteria,
+        logoUrl: schema.workspaces.logoUrl,
       })
       .from(schema.workspaces)
       .where(eq(schema.workspaces.id, active.id))
@@ -54,6 +57,7 @@ export default async function GeneralSettingsPage() {
         name: w.name,
         industry: w.industry ?? "",
         criteria: w.criteria ?? "",
+        logoUrl: w.logoUrl ?? null,
       };
   }
 
@@ -89,6 +93,25 @@ export default async function GeneralSettingsPage() {
                 name={company.name}
                 industry={company.industry}
                 qualificationCriteria={company.criteria}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ImageIcon className="h-4 w-4 text-primary" />
+                Brand logo
+              </CardTitle>
+              <CardDescription>
+                Upload {active.name}&apos;s logo — it appears next to the Vivo
+                logo while this client is active.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <WorkspaceLogoForm
+                workspaceId={active.id}
+                logoUrl={company.logoUrl}
               />
             </CardContent>
           </Card>

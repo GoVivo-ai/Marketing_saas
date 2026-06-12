@@ -1,109 +1,144 @@
-# MarTech By Vivo
+<div align="center">
 
-Multi-client marketing intelligence platform by **GoVivo.ai**.
+# ◢ Vivo Marketing OS
 
-One place where the agency and its clients see ad performance across platforms,
-manage every lead without duplicated spreadsheets, and get AI-generated insights
-before anyone has to ask for a report.
+### Multi-client marketing intelligence — ad performance, leads, AI insights & campaign planning in one place.
 
-## Why this exists
+**Crafted by [VictorSandovalDev](https://github.com/VictorSandovalDev)**
 
-Today, reporting is manual: ad spend and performance are copied from Meta into a
-master Excel sheet per client, and leads land in a Google Sheet that operations
-teams duplicate to add their own notes. This platform replaces that workflow with:
+<br/>
 
-- **Live dashboards** connected directly to the ad platforms' APIs
-- **A unified lead inbox** shared by marketing and operations — one source of truth
-- **AI that does the analyst work**: anomaly detection, scaling recommendations,
-  lead scoring and auto-written client reports
+[![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React_19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 
-## Differentiators (what wins clients)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Drizzle ORM](https://img.shields.io/badge/Drizzle_ORM-C5F74F?style=for-the-badge&logo=drizzle&logoColor=black)](https://orm.drizzle.team/)
+[![Auth.js](https://img.shields.io/badge/Auth.js_v5-000000?style=for-the-badge&logo=auth0&logoColor=white)](https://authjs.dev/)
+[![Anthropic Claude](https://img.shields.io/badge/Claude_AI-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](https://www.anthropic.com/)
+[![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://vercel.com/)
 
-| Feature | What the client experiences |
-| --- | --- |
-| **Client portal** | Their own branded login with live numbers — radical transparency vs. a monthly PDF |
-| **AI Analyst** | Daily insights citing real numbers: "Dallas CPL up 18%, creative fatigue, rotate videos" |
-| **AI Lead Scoring** | Every lead arrives pre-scored 0–100 with a reason — sales calls the best ones first |
-| **Unified Lead Inbox** | Marketing attribution + operations follow-up in one place, no duplicated sheets |
-| **AI Copy Studio** | New ad variants seeded with the account's actual winning ads, not generic templates |
-| **Proactive alerts** | CPL jumps and tracking outages pushed to WhatsApp/email the moment they happen |
+<br/>
 
-## Tech stack
+![Login](docs/login.png)
 
-| Layer | Choice | Why |
-| --- | --- | --- |
-| Framework | **Next.js 16** (App Router, RSC, Turbopack) | One codebase for portal + API, first-class Vercel deploys |
-| Language | **TypeScript** end-to-end | Safety across DB → API → UI |
-| UI | **Tailwind CSS v4 + shadcn/ui + Recharts** | Professional dashboard UI, fast iteration |
-| Database | **PostgreSQL + Drizzle ORM** | Relational fits campaign/metrics data; typed schema & migrations |
-| Auth | **Auth.js v5** | Role-based access: agency vs. per-workspace client users |
-| AI | **Vercel AI SDK + Anthropic Claude** | Structured outputs (Zod-validated) for insights, scoring, copy |
-| Integrations | **Connector pattern** (`src/lib/integrations`) | Meta first; Google Ads, TikTok, LinkedIn plug into the same interface |
-| Jobs | **Vercel Cron → `/api/cron/sync`** | Nightly sync of campaigns, metrics and leads per connection |
-| Hosting | **Vercel** | Zero-ops, preview deploys, edge network |
+</div>
 
-## Getting started
+---
+
+## ✦ Overview
+
+**Vivo Marketing OS** replaces the spreadsheet-and-PDF workflow agencies still live with.
+Ad spend, leads and results no longer get copied from Meta into a master Excel per client —
+they flow into one platform where the agency **and** each client see live numbers, manage
+every lead without duplicated sheets, and get AI-written insights before anyone asks for a report.
+
+```
+Meta Ads ──► Sync ──► PostgreSQL ──► RSC dashboards · Lead inbox · AI Analyst · Planner
+                                   (per-client, role-aware, real time)
+```
+
+<div align="center">
+
+![Dashboard](docs/dashboard.png)
+
+</div>
+
+---
+
+## ✦ Features
+
+| | Feature | What it does |
+|---|---|---|
+| 📊 | **Unified dashboards** | Spend, leads, CPL & CTR across platforms — normalized into one view, per client. |
+| 🗺️ | **Campaign → city drill-down** | Click a campaign to see every ad set on an interactive **radius map** (audience location + targeting radius), with a date filter and active/paused toggle. |
+| 📥 | **Unified lead inbox** | Marketing attribution + ops follow-up in one place. Each lead is flagged **inside / near / outside** the targeted audience radius. |
+| 🧮 | **Pipeline (Kanban)** | Drag-and-drop lead stages with instant activation. |
+| 🤖 | **AI lead scoring** | Every lead arrives pre-scored 0–100 with a reason and a suggested next step (Claude, Zod-validated output). |
+| 🎯 | **Campaign Planner** | Excel-style monthly plan **by city** — set goals, auto-size leads & budget, track pacing (days left, leads/day to hit goal), an ops funnel, and plan-vs-actual. Generic results label (Sales / Hires / Appointments…). |
+| ☎️ | **Click-to-call & SMS** | Per-user **Dialpad** & **RingCentral** OAuth (PKCE) — call and text leads straight from the pipeline. |
+| 🏢 | **Multi-client portal** | Per-workspace branded login, custom logo, role-aware access (agency vs. client). |
+
+---
+
+## ✦ Tech stack
+
+| Layer | Choice |
+|---|---|
+| **Framework** | Next.js 16 — App Router · React Server Components · Turbopack |
+| **Language** | TypeScript, end to end (DB → API → UI) |
+| **UI** | Tailwind CSS v4 · shadcn/ui · Recharts · Leaflet · Lucide |
+| **Database** | PostgreSQL (Supabase) + Drizzle ORM — typed schema & migrations |
+| **Auth** | Auth.js v5 — credentials + role-based access |
+| **AI** | Vercel AI SDK + Anthropic Claude — structured, validated outputs |
+| **Integrations** | Meta Marketing API · Dialpad & RingCentral (OAuth 2.0 + PKCE) · OpenStreetMap (geocoding) |
+| **Deploy** | Vercel |
+
+---
+
+## ✦ Getting started
 
 ```bash
+# 1. Install
 npm install
-cp .env.example .env.local   # fill in AUTH_SECRET at minimum
-npm run dev
-```
 
-Set `DATABASE_URL` in `.env.local`, then create the schema and the initial
-workspaces/admin user:
+# 2. Configure environment (see .env.example)
+cp .env.example .env.local
+#   AUTH_SECRET, DATABASE_URL, TOKEN_ENCRYPTION_KEY, META_ACCESS_TOKEN …
 
-```bash
-npx drizzle-kit push
+# 3. Run the database migrations (each script is idempotent)
+npx tsx scripts/migrate-pipeline.ts
+npx tsx scripts/migrate-adsets.ts
+npx tsx scripts/migrate-planner.ts
+npx tsx scripts/migrate-planner-cities.ts
+npx tsx scripts/migrate-lead-geo.ts
+
+# 4. Seed an admin user
 npm run db:seed
+
+# 5. Start
+npm run dev          # → http://localhost:3000
 ```
 
-Open http://localhost:3000 and sign in with the seeded admin account.
-
-### Useful scripts
+### Scripts
 
 | Command | Purpose |
-| --- | --- |
-| `npm run dev` | Dev server (Turbopack) |
-| `npm run build` | Production build |
+|---|---|
+| `npm run dev` | Start the dev server (Turbopack) |
+| `npm run build` / `start` | Production build & serve |
+| `npm run sync` | Pull campaigns, metrics, ad sets & leads from connected accounts |
+| `npm run db:seed` | Create the first agency admin |
+| `npm run db:studio` | Open Drizzle Studio |
 | `npm run lint` | ESLint |
-| `npx drizzle-kit studio` | Browse the database |
 
-## Project structure
+---
+
+## ✦ Project structure
 
 ```
 src/
-  app/
-    (app)/            # Authenticated product: dashboard, campaigns, leads,
-                      # insights, reports, settings
-    api/
-      auth/           # Auth.js handlers
-      ai/insights/    # On-demand AI insight generation
-      cron/sync/      # Nightly platform sync (Vercel Cron)
-    login/            # Sign-in
-  components/
-    app/              # Product components (sidebar, KPI cards, charts)
-    ui/               # shadcn/ui primitives
-  lib/
-    ai/               # Claude-powered: insights, lead scoring, copy studio
-    db/               # Drizzle schema + client (multi-tenant by workspace)
-    integrations/     # Platform connectors (Meta live, Google Ads next)
-docs/
-  ARCHITECTURE.md     # Tenancy model, data flow, security
-  ROADMAP.md          # Phased delivery plan
+├─ app/(app)/          # Authenticated product — dashboard, campaigns, leads,
+│                      #   pipeline, planner, insights, reports, settings
+├─ app/api/            # Auth, AI insights, cron sync, Dialpad/RingCentral OAuth
+├─ components/app/     # Feature UI (charts, maps, planner, pipeline board…)
+├─ lib/
+│  ├─ db/              # Drizzle schema & client
+│  ├─ integrations/    # Meta connector, telephony, geocoding
+│  ├─ ai/              # Lead scoring & insights (Claude)
+│  ├─ actions/         # Server actions
+│  └─ data.ts          # Read-side, workspace-scoped data layer
+scripts/               # Sync, seed & migrations
+docs/                  # Architecture & roadmap
 ```
 
-## Multi-tenancy model
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the multi-tenancy model and data flow,
+and [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's next.
 
-Every client of Vivo (Alexia, FTS, Vectora…) is a **workspace**. All marketing
-data — connections, campaigns, metrics, leads, insights — is scoped to exactly
-one workspace. Access:
+---
 
-- `agency_admin` / `agency_member` (Vivo team): all / assigned workspaces
-- `client` users: only the workspaces they are members of, viewer-oriented UI
+<div align="center">
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
+**Built with care by [VictorSandovalDev](https://github.com/VictorSandovalDev)** · for [GoVivo.ai](https://govivo.ai)
 
-## Status
-
-Phase 1 foundation. See [docs/ROADMAP.md](docs/ROADMAP.md) for the delivery plan.
+</div>

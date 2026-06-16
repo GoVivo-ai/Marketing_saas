@@ -1092,6 +1092,78 @@ export async function getLeadsPage(
   return { rows: mapped, total, page, pageSize, totalPages };
 }
 
+/** Single lead (scoped to the workspace) for the dedicated detail view. */
+export async function getLeadById(
+  workspaceId: string,
+  id: string,
+): Promise<LeadRow | null> {
+  const [r] = await db()
+    .select({
+      id: schema.leads.id,
+      name: schema.leads.name,
+      email: schema.leads.email,
+      phone: schema.leads.phone,
+      status: schema.leads.status,
+      aiScore: schema.leads.aiScore,
+      aiReason: schema.leads.aiScoreReason,
+      aiSuggestedAction: schema.leads.aiSuggestedAction,
+      disqualL1: schema.leads.disqualL1,
+      disqualL2: schema.leads.disqualL2,
+      disqualL3: schema.leads.disqualL3,
+      formData: schema.leads.formData,
+      platform: schema.leads.platform,
+      externalId: schema.leads.externalId,
+      createdAt: schema.leads.createdAt,
+      updatedAt: schema.leads.updatedAt,
+      campaign: schema.campaigns.name,
+      assignedTo: schema.users.name,
+      stageId: schema.leads.stageId,
+      stageName: schema.stages.name,
+      stageColor: schema.stages.color,
+      leadCity: schema.leads.geoCity,
+      leadLat: schema.leads.geoLat,
+      leadLng: schema.leads.geoLng,
+      targetCity: schema.adsets.cityName,
+      targetLat: schema.adsets.lat,
+      targetLng: schema.adsets.lng,
+      targetRadius: schema.adsets.radius,
+      targetUnit: schema.adsets.distanceUnit,
+    })
+    .from(schema.leads)
+    .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
+    .leftJoin(schema.users, eq(schema.leads.assignedToId, schema.users.id))
+    .leftJoin(schema.stages, eq(schema.leads.stageId, schema.stages.id))
+    .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+    .where(and(eq(schema.leads.id, id), eq(schema.leads.workspaceId, workspaceId)))
+    .limit(1);
+
+  if (!r) return null;
+  return {
+    id: r.id,
+    name: r.name ?? "Unknown",
+    email: r.email ?? "—",
+    phone: r.phone ?? "—",
+    campaign: r.campaign ?? "—",
+    platform: r.platform,
+    externalId: r.externalId,
+    status: r.status,
+    stageId: r.stageId,
+    stageName: r.stageName,
+    stageColor: r.stageColor,
+    aiScore: r.aiScore,
+    aiReason: r.aiReason,
+    aiSuggestedAction: r.aiSuggestedAction,
+    disqualL1: r.disqualL1,
+    disqualL2: r.disqualL2,
+    disqualL3: r.disqualL3,
+    formData: (r.formData ?? null) as Record<string, unknown> | null,
+    assignedTo: r.assignedTo,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    geo: leadGeo(r),
+  };
+}
+
 /** Classify a lead against its ad set's audience radius (near = ≤ 1.5× radius). */
 function leadGeo(r: {
   leadCity: string | null;

@@ -9,8 +9,6 @@ import { DateRangePicker } from "@/components/app/date-range-picker";
 import { LeadsCampaignFilter } from "@/components/app/leads-campaign-filter";
 import { LeadsFilter } from "@/components/app/leads-filter";
 import { Pagination } from "@/components/app/pagination";
-import { auth } from "@/lib/auth";
-import { isAnyTelephonyConnected } from "@/lib/integrations/telephony";
 import {
   getLeadCampaignOptions,
   getLeadCityOptions,
@@ -54,11 +52,6 @@ export default async function LeadsPage({
   const campaignId = sp.campaign ?? null;
   const stageId = sp.stage ?? null;
   const city = sp.city ?? null;
-
-  const session = await auth();
-  const contactConnected = session?.user?.id
-    ? await isAnyTelephonyConnected(session.user.id)
-    : false;
 
   const { active } = await getWorkspaceContext();
   const [result, campaigns, stages, cities] = active
@@ -144,7 +137,7 @@ export default async function LeadsPage({
             </p>
           ) : (
             <>
-              <LeadsTable rows={result.rows} contactConnected={contactConnected} />
+              <LeadsTable rows={result.rows} />
               <Pagination page={result.page} totalPages={result.totalPages} />
             </>
           )}

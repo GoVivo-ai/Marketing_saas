@@ -5,7 +5,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Layers, MapPin } from "lucide-react";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { LeadsCampaignFilter } from "@/components/app/leads-campaign-filter";
 import { LeadsFilter } from "@/components/app/leads-filter";
@@ -105,7 +104,7 @@ export default async function LeadsPage({
           <LeadsCampaignFilter campaigns={campaigns} activeId={campaignId} />
           <LeadsFilter
             param="stage"
-            icon={Layers}
+            icon="stage"
             allLabel="All stages"
             activeValue={stageId}
             options={stages.map((s) => ({
@@ -116,7 +115,7 @@ export default async function LeadsPage({
           />
           <LeadsFilter
             param="city"
-            icon={MapPin}
+            icon="city"
             allLabel="All areas"
             activeValue={city}
             options={cities.map((c) => ({ value: c, label: c }))}

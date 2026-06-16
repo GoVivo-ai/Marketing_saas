@@ -2,8 +2,7 @@
 
 import { useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Check, ChevronsUpDown, Layers, Loader2, MapPin } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,23 +19,32 @@ export interface FilterOption {
 }
 
 /**
+ * Icons are resolved by key inside this client component — a Lucide component
+ * can't be passed as a prop from a Server Component (functions aren't
+ * serializable across the boundary).
+ */
+const ICONS = { stage: Layers, city: MapPin } as const;
+export type FilterIcon = keyof typeof ICONS;
+
+/**
  * Generic single-select leads filter driven by a URL search param. Used for the
  * stage ("Not Interested" / "Not Qualified" segmented views) and city/area
  * slices that replace the spreadsheet's separate tabs.
  */
 export function LeadsFilter({
   param,
-  icon: Icon,
+  icon,
   allLabel,
   options,
   activeValue,
 }: {
   param: string;
-  icon: LucideIcon;
+  icon: FilterIcon;
   allLabel: string;
   options: FilterOption[];
   activeValue: string | null;
 }) {
+  const Icon = ICONS[icon];
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

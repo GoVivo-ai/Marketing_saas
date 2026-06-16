@@ -22,6 +22,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { LeadContactActions } from "@/components/app/lead-contact-actions";
+import { LeadActivity } from "@/components/app/lead-activity";
+import { LeadDisqualify } from "@/components/app/lead-disqualify";
 import { cn } from "@/lib/utils";
 import type { LeadRow, LeadGeo } from "@/lib/data";
 
@@ -106,6 +108,11 @@ export function LeadsTable({
                   />
                   {lead.stageName ?? lead.status}
                 </span>
+                {lead.disqualL3 && (
+                  <p className="mt-1 max-w-[200px] truncate text-xs text-destructive">
+                    {lead.disqualL3}
+                  </p>
+                )}
               </TableCell>
               <TableCell className="text-right text-sm text-muted-foreground">
                 {formatDistanceToNow(lead.createdAt, { addSuffix: true })}
@@ -173,6 +180,22 @@ export function LeadsTable({
                     connected={contactConnected}
                   />
                 </div>
+
+                <Separator />
+
+                <LeadActivity key={selected.id} leadId={selected.id} />
+
+                <Separator />
+
+                <LeadDisqualify
+                  key={`dq-${selected.id}`}
+                  leadId={selected.id}
+                  current={{
+                    l1: selected.disqualL1,
+                    l2: selected.disqualL2,
+                    l3: selected.disqualL3,
+                  }}
+                />
 
                 <Separator />
 

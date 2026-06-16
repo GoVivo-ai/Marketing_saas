@@ -434,6 +434,14 @@ export const leads = pgTable(
     aiScoreReason: text("ai_score_reason"),
     /** Concrete next step for sales, generated alongside the score. */
     aiSuggestedAction: text("ai_suggested_action"),
+    /**
+     * RCA disqualification reason (the spreadsheet's RCA Lvl 1/2/3) — set when a
+     * lead is marked lost/not-qualified. Three levels: driver → category →
+     * specific reason, from the shared taxonomy in src/lib/rca.ts.
+     */
+    disqualL1: text("disqual_l1"),
+    disqualL2: text("disqual_l2"),
+    disqualL3: text("disqual_l3"),
     assignedToId: text("assigned_to_id").references(() => users.id, {
       onDelete: "set null",
     }),

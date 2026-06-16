@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { and, asc, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNotNull, lt, lte, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { haversineKm } from "@/lib/geo";
@@ -103,6 +103,10 @@ export interface LeadRow {
   assignedTo: string | null;
   createdAt: Date;
   updatedAt: Date;
+  /** RCA disqualification reason (Lvl 1/2/3), set on lost/not-qualified leads. */
+  disqualL1: string | null;
+  disqualL2: string | null;
+  disqualL3: string | null;
   /** Where the lead sits relative to its ad set's audience radius. */
   geo: LeadGeo | null;
 }
@@ -953,6 +957,40 @@ export async function getLeadCampaignOptions(
   return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Pipeline stages for the leads stage filter (ordered, with color). */
+export async function getLeadStageOptions(
+  workspaceId: string,
+): Promise<{ id: string; name: string; color: string | null }[]> {
+  return db()
+    .select({
+      id: schema.stages.id,
+      name: schema.stages.name,
+      color: schema.stages.color,
+    })
+    .from(schema.stages)
+    .where(eq(schema.stages.workspaceId, workspaceId))
+    .orderBy(asc(schema.stages.position));
+}
+
+/** Distinct lead cities — the spreadsheet's "Area" slicing for the inbox. */
+export async function getLeadCityOptions(
+  workspaceId: string,
+): Promise<string[]> {
+  const rows = await db()
+    .selectDistinct({ city: schema.leads.geoCity })
+    .from(schema.leads)
+    .where(
+      and(
+        eq(schema.leads.workspaceId, workspaceId),
+        isNotNull(schema.leads.geoCity),
+      ),
+    );
+  return rows
+    .map((r) => r.city as string)
+    .filter((c) => c.trim() !== "")
+    .sort((a, b) => a.localeCompare(b));
+}
+
 export async function getLeadsPage(
   workspaceId: string,
   opts: {
@@ -961,15 +999,19 @@ export async function getLeadsPage(
     page?: number;
     pageSize?: number;
     campaignId?: string | null;
+    stageId?: string | null;
+    city?: string | null;
   } = {},
 ): Promise<LeadsPage> {
-  const { start, end, pageSize = 25, campaignId } = opts;
+  const { start, end, pageSize = 25, campaignId, stageId, city } = opts;
   // start/end null or omitted → unbounded on that side (all time when both).
   // Filtered against the lead's createdAt timestamp.
   const filters = [eq(schema.leads.workspaceId, workspaceId)];
   if (start) filters.push(gte(schema.leads.createdAt, start));
   if (end) filters.push(lte(schema.leads.createdAt, end));
   if (campaignId) filters.push(eq(schema.leads.campaignId, campaignId));
+  if (stageId) filters.push(eq(schema.leads.stageId, stageId));
+  if (city) filters.push(eq(schema.leads.geoCity, city));
   const where = and(...filters);
 
   const [{ total }] = await db()
@@ -990,6 +1032,9 @@ export async function getLeadsPage(
       aiScore: schema.leads.aiScore,
       aiReason: schema.leads.aiScoreReason,
       aiSuggestedAction: schema.leads.aiSuggestedAction,
+      disqualL1: schema.leads.disqualL1,
+      disqualL2: schema.leads.disqualL2,
+      disqualL3: schema.leads.disqualL3,
       formData: schema.leads.formData,
       platform: schema.leads.platform,
       externalId: schema.leads.externalId,
@@ -1034,6 +1079,9 @@ export async function getLeadsPage(
     aiScore: r.aiScore,
     aiReason: r.aiReason,
     aiSuggestedAction: r.aiSuggestedAction,
+    disqualL1: r.disqualL1,
+    disqualL2: r.disqualL2,
+    disqualL3: r.disqualL3,
     formData: (r.formData ?? null) as Record<string, unknown> | null,
     assignedTo: r.assignedTo,
     createdAt: r.createdAt,

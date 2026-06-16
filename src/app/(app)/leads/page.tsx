@@ -5,13 +5,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Layers, MapPin } from "lucide-react";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { LeadsCampaignFilter } from "@/components/app/leads-campaign-filter";
+import { LeadsFilter } from "@/components/app/leads-filter";
 import { Pagination } from "@/components/app/pagination";
 import { auth } from "@/lib/auth";
 import { isAnyTelephonyConnected } from "@/lib/integrations/telephony";
 import {
   getLeadCampaignOptions,
+  getLeadCityOptions,
+  getLeadStageOptions,
   getLeadsPage,
   getWorkspaceContext,
 } from "@/lib/data";
@@ -37,6 +41,8 @@ export default async function LeadsPage({
     to?: string;
     page?: string;
     campaign?: string;
+    stage?: string;
+    city?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -47,6 +53,8 @@ export default async function LeadsPage({
   });
   const requestedPage = Math.max(1, Number(sp.page) || 1);
   const campaignId = sp.campaign ?? null;
+  const stageId = sp.stage ?? null;
+  const city = sp.city ?? null;
 
   const session = await auth();
   const contactConnected = session?.user?.id
@@ -54,19 +62,32 @@ export default async function LeadsPage({
     : false;
 
   const { active } = await getWorkspaceContext();
-  const [result, campaigns] = active
+  const [result, campaigns, stages, cities] = active
     ? await Promise.all([
         getLeadsPage(active.id, {
           start: resolved.start,
           end: resolved.end,
           page: requestedPage,
           campaignId,
+          stageId,
+          city,
         }),
         getLeadCampaignOptions(active.id),
+        getLeadStageOptions(active.id),
+        getLeadCityOptions(active.id),
       ])
-    : [{ rows: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }, []];
+    : [
+        { rows: [], total: 0, page: 1, pageSize: 25, totalPages: 1 },
+        [],
+        [],
+        [],
+      ];
 
-  const isFiltered = resolved.start != null || campaignId != null;
+  const isFiltered =
+    resolved.start != null ||
+    campaignId != null ||
+    stageId != null ||
+    city != null;
 
   return (
     <div className="space-y-6">
@@ -80,8 +101,26 @@ export default async function LeadsPage({
             spreadsheets.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <LeadsCampaignFilter campaigns={campaigns} activeId={campaignId} />
+          <LeadsFilter
+            param="stage"
+            icon={Layers}
+            allLabel="All stages"
+            activeValue={stageId}
+            options={stages.map((s) => ({
+              value: s.id,
+              label: s.name,
+              color: s.color,
+            }))}
+          />
+          <LeadsFilter
+            param="city"
+            icon={MapPin}
+            allLabel="All areas"
+            activeValue={city}
+            options={cities.map((c) => ({ value: c, label: c }))}
+          />
           <DateRangePicker
             presets={RANGES}
             defaultValue={DEFAULT_RANGE}

@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   Sparkles,
   Ban,
+  ListChecks,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -31,7 +32,13 @@ import type { OutreachChannel, OutreachOutcome } from "@/lib/outreach";
 import type { ContactQueueData, QueueItem } from "@/lib/data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -45,18 +52,22 @@ import { cn } from "@/lib/utils";
 const NEEDS_DIALER =
   "Open the RingCentral dialer (bottom-right) and sign in first.";
 
-/** One-click outcomes — replaces the two dropdowns of the activity logger. */
+/**
+ * One-click outcomes — replaces the two dropdowns of the activity logger.
+ * The dot carries the sentiment (like the stage pills) so the buttons stay
+ * visually quiet.
+ */
 const OUTCOME_CHIPS: {
   outcome: OutreachOutcome;
   label: string;
-  tone: string;
+  dot: string;
 }[] = [
-  { outcome: "answered", label: "Answered", tone: "text-success border-success/40" },
-  { outcome: "replied", label: "Replied", tone: "text-success border-success/40" },
-  { outcome: "voicemail", label: "Voicemail", tone: "text-amber-600 border-amber-500/40" },
-  { outcome: "no_answer", label: "No answer", tone: "text-amber-600 border-amber-500/40" },
-  { outcome: "not_interested", label: "Not interested", tone: "text-destructive border-destructive/40" },
-  { outcome: "wrong_number", label: "Wrong number", tone: "text-destructive border-destructive/40" },
+  { outcome: "answered", label: "Answered", dot: "bg-success" },
+  { outcome: "replied", label: "Replied", dot: "bg-success" },
+  { outcome: "voicemail", label: "Voicemail", dot: "bg-amber-500" },
+  { outcome: "no_answer", label: "No answer", dot: "bg-amber-500" },
+  { outcome: "not_interested", label: "Not interested", dot: "bg-destructive" },
+  { outcome: "wrong_number", label: "Wrong number", dot: "bg-destructive" },
 ];
 
 const CHANNEL_LABEL: Record<OutreachChannel, string> = {
@@ -114,11 +125,16 @@ function QueueDisqualify({
     });
 
   return (
-    <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
-      <p className="flex items-center gap-1.5 text-sm font-medium text-destructive">
-        <Ban className="h-3.5 w-3.5" />
-        Why was this lead lost? (RCA)
-      </p>
+    <div className="space-y-3 rounded-lg border p-4">
+      <div>
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          <Ban className="h-4 w-4 text-destructive" />
+          Why was this lead lost?
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Pre-filled with the usual reason — adjust if it doesn&apos;t fit.
+        </p>
+      </div>
       <div className="grid gap-2 sm:grid-cols-3">
         <Select
           value={l1}
@@ -211,7 +227,7 @@ function geoLine(item: QueueItem): {
     case "near":
       return {
         text: `${geo.leadCity ?? "Lead"} — near the edge (~${geo.distance} ${u} from ${geo.targetCity})`,
-        cls: "text-amber-600",
+        cls: "text-amber-500",
         off: false,
       };
     case "outside":
@@ -241,6 +257,21 @@ function lastTouchLine(item: QueueItem): string {
   return `${item.touches} ${item.touches === 1 ? "touch" : "touches"} · last ${channel ?? "touch"} ${ago} · ${outcome}`;
 }
 
+/** Subtle status pill, matching the table's "● New" stage badges. */
+function DueBadge({ due }: { due: QueueItem["due"] }) {
+  return (
+    <Badge variant="outline" className="gap-1.5 font-normal">
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full",
+          due === "follow_up" ? "bg-amber-500" : "bg-success",
+        )}
+      />
+      {due === "follow_up" ? "Follow-up due" : "New lead"}
+    </Badge>
+  );
+}
+
 export function ContactQueue({ data }: { data: ContactQueueData }) {
   const [items, setItems] = useState(data.items);
   const [channel, setChannel] = useState<OutreachChannel>("call");
@@ -255,7 +286,7 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
   >([]);
 
   const current = items[0] ?? null;
-  const upNext = items.slice(1, 6);
+  const upNext = items.slice(1, 7);
 
   const advance = () => {
     setItems((list) => list.slice(1));
@@ -334,218 +365,256 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
     setShowHistory(false);
   };
 
-  const workedSection = worked.length > 0 && (
-    <div>
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Worked this session
-      </h3>
-      <ul className="divide-y rounded-md border">
-        {worked.map((w) => (
-          <li
-            key={`${w.item.id}-${w.eventId}`}
-            className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
-          >
-            <div className="min-w-0">
-              <span className="font-medium">{w.item.name}</span>
-              <span className="ml-2 text-xs text-muted-foreground">
-                {OUTCOME_CHIPS.find((c) => c.outcome === w.outcome)?.label}
-              </span>
-            </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 shrink-0 px-2 text-xs"
-              disabled={logging || !w.eventId}
-              onClick={() => undo(w.item, w.eventId)}
-            >
-              Undo
-            </Button>
-          </li>
-        ))}
-      </ul>
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        Undo removes the logged touch and puts the lead back at the front. To
-        change a saved RCA reason, open the lead in the Leads table.
-      </p>
-    </div>
-  );
+  const geo = current ? geoLine(current) : null;
 
-  if (!current) {
-    return (
-      <div className="space-y-4">
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-14 text-center">
+  return (
+    <div className="grid gap-4 lg:grid-cols-3">
+      {/* ── Current lead — the working card ─────────────────────────── */}
+      <Card className="lg:col-span-2 self-start">
+        {current ? (
+          <>
+            <CardHeader>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <CardTitle className="flex flex-wrap items-center gap-2.5">
+                    {current.name}
+                    <DueBadge due={current.due} />
+                  </CardTitle>
+                  <CardDescription className="mt-1.5">
+                    {current.phone ?? "No phone"}
+                    {current.email ? ` · ${current.email}` : ""}
+                    {current.campaign ? ` · ${current.campaign}` : ""}
+                  </CardDescription>
+                </div>
+                {!disqualOutcome && (
+                  <Button size="sm" variant="ghost" onClick={onSkip}>
+                    <SkipForward className="mr-1 h-3.5 w-3.5" />
+                    Skip
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Context the agent checks before dialing. */}
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">AI Score</p>
+                  <p className="mt-0.5 text-sm font-medium">
+                    {current.aiScore != null ? current.aiScore : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Area</p>
+                  {geo ? (
+                    <p className={cn("mt-0.5 flex items-center gap-1.5 text-sm font-medium", geo.cls)}>
+                      {geo.off ? (
+                        <MapPinOff className="h-3.5 w-3.5 shrink-0" />
+                      ) : (
+                        <MapPin className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <span className="min-w-0">{geo.text}</span>
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 text-sm font-medium">—</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Outreach</p>
+                  <p className="mt-0.5 text-sm font-medium">{lastTouchLine(current)}</p>
+                </div>
+              </div>
+
+              {current.aiSuggestedAction && (
+                <div className="rounded-lg border p-3">
+                  <p className="flex items-start gap-2 text-sm">
+                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <span className="leading-snug">{current.aiSuggestedAction}</span>
+                  </p>
+                </div>
+              )}
+
+              {disqualOutcome ? (
+                /* Terminal outcome logged — capture the RCA reason, then move on. */
+                <QueueDisqualify
+                  key={current.id}
+                  leadId={current.id}
+                  prefill={DISQUAL_PREFILL[disqualOutcome]}
+                  onDone={advance}
+                />
+              ) : (
+                <>
+                  {/* Reach out … */}
+                  <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+                    {isDialerConfigured ? (
+                      <>
+                        <Button size="sm" disabled={!current.phone} onClick={onCall}>
+                          <PhoneCall className="mr-1.5 h-3.5 w-3.5" />
+                          Call
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!current.phone}
+                          onClick={onSms}
+                        >
+                          <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                          SMS
+                        </Button>
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          Logging as {CHANNEL_LABEL[channel]}
+                        </span>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        The in-app dialer isn&apos;t configured — log the outcome of
+                        calls made outside the platform below.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* … then one click to log what happened and move on. */}
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      What happened?
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {OUTCOME_CHIPS.map((c) => (
+                        <Button
+                          key={c.outcome}
+                          size="sm"
+                          variant="outline"
+                          disabled={logging}
+                          className="h-8 gap-1.5 font-normal"
+                          onClick={() => onOutcome(c.outcome)}
+                        >
+                          {logging ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <span className={cn("h-1.5 w-1.5 rounded-full", c.dot)} />
+                          )}
+                          {c.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="border-t pt-3">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs text-muted-foreground"
+                  onClick={() => setShowHistory((v) => !v)}
+                >
+                  <History className="mr-1 h-3.5 w-3.5" />
+                  {showHistory ? "Hide history & notes" : "History & notes"}
+                </Button>
+                {showHistory && (
+                  <div className="mt-3">
+                    <LeadActivity key={current.id} leadId={current.id} />
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </>
+        ) : (
+          <CardContent className="flex flex-col items-center gap-2 py-16 text-center">
             <CheckCircle2 className="h-8 w-8 text-success" />
             <p className="font-medium">
-              {done > 0 ? `Queue clear — ${done} leads worked this session.` : "Queue clear."}
+              {done > 0
+                ? `Queue clear — ${done} ${done === 1 ? "lead" : "leads"} worked this session.`
+                : "Queue clear."}
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="max-w-sm text-sm text-muted-foreground">
               {data.coolingDown > 0
                 ? `${data.coolingDown} contacted ${data.coolingDown === 1 ? "lead is" : "leads are"} waiting inside the follow-up window and will come back automatically.`
                 : "New leads and due follow-ups will show up here."}
             </p>
           </CardContent>
-        </Card>
-        {workedSection}
-      </div>
-    );
-  }
-
-  const geo = geoLine(current);
-
-  return (
-    <div className="space-y-4">
-      {/* Current lead — the working card. */}
-      <Card className="border-primary/30">
-        <CardContent className="space-y-4 pt-6">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-semibold">{current.name}</h2>
-                <Badge variant={current.due === "follow_up" ? "destructive" : "secondary"}>
-                  {current.due === "follow_up" ? "Follow-up due" : "New lead"}
-                </Badge>
-                {current.aiScore != null && (
-                  <Badge variant="outline">Score {current.aiScore}</Badge>
-                )}
-                {current.stageName && (
-                  <Badge
-                    variant="outline"
-                    style={current.stageColor ? { borderColor: current.stageColor, color: current.stageColor } : undefined}
-                  >
-                    {current.stageName}
-                  </Badge>
-                )}
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {current.phone ?? "No phone"}
-                {current.email ? ` · ${current.email}` : ""}
-                {current.campaign ? ` · ${current.campaign}` : ""}
-              </p>
-              {geo && (
-                <p className={cn("mt-1 flex items-center gap-1.5 text-sm", geo.cls)}>
-                  {geo.off ? <MapPinOff className="h-3.5 w-3.5" /> : <MapPin className="h-3.5 w-3.5" />}
-                  {geo.text}
-                </p>
-              )}
-              <p className="mt-1 text-xs text-muted-foreground">
-                {lastTouchLine(current)} · entered{" "}
-                {formatDistanceToNow(new Date(current.createdAt), { addSuffix: true })}
-              </p>
-            </div>
-            {!disqualOutcome && (
-              <Button size="sm" variant="ghost" onClick={onSkip}>
-                <SkipForward className="mr-1 h-3.5 w-3.5" />
-                Skip
-              </Button>
-            )}
-          </div>
-
-          {current.aiSuggestedAction && (
-            <p className="flex items-start gap-1.5 rounded-md bg-muted/50 p-2.5 text-sm">
-              <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-              {current.aiSuggestedAction}
-            </p>
-          )}
-
-          {disqualOutcome ? (
-            /* Terminal outcome logged — capture the RCA reason, then move on. */
-            <QueueDisqualify
-              key={current.id}
-              leadId={current.id}
-              prefill={DISQUAL_PREFILL[disqualOutcome]}
-              onDone={advance}
-            />
-          ) : (
-            <>
-              {/* Reach out … */}
-              <div className="flex flex-wrap items-center gap-2">
-                {isDialerConfigured ? (
-                  <>
-                    <Button size="sm" disabled={!current.phone} onClick={onCall}>
-                      <PhoneCall className="mr-1 h-3.5 w-3.5" />
-                      Call
-                    </Button>
-                    <Button size="sm" variant="outline" disabled={!current.phone} onClick={onSms}>
-                      <MessageSquare className="mr-1 h-3.5 w-3.5" />
-                      SMS
-                    </Button>
-                  </>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    The in-app dialer isn&apos;t configured — log the outcome of calls
-                    made outside the platform below.
-                  </p>
-                )}
-                <span className="text-xs text-muted-foreground">
-                  Logging as: {CHANNEL_LABEL[channel]}
-                </span>
-              </div>
-
-              {/* … then one click to log what happened and move on. */}
-              <div className="flex flex-wrap gap-1.5">
-                {OUTCOME_CHIPS.map((c) => (
-                  <Button
-                    key={c.outcome}
-                    size="sm"
-                    variant="outline"
-                    disabled={logging}
-                    className={cn("h-8", c.tone)}
-                    onClick={() => onOutcome(c.outcome)}
-                  >
-                    {logging ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
-                    {c.label}
-                  </Button>
-                ))}
-              </div>
-            </>
-          )}
-
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2 text-xs"
-            onClick={() => setShowHistory((v) => !v)}
-          >
-            <History className="mr-1 h-3.5 w-3.5" />
-            {showHistory ? "Hide history & notes" : "History & notes"}
-          </Button>
-          {showHistory && (
-            <div className="rounded-md border p-3">
-              <LeadActivity key={current.id} leadId={current.id} />
-            </div>
-          )}
-        </CardContent>
+        )}
       </Card>
 
-      {/* Up next — enough context to see what's coming, no interaction. */}
-      {upNext.length > 0 && (
-        <div>
-          <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Up next · {items.length - 1} in queue
-          </h3>
-          <ul className="divide-y rounded-md border">
-            {upNext.map((item) => (
-              <li key={item.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
-                <div className="min-w-0">
-                  <span className="font-medium">{item.name}</span>
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {item.geo?.leadCity ?? ""}
-                  </span>
-                </div>
-                <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                  {item.aiScore != null && <span>Score {item.aiScore}</span>}
-                  <Badge variant={item.due === "follow_up" ? "destructive" : "secondary"}>
-                    {item.due === "follow_up" ? "Follow-up" : "New"}
-                  </Badge>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {/* ── Side rail: what's coming + what was done ─────────────────── */}
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Up next</CardTitle>
+            <CardDescription>
+              {Math.max(0, items.length - 1)} more in the queue
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {upNext.length ? (
+              <ul className="divide-y">
+                {upNext.map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{item.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {item.geo?.leadCity ?? "—"}
+                        {item.aiScore != null ? ` · Score ${item.aiScore}` : ""}
+                      </p>
+                    </div>
+                    <DueBadge due={item.due} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="py-2 text-sm text-muted-foreground">
+                Nothing else queued.
+              </p>
+            )}
+          </CardContent>
+        </Card>
 
-      {workedSection}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ListChecks className="h-4 w-4 text-primary" />
+              Worked this session
+            </CardTitle>
+            <CardDescription>
+              Mis-clicked? Undo removes the touch and brings the lead back.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {worked.length ? (
+              <ul className="divide-y">
+                {worked.map((w) => (
+                  <li
+                    key={`${w.item.id}-${w.eventId}`}
+                    className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{w.item.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {OUTCOME_CHIPS.find((c) => c.outcome === w.outcome)?.label}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 shrink-0 px-2 text-xs"
+                      disabled={logging || !w.eventId}
+                      onClick={() => undo(w.item, w.eventId)}
+                    >
+                      Undo
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="py-2 text-sm text-muted-foreground">
+                Logged outcomes will appear here.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

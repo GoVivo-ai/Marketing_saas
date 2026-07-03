@@ -46,6 +46,49 @@ export async function getSecretPreview(key: SecretKey): Promise<string | null> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// RingCentral environment — an agency-global switch (Production vs Sandbox).
+// Production and Sandbox are *separate* RingCentral systems with their own
+// Client ID/Secret, so the chosen mode selects which credential set + server
+// URL the connector uses. Stored in app_settings; admins toggle it from the UI.
+// ─────────────────────────────────────────────────────────────────────────
+
+export type RingCentralEnv = "production" | "sandbox";
+const RC_ENV_KEY = "ringcentral_environment";
+
+/** Fallback when nothing is stored: infer from the configured server URL. */
+function defaultRingCentralEnv(): RingCentralEnv {
+  return process.env.RINGCENTRAL_SERVER_URL?.includes("devtest")
+    ? "sandbox"
+    : "production";
+}
+
+export async function getRingCentralEnv(): Promise<RingCentralEnv> {
+  if (isDatabaseConfigured()) {
+    const [row] = await db()
+      .select({ valueEnc: schema.appSettings.valueEnc })
+      .from(schema.appSettings)
+      .where(eq(schema.appSettings.key, RC_ENV_KEY))
+      .limit(1);
+    if (row) {
+      const v = decryptSecret(row.valueEnc);
+      if (v === "sandbox" || v === "production") return v;
+    }
+  }
+  return defaultRingCentralEnv();
+}
+
+export async function setRingCentralEnv(env: RingCentralEnv): Promise<void> {
+  const valueEnc = encryptSecret(env);
+  await db()
+    .insert(schema.appSettings)
+    .values({ key: RC_ENV_KEY, valueEnc, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: schema.appSettings.key,
+      set: { valueEnc, updatedAt: new Date() },
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Per-client Meta token — each workspace (client) has its own system-user
 // token, used to list and sync only that client's ad accounts.
 // ─────────────────────────────────────────────────────────────────────────

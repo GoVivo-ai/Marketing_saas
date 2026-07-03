@@ -3,6 +3,8 @@ import {
   getRingCentralTokens,
   updateRingCentralAccessToken,
   clearRingCentralTokens,
+  getRingCentralEnv,
+  type RingCentralEnv,
 } from "@/lib/settings";
 
 /**
@@ -35,24 +37,53 @@ export class BadPhoneError extends Error {
   }
 }
 
-const SERVER = () => {
-  const url = process.env.RINGCENTRAL_SERVER_URL;
-  if (!url) throw new RingCentralError("RINGCENTRAL_SERVER_URL is not set");
-  return url.replace(/\/$/, "");
+interface RcConfig {
+  clientId: string;
+  clientSecret: string;
+  server: string;
+}
+
+const DEFAULT_SERVER: Record<RingCentralEnv, string> = {
+  production: "https://platform.ringcentral.com",
+  sandbox: "https://platform.devtest.ringcentral.com",
 };
 
-const clientId = () => process.env.RINGCENTRAL_CLIENT_ID ?? "";
-const clientSecret = () => process.env.RINGCENTRAL_CLIENT_SECRET ?? "";
+/** Resolve the credential set + server URL for the active environment. */
+function envConfig(env: RingCentralEnv): RcConfig {
+  if (env === "sandbox") {
+    return {
+      clientId: process.env.RINGCENTRAL_SANDBOX_CLIENT_ID ?? "",
+      clientSecret: process.env.RINGCENTRAL_SANDBOX_CLIENT_SECRET ?? "",
+      server: (
+        process.env.RINGCENTRAL_SANDBOX_SERVER_URL ?? DEFAULT_SERVER.sandbox
+      ).replace(/\/$/, ""),
+    };
+  }
+  return {
+    clientId: process.env.RINGCENTRAL_CLIENT_ID ?? "",
+    clientSecret: process.env.RINGCENTRAL_CLIENT_SECRET ?? "",
+    server: (
+      process.env.RINGCENTRAL_SERVER_URL ?? DEFAULT_SERVER.production
+    ).replace(/\/$/, ""),
+  };
+}
 
-export const isRingCentralConfigured = () =>
-  Boolean(
-    process.env.RINGCENTRAL_CLIENT_ID &&
-      process.env.RINGCENTRAL_CLIENT_SECRET &&
-      process.env.RINGCENTRAL_SERVER_URL,
-  );
+/** Active config, honoring the admin-global environment toggle. */
+async function rcConfig(): Promise<RcConfig> {
+  const cfg = envConfig(await getRingCentralEnv());
+  if (!cfg.server) throw new RingCentralError("RingCentral server URL is not set");
+  return cfg;
+}
 
-const basicAuthHeader = () =>
-  "Basic " + Buffer.from(`${clientId()}:${clientSecret()}`).toString("base64");
+/** Whether the *active* environment has all credentials needed to connect. */
+export async function isRingCentralConfigured(): Promise<boolean> {
+  const cfg = envConfig(await getRingCentralEnv());
+  return Boolean(cfg.clientId && cfg.clientSecret && cfg.server);
+}
+
+const basicAuthHeader = (cfg: RcConfig) =>
+  "Basic " +
+  Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString("base64");
 
 const b64url = (buf: Buffer) =>
   buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -69,20 +100,21 @@ export function generateState(): string {
 }
 
 // ── OAuth ────────────────────────────────────────────────────────────────────
-export function buildAuthorizeUrl(opts: {
+export async function buildAuthorizeUrl(opts: {
   state: string;
   codeChallenge: string;
   redirectUri: string;
-}): string {
+}): Promise<string> {
+  const cfg = await rcConfig();
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: clientId(),
+    client_id: cfg.clientId,
     redirect_uri: opts.redirectUri,
     state: opts.state,
     code_challenge: opts.codeChallenge,
     code_challenge_method: "S256",
   });
-  return `${SERVER()}/restapi/oauth/authorize?${params.toString()}`;
+  return `${cfg.server}/restapi/oauth/authorize?${params.toString()}`;
 }
 
 interface TokenResponse {
@@ -95,10 +127,11 @@ interface TokenResponse {
 }
 
 async function tokenRequest(body: Record<string, string>): Promise<TokenResponse> {
-  const res = await fetch(`${SERVER()}/restapi/oauth/token`, {
+  const cfg = await rcConfig();
+  const res = await fetch(`${cfg.server}/restapi/oauth/token`, {
     method: "POST",
     headers: {
-      Authorization: basicAuthHeader(),
+      Authorization: basicAuthHeader(cfg),
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams(body).toString(),
@@ -136,7 +169,8 @@ async function apiFetch(
   accessToken: string,
   init?: RequestInit,
 ): Promise<unknown> {
-  const res = await fetch(`${SERVER()}${path}`, {
+  const cfg = await rcConfig();
+  const res = await fetch(`${cfg.server}${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${accessToken}`,

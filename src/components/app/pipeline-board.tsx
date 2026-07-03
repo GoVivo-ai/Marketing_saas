@@ -422,9 +422,8 @@ function CardDetailSheet({
                   )}
                 </p>
                 <LeadContactActions
-                  leadId={card.id}
+                  phone={card.phone}
                   hasPhone={card.phone !== "—"}
-                  connected={contactConnected}
                 />
               </div>
             </div>

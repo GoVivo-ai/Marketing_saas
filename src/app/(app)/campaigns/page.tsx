@@ -18,6 +18,7 @@ import Link from "next/link";
 import { TrendingDown, TrendingUp, Minus, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DateRangePicker } from "@/components/app/date-range-picker";
+import { SyncNowButton } from "@/components/app/sync-now-button";
 import { getCampaignRows, getWorkspaceContext } from "@/lib/data";
 import { resolveDateRange } from "@/lib/date-range";
 
@@ -60,11 +61,14 @@ export default async function CampaignsPage({
             All campaigns across platforms, normalized into one view
           </p>
         </div>
-        <DateRangePicker
-          presets={RANGES}
-          defaultValue={DEFAULT_RANGE}
-          label={resolved.label}
-        />
+        <div className="flex items-center gap-2">
+          {active && <SyncNowButton workspaceId={active.id} />}
+          <DateRangePicker
+            presets={RANGES}
+            defaultValue={DEFAULT_RANGE}
+            label={resolved.label}
+          />
+        </div>
       </div>
 
       <Card>

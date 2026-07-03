@@ -205,9 +205,8 @@ export function LeadsTable({
                       </p>
                     </div>
                     <LeadContactActions
-                      leadId={selected.id}
+                      phone={selected.phone}
                       hasPhone={selected.phone !== "—"}
-                      connected={contactConnected}
                     />
                   </div>
 

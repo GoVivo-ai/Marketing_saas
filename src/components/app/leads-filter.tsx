@@ -2,7 +2,14 @@
 
 import { useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Check, ChevronsUpDown, Layers, Loader2, MapPin } from "lucide-react";
+import {
+  Check,
+  ChevronsUpDown,
+  Crosshair,
+  Layers,
+  Loader2,
+  MapPin,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +30,7 @@ export interface FilterOption {
  * can't be passed as a prop from a Server Component (functions aren't
  * serializable across the boundary).
  */
-const ICONS = { stage: Layers, city: MapPin } as const;
+const ICONS = { stage: Layers, city: MapPin, adset: Crosshair } as const;
 export type FilterIcon = keyof typeof ICONS;
 
 /**

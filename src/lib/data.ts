@@ -1315,8 +1315,43 @@ const RESOLVED_OUTCOMES = new Set([
   "wrong_number",
 ]);
 
+/** The queue's "candidate" condition, shared with the ad-set option list. */
+function queueCandidateWhere(workspaceId: string) {
+  return and(
+    eq(schema.leads.workspaceId, workspaceId),
+    isNull(schema.leads.disqualL1),
+    or(isNull(schema.leads.stageId), eq(schema.stages.kind, "open")),
+  );
+}
+
+/**
+ * Ad sets that still have workable leads — the queue's "today I'm working
+ * Redondo Beach" slice. Labeled by targeted city when known (geo-per-city
+ * accounts name ad sets after their city), with the live lead count.
+ */
+export async function getQueueAdsetOptions(
+  workspaceId: string,
+): Promise<{ id: string; label: string; count: number }[]> {
+  const rows = await db()
+    .select({
+      id: schema.adsets.id,
+      name: schema.adsets.name,
+      city: schema.adsets.cityName,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(schema.leads)
+    .innerJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+    .leftJoin(schema.stages, eq(schema.leads.stageId, schema.stages.id))
+    .where(queueCandidateWhere(workspaceId))
+    .groupBy(schema.adsets.id, schema.adsets.name, schema.adsets.cityName);
+  return rows
+    .map((r) => ({ id: r.id, label: r.city ?? r.name, count: r.count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
 export async function getContactQueue(
   workspaceId: string,
+  opts: { adsetId?: string | null } = {},
 ): Promise<ContactQueueData> {
   // Candidates: open-stage (or unstaged) leads that aren't disqualified.
   const leadRows = await db()
@@ -1346,9 +1381,8 @@ export async function getContactQueue(
     .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
     .where(
       and(
-        eq(schema.leads.workspaceId, workspaceId),
-        isNull(schema.leads.disqualL1),
-        or(isNull(schema.leads.stageId), eq(schema.stages.kind, "open")),
+        queueCandidateWhere(workspaceId),
+        opts.adsetId ? eq(schema.leads.adsetId, opts.adsetId) : undefined,
       ),
     );
 

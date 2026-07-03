@@ -431,7 +431,7 @@ export async function setLeadDisqual(
 ): Promise<LeadLogResult> {
   if (!isValidRcaPath(input.l1, input.l2, input.l3))
     return { ok: false, message: "Invalid disqualification reason" };
-  const { userId } = await requireLeadAccess(leadId);
+  const { userId, lead } = await requireLeadAccess(leadId);
   const note = input.note?.trim() || null;
   if (note && note.length > 2000)
     return { ok: false, message: "Note is too long (2000 chars max)." };
@@ -451,6 +451,38 @@ export async function setLeadDisqual(
       type: "disqualified",
       payload: { l1: input.l1, l2: input.l2, l3: input.l3, note },
     });
+
+    // A disqualified lead also leaves the open pipeline: move it to the
+    // first lost-kind stage so the Kanban matches the queue's verdict.
+    // fromStageId lets clearLeadDisqual walk it back on re-open.
+    const stages = await db()
+      .select({
+        id: schema.stages.id,
+        kind: schema.stages.kind,
+        position: schema.stages.position,
+      })
+      .from(schema.stages)
+      .where(eq(schema.stages.workspaceId, lead.workspaceId))
+      .orderBy(asc(schema.stages.position));
+    const currentKind = stages.find((s) => s.id === lead.stageId)?.kind;
+    const lost = stages.find((s) => s.kind === "lost");
+    if (lost && (lead.stageId == null || currentKind === "open")) {
+      await db()
+        .update(schema.leads)
+        .set({ stageId: lost.id, status: "lost", updatedAt: new Date() })
+        .where(eq(schema.leads.id, leadId));
+      await db().insert(schema.leadEvents).values({
+        leadId,
+        userId,
+        type: "status_change",
+        payload: {
+          fromStageId: lead.stageId,
+          toStageId: lost.id,
+          reason: "disqualified",
+        },
+      });
+    }
+
     revalidatePath("/leads");
     revalidatePath("/leads/pipeline");
     return { ok: true };
@@ -459,9 +491,13 @@ export async function setLeadDisqual(
   }
 }
 
-/** Clears a lead's disqualification reason (e.g. it was re-opened). */
+/**
+ * Clears a lead's disqualification reason (e.g. it was re-opened) and, if the
+ * disqualification parked it in a lost stage, walks it back into the open
+ * pipeline — to the stage it was in before, or the first open stage.
+ */
 export async function clearLeadDisqual(leadId: string): Promise<LeadLogResult> {
-  const { userId } = await requireLeadAccess(leadId);
+  const { userId, lead } = await requireLeadAccess(leadId);
   try {
     await db()
       .update(schema.leads)
@@ -473,6 +509,58 @@ export async function clearLeadDisqual(leadId: string): Promise<LeadLogResult> {
       type: "note",
       payload: { text: "Disqualification reason cleared." },
     });
+
+    const stages = await db()
+      .select({
+        id: schema.stages.id,
+        kind: schema.stages.kind,
+        position: schema.stages.position,
+      })
+      .from(schema.stages)
+      .where(eq(schema.stages.workspaceId, lead.workspaceId))
+      .orderBy(asc(schema.stages.position));
+    const currentKind = stages.find((s) => s.id === lead.stageId)?.kind;
+    if (currentKind === "lost") {
+      // Prefer the stage it left when it was disqualified.
+      const [moved] = await db()
+        .select({ payload: schema.leadEvents.payload })
+        .from(schema.leadEvents)
+        .where(
+          and(
+            eq(schema.leadEvents.leadId, leadId),
+            eq(schema.leadEvents.type, "status_change"),
+          ),
+        )
+        .orderBy(desc(schema.leadEvents.createdAt))
+        .limit(1);
+      const p = (moved?.payload ?? {}) as Record<string, unknown>;
+      const previous =
+        p.reason === "disqualified" && typeof p.fromStageId === "string"
+          ? stages.find((s) => s.id === p.fromStageId && s.kind === "open")
+          : undefined;
+      const target = previous ?? stages.find((s) => s.kind === "open");
+      if (target) {
+        await db()
+          .update(schema.leads)
+          .set({
+            stageId: target.id,
+            status: deriveStatus(target.kind, target.position),
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.leads.id, leadId));
+        await db().insert(schema.leadEvents).values({
+          leadId,
+          userId,
+          type: "status_change",
+          payload: {
+            fromStageId: lead.stageId,
+            toStageId: target.id,
+            reason: "reopened",
+          },
+        });
+      }
+    }
+
     revalidatePath("/leads");
     revalidatePath("/leads/pipeline");
     return { ok: true };

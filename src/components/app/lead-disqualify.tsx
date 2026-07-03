@@ -24,6 +24,11 @@ import {
 /**
  * Captures the RCA disqualification reason (Lvl 1 → 2 → 3) for a lost /
  * not-qualified lead — the spreadsheet's RCA columns, as cascading selects.
+ *
+ * The Contact Queue records the reason in the hot path (right after a
+ * terminal call outcome), so here the form stays collapsed behind a
+ * "Mark as lost" button; the panel is for reviewing, completing deferred
+ * reasons and corrections.
  */
 export function LeadDisqualify({
   leadId,
@@ -37,6 +42,7 @@ export function LeadDisqualify({
   const [l2, setL2] = useState(current.l2 ?? "");
   const [l3, setL3] = useState(current.l3 ?? "");
   const [note, setNote] = useState("");
+  const [editing, setEditing] = useState(false);
   const [saving, startSave] = useTransition();
   const [clearing, startClear] = useTransition();
 
@@ -61,6 +67,7 @@ export function LeadDisqualify({
         return;
       }
       setNote("");
+      setEditing(false);
       toast.success("Disqualification reason saved.");
       router.refresh();
     });
@@ -79,38 +86,79 @@ export function LeadDisqualify({
       router.refresh();
     });
 
+  // Collapsed by default: a reason summary when one exists, a quiet
+  // "Mark as lost" entry point when none. The selects only show on demand.
+  if (!editing) {
+    return (
+      <div className="space-y-2">
+        {hasReason ? (
+          <>
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Disqualification reason
+              </h4>
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setEditing(true)}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs"
+                  disabled={clearing}
+                  onClick={onClear}
+                >
+                  {clearing ? (
+                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <X className="mr-1 h-3.5 w-3.5" />
+                  )}
+                  Clear
+                </Button>
+              </div>
+            </div>
+            <p className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <Ban className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                {[current.l1, current.l2, current.l3].filter(Boolean).join(" › ")}
+              </span>
+            </p>
+          </>
+        ) : (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs text-muted-foreground"
+            onClick={() => setEditing(true)}
+          >
+            <Ban className="mr-1 h-3.5 w-3.5" />
+            Mark as lost…
+          </Button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Disqualification reason
         </h4>
-        {hasReason && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2 text-xs"
-            disabled={clearing}
-            onClick={onClear}
-          >
-            {clearing ? (
-              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <X className="mr-1 h-3.5 w-3.5" />
-            )}
-            Clear
-          </Button>
-        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 text-xs"
+          onClick={() => setEditing(false)}
+        >
+          Cancel
+        </Button>
       </div>
-
-      {hasReason && (
-        <p className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <Ban className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
-            {[current.l1, current.l2, current.l3].filter(Boolean).join(" › ")}
-          </span>
-        </p>
-      )}
 
       <Select value={l1} onValueChange={(v) => v && onL1(v)}>
         <SelectTrigger className="h-8 text-xs" aria-label="Driver">

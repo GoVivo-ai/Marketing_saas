@@ -30,7 +30,14 @@ export function encryptSecret(plain: string): string {
 }
 
 export function decryptSecret(payload: string): string {
-  const [iv, tag, data] = payload.split(".").map((p) => Buffer.from(p, "base64"));
+  const parts = payload.split(".");
+  if (parts.length !== 3) {
+    throw new Error("Malformed encrypted payload");
+  }
+  const [iv, tag, data] = parts.map((p) => Buffer.from(p, "base64"));
+  if (iv.length !== 12 || tag.length !== 16) {
+    throw new Error("Malformed encrypted payload");
+  }
   const decipher = createDecipheriv(ALGO, key(), iv);
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");

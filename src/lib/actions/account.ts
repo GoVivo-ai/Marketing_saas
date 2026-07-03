@@ -25,6 +25,11 @@ export async function changePassword(
   if (next.length < 10) {
     return { error: "New password must be at least 10 characters long." };
   }
+  // bcrypt silently truncates input past 72 bytes — reject instead so no one
+  // believes the tail of a long passphrase counts.
+  if (Buffer.byteLength(next, "utf8") > 72) {
+    return { error: "New password is too long (72 characters max)." };
+  }
   if (next === current) {
     return { error: "New password must be different from the current one." };
   }

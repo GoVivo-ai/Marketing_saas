@@ -181,13 +181,9 @@ export async function updateWorkspaceProfile(
 // The logo is stored inline as a data URL (it rides in the layout RSC on every
 // page), so keep it small and restrict to image types.
 const LOGO_MAX_BYTES = 256 * 1024;
-const LOGO_TYPES = [
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "image/svg+xml",
-];
+// No SVG: it can embed scripts, so a stored logo would be a stored-XSS
+// vector the moment it's rendered anywhere other than an <img> tag.
+const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
 /** Stores the workspace's brand logo (shown white next to the Vivo logo). */
 export async function uploadWorkspaceLogo(
@@ -202,7 +198,7 @@ export async function uploadWorkspaceLogo(
   if (!(file instanceof File) || file.size === 0)
     return { error: "Choose an image file." };
   if (!LOGO_TYPES.includes(file.type))
-    return { error: "Logo must be a PNG, JPG, WEBP, GIF or SVG." };
+    return { error: "Logo must be a PNG, JPG, WEBP or GIF." };
   if (file.size > LOGO_MAX_BYTES)
     return { error: "Logo is too large — keep it under 256 KB." };
 

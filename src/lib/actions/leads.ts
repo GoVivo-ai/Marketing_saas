@@ -304,6 +304,8 @@ export async function logLeadOutreach(
     return { ok: false, message: "Invalid outcome" };
   const { userId, lead } = await requireLeadAccess(leadId);
   const note = input.note?.trim() || null;
+  if (note && note.length > 2000)
+    return { ok: false, message: "Note is too long (2000 chars max)." };
   try {
     await db().insert(schema.leadEvents).values({
       leadId,
@@ -334,6 +336,8 @@ export async function setLeadDisqual(
     return { ok: false, message: "Invalid disqualification reason" };
   const { userId } = await requireLeadAccess(leadId);
   const note = input.note?.trim() || null;
+  if (note && note.length > 2000)
+    return { ok: false, message: "Note is too long (2000 chars max)." };
   try {
     await db()
       .update(schema.leads)

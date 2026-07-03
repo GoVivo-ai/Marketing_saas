@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, asc, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
+import { rateLimit } from "@/lib/rate-limit";
 import { db, schema } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
 import {
@@ -30,6 +31,14 @@ export async function POST() {
   const session = await auth();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  // Each run bills the workspace's Anthropic key — cap how fast one user can
+  // burn it (in-memory brake; see src/lib/rate-limit.ts for its limits).
+  if (!rateLimit(`ai-insights:${session.user?.id}`, 5, 10 * 60_000)) {
+    return NextResponse.json(
+      { error: "Too many requests — try again in a few minutes." },
+      { status: 429 },
+    );
   }
   const { active } = await getWorkspaceContext();
   if (!active) {

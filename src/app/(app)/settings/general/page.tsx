@@ -1,19 +1,13 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { eq } from "drizzle-orm";
-import { Building2, KeyRound, Users, ImageIcon } from "lucide-react";
+import { Building2, KeyRound, Users, ImageIcon, Phone } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
 import { canManageWorkspace } from "@/lib/permissions";
-import {
-  getRingCentralTokens,
-  isRingCentralConnected,
-  getDialpadTokens,
-  isDialpadConnected,
-} from "@/lib/settings";
+import { getDialpadTokens, isDialpadConnected } from "@/lib/settings";
 import { ChangePasswordForm } from "@/components/app/change-password-form";
-import { RingCentralConnectCard } from "@/components/app/ringcentral-connect-card";
 import { DialpadConnectCard } from "@/components/app/dialpad-connect-card";
 import { CompanyProfileForm, WorkspaceLogoForm } from "@/components/app/org-forms";
 import {
@@ -30,9 +24,6 @@ export const dynamic = "force-dynamic";
 export default async function GeneralSettingsPage() {
   const session = await auth();
   const userId = session?.user?.id;
-  const rcConnected = userId ? await isRingCentralConnected(userId) : false;
-  const rcTokens =
-    userId && rcConnected ? await getRingCentralTokens(userId) : null;
   const dpConnected = userId ? await isDialpadConnected(userId) : false;
   const dpTokens = userId && dpConnected ? await getDialpadTokens(userId) : null;
 
@@ -130,15 +121,24 @@ export default async function GeneralSettingsPage() {
       <section className="space-y-3">
         <SectionHeading
           title="Calling & messaging"
-          description="Connect a provider to call and text leads from the pipeline. Connect either one — if you connect both, the most recently connected is used."
+          description="Call and text leads straight from the pipeline. RingCentral runs in the in-app dialer; Dialpad is available as an alternative."
         />
         <div className="grid gap-4 lg:grid-cols-2">
-          <Suspense>
-            <RingCentralConnectCard
-              connected={rcConnected}
-              fromNumber={rcTokens?.fromNumber ?? null}
-            />
-          </Suspense>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Phone className="h-4 w-4 text-primary" />
+                RingCentral dialer
+              </CardTitle>
+              <CardDescription>
+                Calling and SMS happen in the in-app dialer — no phone or
+                call-forwarding needed. Click the phone button at the
+                bottom-right of any page, sign in once with your RingCentral
+                account, then use Call / SMS on any lead. Audio runs through your
+                browser, so agents in any country can call.
+              </CardDescription>
+            </CardHeader>
+          </Card>
           <Suspense>
             <DialpadConnectCard
               connected={dpConnected}

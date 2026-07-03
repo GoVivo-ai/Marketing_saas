@@ -11,7 +11,7 @@ import {
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.redirect(new URL("/login", req.url));
-  if (!isRingCentralConfigured()) {
+  if (!(await isRingCentralConfigured())) {
     return NextResponse.redirect(
       new URL("/settings/general?rc=not_configured", req.url),
     );
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   const redirectUri = `${origin}/api/ringcentral/callback`;
 
   const res = NextResponse.redirect(
-    buildAuthorizeUrl({ state, codeChallenge: challenge, redirectUri }),
+    await buildAuthorizeUrl({ state, codeChallenge: challenge, redirectUri }),
   );
   const cookieOpts = {
     httpOnly: true,

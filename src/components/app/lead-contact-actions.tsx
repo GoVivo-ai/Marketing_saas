@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { PhoneCall, MessageSquare, Loader2, Send } from "lucide-react";
-import { callLead, smsLead, type LeadContactResult } from "@/lib/actions/leads";
+import { PhoneCall, MessageSquare } from "lucide-react";
+import {
+  dialerCall,
+  dialerSms,
+  isDialerConfigured,
+} from "@/components/app/ringcentral-dialer";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,124 +17,84 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
-function report(r: LeadContactResult, okText: string) {
-  if (r.ok) return toast.success(okText);
-  switch (r.reason) {
-    case "no_phone":
-      return toast.error("This lead has no phone number.");
-    case "bad_phone":
-      return toast.error("The lead's phone number isn't valid (need E.164, e.g. +57…).");
-    case "not_connected":
-      return toast.error("Connect RingCentral or Dialpad in Settings first.", {
-        action: {
-          label: "Settings",
-          onClick: () => {
-            window.location.href = "/settings/general";
-          },
-        },
-      });
-    default:
-      return toast.error(r.message ?? "Something went wrong.");
-  }
-}
+const NEEDS_DIALER =
+  "Open the RingCentral dialer (bottom-right) and sign in first.";
 
 export function LeadContactActions({
-  leadId,
+  phone,
   hasPhone,
-  connected,
 }: {
-  leadId: string;
+  /** Lead phone in E.164 (e.g. +57…); the dialer places the call in-browser. */
+  phone: string | null;
   hasPhone: boolean;
-  connected: boolean;
 }) {
-  const [calling, startCall] = useTransition();
-  const [sending, startSms] = useTransition();
-  const [smsOpen, setSmsOpen] = useState(false);
-  const [text, setText] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  if (!connected) {
+  if (!isDialerConfigured) {
     return (
       <p className="text-xs text-muted-foreground">
-        <a href="/settings/general" className="underline">
-          Connect RingCentral or Dialpad
-        </a>{" "}
-        to call or text leads from here.
+        The in-app dialer isn&apos;t configured yet.
       </p>
     );
   }
 
-  const onCall = () =>
-    startCall(async () => {
-      const r = await callLead(leadId);
-      report(r, "Calling — your phone will ring first, then the lead.");
-    });
+  const number = phone && phone !== "—" ? phone : null;
 
-  const onSend = () =>
-    startSms(async () => {
-      const r = await smsLead(leadId, text);
-      report(r, "SMS sent.");
-      if (r.ok) {
-        setText("");
-        setSmsOpen(false);
-      }
-    });
+  const placeCall = () => {
+    if (!number) return;
+    setConfirmOpen(false);
+    if (!dialerCall(number)) toast.error(NEEDS_DIALER);
+  };
+
+  const onSms = () => {
+    if (!number) return;
+    if (!dialerSms(number)) toast.error(NEEDS_DIALER);
+  };
 
   return (
     <div className="flex flex-wrap gap-2">
       <Button
         size="sm"
         variant="outline"
-        disabled={!hasPhone || calling}
-        onClick={onCall}
+        disabled={!hasPhone || !number}
+        onClick={() => setConfirmOpen(true)}
       >
-        {calling ? (
-          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <PhoneCall className="mr-1 h-3.5 w-3.5" />
-        )}
+        <PhoneCall className="mr-1 h-3.5 w-3.5" />
         Call
       </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!hasPhone || !number}
+        onClick={onSms}
+      >
+        <MessageSquare className="mr-1 h-3.5 w-3.5" />
+        SMS
+      </Button>
 
-      <Dialog open={smsOpen} onOpenChange={setSmsOpen}>
-        <DialogTrigger
-          render={
-            <Button size="sm" variant="outline" disabled={!hasPhone}>
-              <MessageSquare className="mr-1 h-3.5 w-3.5" />
-              SMS
-            </Button>
-          }
-        />
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Send SMS</DialogTitle>
+            <DialogTitle>Call this lead?</DialogTitle>
             <DialogDescription>
-              Sent from your connected number to the lead.
+              The dialer will call{" "}
+              <span className="font-medium text-foreground">{number}</span>{" "}
+              right away, through your browser.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="sms-text">Message</Label>
-            <Input
-              id="sms-text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Hi, thanks for your interest…"
-              maxLength={1000}
-            />
-          </div>
           <DialogFooter>
-            <DialogClose render={<Button variant="ghost" size="sm">Cancel</Button>} />
-            <Button size="sm" disabled={!text.trim() || sending} onClick={onSend}>
-              {sending ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Send className="mr-1 h-3.5 w-3.5" />
-              )}
-              Send
+            <DialogClose
+              render={
+                <Button variant="ghost" size="sm">
+                  Cancel
+                </Button>
+              }
+            />
+            <Button size="sm" onClick={placeCall}>
+              <PhoneCall className="mr-1 h-3.5 w-3.5" />
+              Call now
             </Button>
           </DialogFooter>
         </DialogContent>

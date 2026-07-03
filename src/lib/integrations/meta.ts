@@ -269,16 +269,46 @@ const ADSET_STATUSES = encodeURIComponent(
   ]),
 );
 
+type AdSetCity = {
+  name: string;
+  region?: string;
+  country?: string;
+  radius?: number;
+  distance_unit?: string;
+};
+
+// Strip accents/punctuation and lowercase so "Redondo Beach" matches a city
+// named "redondo beach" regardless of how either side is cased or spelled.
+function normalizeCity(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+// Geo-per-city accounts name each ad set after its city. Pick the targeted city
+// whose name the ad set name contains (or vice-versa); fall back to the first
+// targeted city when nothing matches.
+function pickCityForAdSet(
+  adSetName: string,
+  cities: AdSetCity[] | undefined,
+): AdSetCity | undefined {
+  if (!cities || cities.length === 0) return undefined;
+  if (cities.length === 1) return cities[0];
+  const name = normalizeCity(adSetName);
+  const match = cities.find((c) => {
+    const city = normalizeCity(c.name);
+    return city.length > 0 && (name.includes(city) || city.includes(name));
+  });
+  return match ?? cities[0];
+}
+
 export async function listAdSets(
   creds: ConnectorCredentials,
 ): Promise<NormalizedAdSet[]> {
-  type City = {
-    name: string;
-    region?: string;
-    country?: string;
-    radius?: number;
-    distance_unit?: string;
-  };
+  type City = AdSetCity;
   type Row = {
     id: string;
     name: string;
@@ -293,7 +323,13 @@ export async function listAdSets(
     creds.accessToken,
   );
   return rows.map((r) => {
-    const c = r.targeting?.geo_locations?.cities?.[0];
+    // These are geo-per-city accounts: each ad set ("conjunto") is named after
+    // the one city it's meant to represent. Meta returns the targeted cities in
+    // an arbitrary order, so cities[0] can be a neighbouring city (e.g. "Carson"
+    // for a "Redondo Beach" ad set). Prefer the targeted city whose name the ad
+    // set is named after; only fall back to the first city when none matches.
+    const cities = r.targeting?.geo_locations?.cities;
+    const c = pickCityForAdSet(r.name, cities);
     return {
       externalId: r.id,
       campaignExternalId: r.campaign_id,

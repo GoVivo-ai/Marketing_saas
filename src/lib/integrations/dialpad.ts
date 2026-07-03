@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { normalizeE164 } from "@/lib/integrations/ringcentral";
 import {
   getDialpadTokens,
   updateDialpadAccessToken,
@@ -217,7 +218,7 @@ export async function placeCall(
     method: "POST",
     body: JSON.stringify({
       user_id: Number(dialpadUserId),
-      phone_number: to,
+      phone_number: normalizeE164(to),
     }),
   })) as { call_id?: string | number; id?: string | number };
   return { id: String(res.call_id ?? res.id ?? "") };
@@ -235,7 +236,7 @@ export async function sendSms(
     method: "POST",
     body: JSON.stringify({
       user_id: Number(dialpadUserId),
-      to_numbers: [to],
+      to_numbers: [normalizeE164(to)],
       text,
     }),
   })) as { id?: string | number };

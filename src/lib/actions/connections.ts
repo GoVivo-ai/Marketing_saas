@@ -118,6 +118,40 @@ export async function syncConnectionNow(formData: FormData) {
   revalidatePath("/settings");
 }
 
+/**
+ * Re-runs the sync for every active connection in a workspace (last 30 days).
+ * Returns a result object so the client can show a toast instead of throwing.
+ */
+export async function syncWorkspaceNow(
+  workspaceId: string,
+): Promise<{ ok: true; connections: number } | { ok: false; message: string }> {
+  try {
+    if (!workspaceId) return { ok: false, message: "Missing workspace" };
+    if (!(await canManageWorkspace(workspaceId))) {
+      return { ok: false, message: "You don't have permission to sync this workspace" };
+    }
+    const conns = await db()
+      .select({ id: schema.connections.id })
+      .from(schema.connections)
+      .where(
+        and(
+          eq(schema.connections.workspaceId, workspaceId),
+          eq(schema.connections.status, "active"),
+        ),
+      );
+    if (!conns.length) {
+      return { ok: false, message: "No active connections to sync" };
+    }
+    for (const conn of conns) {
+      await syncConnection(conn.id, { days: 30 });
+    }
+    revalidatePath("/campaigns");
+    return { ok: true, connections: conns.length };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : "Sync failed" };
+  }
+}
+
 /** Marks a connection as disconnected (data is kept). */
 export async function disconnectConnection(formData: FormData) {
   const connectionId = String(formData.get("connectionId") ?? "");

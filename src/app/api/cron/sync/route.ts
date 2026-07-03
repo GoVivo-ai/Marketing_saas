@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
@@ -6,16 +7,25 @@ import { scorePendingLeads } from "@/lib/ai/lead-scoring";
 
 export const maxDuration = 300;
 
+// Fails closed when CRON_SECRET is unset. Constant-time compare so the
+// secret can't be probed byte-by-byte through response timing.
+function authorized(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  const expected = Buffer.from(`Bearer ${secret}`);
+  const got = Buffer.from(req.headers.get("authorization") ?? "");
+  return got.length === expected.length && timingSafeEqual(got, expected);
+}
+
 /**
  * Nightly sync: pulls campaigns, daily metrics and leads for every active
- * connection. Triggered by Vercel Cron (see vercel.json) or manually:
+ * connection. Vercel Cron invokes this path with GET (see vercel.json);
+ * manual triggers can use either method:
  *
- *   curl -X POST /api/cron/sync -H "Authorization: Bearer $CRON_SECRET"
+ *   curl /api/cron/sync -H "Authorization: Bearer $CRON_SECRET"
  */
-export async function POST(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  const header = req.headers.get("authorization");
-  if (!secret || header !== `Bearer ${secret}`) {
+export async function GET(req: NextRequest) {
+  if (!authorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!isDatabaseConfigured()) {
@@ -66,3 +76,5 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ synced: results.length, results, scored });
 }
+
+export const POST = GET;

@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/app/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Toaster } from "@/components/ui/sonner";
+import { RingCentralDialer } from "@/components/app/ringcentral-dialer";
 import { LogOut } from "lucide-react";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -63,6 +64,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
       </div>
       <Toaster />
+      <RingCentralDialer workspaceId={active?.id ?? "none"} />
     </div>
   );
 }

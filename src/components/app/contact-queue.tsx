@@ -12,6 +12,7 @@ import {
   Loader2,
   CheckCircle2,
   Sparkles,
+  Ban,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -20,12 +21,21 @@ import {
   isDialerConfigured,
 } from "@/components/app/ringcentral-dialer";
 import { LeadActivity } from "@/components/app/lead-activity";
-import { logLeadOutreach } from "@/lib/actions/leads";
+import { logLeadOutreach, setLeadDisqual } from "@/lib/actions/leads";
+import { RCA_LEVEL1, rcaLevel2, rcaLevel3, isValidRcaPath } from "@/lib/rca";
 import type { OutreachChannel, OutreachOutcome } from "@/lib/outreach";
 import type { ContactQueueData, QueueItem } from "@/lib/data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 const NEEDS_DIALER =
@@ -51,6 +61,133 @@ const CHANNEL_LABEL: Record<OutreachChannel, string> = {
   email: "Email",
   whatsapp: "WhatsApp",
 };
+
+/**
+ * Terminal outcomes ask for the RCA reason before moving on, pre-filled with
+ * the most likely path from the shared taxonomy so it usually stays 1 click.
+ */
+const DISQUAL_PREFILL: Partial<
+  Record<OutreachOutcome, { l1: string; l2: string; l3: string }>
+> = {
+  not_interested: {
+    l1: "Candidate Driven",
+    l2: "Interest / Decision",
+    l3: "Contacted - No Interested",
+  },
+  wrong_number: {
+    l1: "Agent Driven",
+    l2: "Contactability",
+    l3: "Wrong number - email sent to confirm",
+  },
+};
+
+/** Compact RCA capture shown in the queue card after a terminal outcome. */
+function QueueDisqualify({
+  leadId,
+  prefill,
+  onDone,
+}: {
+  leadId: string;
+  prefill: { l1: string; l2: string; l3: string } | undefined;
+  onDone: () => void;
+}) {
+  const [l1, setL1] = useState(prefill?.l1 ?? "");
+  const [l2, setL2] = useState(prefill?.l2 ?? "");
+  const [l3, setL3] = useState(prefill?.l3 ?? "");
+  const [note, setNote] = useState("");
+  const [saving, startSave] = useTransition();
+  const valid = isValidRcaPath(l1, l2, l3);
+
+  const onSave = () =>
+    startSave(async () => {
+      const r = await setLeadDisqual(leadId, { l1, l2, l3, note });
+      if (!r.ok) {
+        toast.error(r.message);
+        return;
+      }
+      toast.success("Disqualification reason saved.");
+      onDone();
+    });
+
+  return (
+    <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+      <p className="flex items-center gap-1.5 text-sm font-medium text-destructive">
+        <Ban className="h-3.5 w-3.5" />
+        Why was this lead lost? (RCA)
+      </p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Select
+          value={l1}
+          onValueChange={(v) => {
+            if (!v) return;
+            setL1(v);
+            setL2("");
+            setL3("");
+          }}
+        >
+          <SelectTrigger className="h-8 text-xs" aria-label="Driver">
+            <SelectValue placeholder="Driver…" />
+          </SelectTrigger>
+          <SelectContent>
+            {RCA_LEVEL1.map((v) => (
+              <SelectItem key={v} value={v}>
+                {v}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={l2}
+          onValueChange={(v) => {
+            if (!v) return;
+            setL2(v);
+            setL3("");
+          }}
+          disabled={!l1}
+        >
+          <SelectTrigger className="h-8 text-xs" aria-label="Category">
+            <SelectValue placeholder="Category…" />
+          </SelectTrigger>
+          <SelectContent>
+            {rcaLevel2(l1).map((v) => (
+              <SelectItem key={v} value={v}>
+                {v}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={l3} onValueChange={(v) => v && setL3(v)} disabled={!l2}>
+          <SelectTrigger className="h-8 text-xs" aria-label="Reason">
+            <SelectValue placeholder="Reason…" />
+          </SelectTrigger>
+          <SelectContent>
+            {rcaLevel3(l1, l2).map((v) => (
+              <SelectItem key={v} value={v}>
+                {v}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <Input
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Optional detail…"
+        maxLength={2000}
+        className="h-8 text-xs"
+      />
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="ghost" className="h-8" onClick={onDone}>
+          Decide later
+        </Button>
+        <Button size="sm" className="h-8" disabled={!valid || saving} onClick={onSave}>
+          {saving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+          Save & next
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function geoLine(item: QueueItem): {
   text: string;
@@ -106,6 +243,8 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
   const [showHistory, setShowHistory] = useState(false);
   const [logging, startLog] = useTransition();
   const [done, setDone] = useState(0);
+  /** Set after a terminal outcome — the card asks for the RCA before moving on. */
+  const [disqualOutcome, setDisqualOutcome] = useState<OutreachOutcome | null>(null);
 
   const current = items[0] ?? null;
   const upNext = items.slice(1, 6);
@@ -114,6 +253,7 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
     setItems((list) => list.slice(1));
     setShowHistory(false);
     setChannel("call");
+    setDisqualOutcome(null);
   };
 
   const onCall = () => {
@@ -137,6 +277,15 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
         return;
       }
       setDone((n) => n + 1);
+      // Terminal outcomes stay on the card to capture the RCA reason (the
+      // spreadsheet's RCA Lvl 1/2/3) before moving to the next lead.
+      if (outcome in DISQUAL_PREFILL) {
+        toast.success(
+          `Logged: ${CHANNEL_LABEL[channel]} · ${OUTCOME_CHIPS.find((c) => c.outcome === outcome)?.label}.`,
+        );
+        setDisqualOutcome(outcome);
+        return;
+      }
       toast.success(
         outcome === "answered" || outcome === "replied"
           ? `${current.name} marked as contacted — moved forward.`
@@ -211,10 +360,12 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
                 {formatDistanceToNow(new Date(current.createdAt), { addSuffix: true })}
               </p>
             </div>
-            <Button size="sm" variant="ghost" onClick={onSkip}>
-              <SkipForward className="mr-1 h-3.5 w-3.5" />
-              Skip
-            </Button>
+            {!disqualOutcome && (
+              <Button size="sm" variant="ghost" onClick={onSkip}>
+                <SkipForward className="mr-1 h-3.5 w-3.5" />
+                Skip
+              </Button>
+            )}
           </div>
 
           {current.aiSuggestedAction && (
@@ -224,46 +375,58 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
             </p>
           )}
 
-          {/* Reach out … */}
-          <div className="flex flex-wrap items-center gap-2">
-            {isDialerConfigured ? (
-              <>
-                <Button size="sm" disabled={!current.phone} onClick={onCall}>
-                  <PhoneCall className="mr-1 h-3.5 w-3.5" />
-                  Call
-                </Button>
-                <Button size="sm" variant="outline" disabled={!current.phone} onClick={onSms}>
-                  <MessageSquare className="mr-1 h-3.5 w-3.5" />
-                  SMS
-                </Button>
-              </>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                The in-app dialer isn&apos;t configured — log the outcome of calls
-                made outside the platform below.
-              </p>
-            )}
-            <span className="text-xs text-muted-foreground">
-              Logging as: {CHANNEL_LABEL[channel]}
-            </span>
-          </div>
+          {disqualOutcome ? (
+            /* Terminal outcome logged — capture the RCA reason, then move on. */
+            <QueueDisqualify
+              key={current.id}
+              leadId={current.id}
+              prefill={DISQUAL_PREFILL[disqualOutcome]}
+              onDone={advance}
+            />
+          ) : (
+            <>
+              {/* Reach out … */}
+              <div className="flex flex-wrap items-center gap-2">
+                {isDialerConfigured ? (
+                  <>
+                    <Button size="sm" disabled={!current.phone} onClick={onCall}>
+                      <PhoneCall className="mr-1 h-3.5 w-3.5" />
+                      Call
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={!current.phone} onClick={onSms}>
+                      <MessageSquare className="mr-1 h-3.5 w-3.5" />
+                      SMS
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    The in-app dialer isn&apos;t configured — log the outcome of calls
+                    made outside the platform below.
+                  </p>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  Logging as: {CHANNEL_LABEL[channel]}
+                </span>
+              </div>
 
-          {/* … then one click to log what happened and move on. */}
-          <div className="flex flex-wrap gap-1.5">
-            {OUTCOME_CHIPS.map((c) => (
-              <Button
-                key={c.outcome}
-                size="sm"
-                variant="outline"
-                disabled={logging}
-                className={cn("h-8", c.tone)}
-                onClick={() => onOutcome(c.outcome)}
-              >
-                {logging ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
-                {c.label}
-              </Button>
-            ))}
-          </div>
+              {/* … then one click to log what happened and move on. */}
+              <div className="flex flex-wrap gap-1.5">
+                {OUTCOME_CHIPS.map((c) => (
+                  <Button
+                    key={c.outcome}
+                    size="sm"
+                    variant="outline"
+                    disabled={logging}
+                    className={cn("h-8", c.tone)}
+                    onClick={() => onOutcome(c.outcome)}
+                  >
+                    {logging ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                    {c.label}
+                  </Button>
+                ))}
+              </div>
+            </>
+          )}
 
           <Button
             size="sm"

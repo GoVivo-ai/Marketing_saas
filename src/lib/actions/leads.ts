@@ -107,7 +107,8 @@ async function maybeAutoAdvance(
     leadId: lead.id,
     userId,
     type: "status_change",
-    payload: { toStageId: next.id, reason: "auto_contacted" },
+    // fromStageId lets undoLeadOutreach revert the advance.
+    payload: { fromStageId: firstOpen.id, toStageId: next.id, reason: "auto_contacted" },
   });
 }
 
@@ -261,7 +262,7 @@ export async function getLeadActivity(
 }
 
 export type LeadLogResult =
-  | { ok: true }
+  | { ok: true; eventId?: string }
   | { ok: false; message: string };
 
 /** Adds a free-text note (the spreadsheet's Comments / Sub-comments). */
@@ -307,14 +308,110 @@ export async function logLeadOutreach(
   if (note && note.length > 2000)
     return { ok: false, message: "Note is too long (2000 chars max)." };
   try {
-    await db().insert(schema.leadEvents).values({
-      leadId,
-      userId,
-      type: input.channel,
-      payload: { manual: true, outcome: input.outcome, note },
-    });
+    const [event] = await db()
+      .insert(schema.leadEvents)
+      .values({
+        leadId,
+        userId,
+        type: input.channel,
+        payload: { manual: true, outcome: input.outcome, note },
+      })
+      .returning({ id: schema.leadEvents.id });
     if (input.outcome === "answered" || input.outcome === "replied")
       await maybeAutoAdvance(lead, userId);
+    revalidatePath("/leads");
+    revalidatePath("/leads/pipeline");
+    return { ok: true, eventId: event.id };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** How long a just-logged touch stays undoable. */
+const UNDO_WINDOW_MS = 15 * 60_000;
+
+/**
+ * Undoes a touch the agent just mis-logged from the queue: deletes the event
+ * and, if that touch auto-advanced the lead, moves it back. Only the author
+ * can undo, and only within a short window — corrections after that belong
+ * in the activity log as notes, not as rewritten history.
+ */
+export async function undoLeadOutreach(
+  leadId: string,
+  eventId: string,
+): Promise<LeadLogResult> {
+  const { userId, lead } = await requireLeadAccess(leadId);
+  try {
+    const [event] = await db()
+      .select({
+        id: schema.leadEvents.id,
+        leadId: schema.leadEvents.leadId,
+        userId: schema.leadEvents.userId,
+        type: schema.leadEvents.type,
+        payload: schema.leadEvents.payload,
+        createdAt: schema.leadEvents.createdAt,
+      })
+      .from(schema.leadEvents)
+      .where(eq(schema.leadEvents.id, eventId))
+      .limit(1);
+
+    const payload = (event?.payload ?? {}) as Record<string, unknown>;
+    if (
+      !event ||
+      event.leadId !== leadId ||
+      event.userId !== userId ||
+      !OUTREACH_CHANNELS.includes(event.type as OutreachChannel) ||
+      payload.manual !== true
+    )
+      return { ok: false, message: "This touch can't be undone." };
+    if (Date.now() - event.createdAt.getTime() > UNDO_WINDOW_MS)
+      return { ok: false, message: "Too late to undo — add a correcting note instead." };
+
+    // If the touch auto-advanced the lead, walk the stage back too.
+    const [advance] = await db()
+      .select({
+        id: schema.leadEvents.id,
+        payload: schema.leadEvents.payload,
+      })
+      .from(schema.leadEvents)
+      .where(
+        and(
+          eq(schema.leadEvents.leadId, leadId),
+          eq(schema.leadEvents.type, "status_change"),
+        ),
+      )
+      .orderBy(desc(schema.leadEvents.createdAt))
+      .limit(1);
+    const advPayload = (advance?.payload ?? {}) as Record<string, unknown>;
+    if (
+      advance &&
+      advPayload.reason === "auto_contacted" &&
+      typeof advPayload.fromStageId === "string" &&
+      lead.stageId === advPayload.toStageId
+    ) {
+      const [fromStage] = await db()
+        .select({
+          id: schema.stages.id,
+          kind: schema.stages.kind,
+          position: schema.stages.position,
+        })
+        .from(schema.stages)
+        .where(eq(schema.stages.id, advPayload.fromStageId))
+        .limit(1);
+      if (fromStage) {
+        await db()
+          .update(schema.leads)
+          .set({
+            stageId: fromStage.id,
+            status: deriveStatus(fromStage.kind, fromStage.position),
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.leads.id, leadId));
+        await db().delete(schema.leadEvents).where(eq(schema.leadEvents.id, advance.id));
+      }
+    }
+
+    await db().delete(schema.leadEvents).where(eq(schema.leadEvents.id, event.id));
     revalidatePath("/leads");
     revalidatePath("/leads/pipeline");
     return { ok: true };

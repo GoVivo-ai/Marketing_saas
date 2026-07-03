@@ -21,7 +21,11 @@ import {
   isDialerConfigured,
 } from "@/components/app/ringcentral-dialer";
 import { LeadActivity } from "@/components/app/lead-activity";
-import { logLeadOutreach, setLeadDisqual } from "@/lib/actions/leads";
+import {
+  logLeadOutreach,
+  setLeadDisqual,
+  undoLeadOutreach,
+} from "@/lib/actions/leads";
 import { RCA_LEVEL1, rcaLevel2, rcaLevel3, isValidRcaPath } from "@/lib/rca";
 import type { OutreachChannel, OutreachOutcome } from "@/lib/outreach";
 import type { ContactQueueData, QueueItem } from "@/lib/data";
@@ -245,6 +249,10 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
   const [done, setDone] = useState(0);
   /** Set after a terminal outcome — the card asks for the RCA before moving on. */
   const [disqualOutcome, setDisqualOutcome] = useState<OutreachOutcome | null>(null);
+  /** Leads worked this session (newest first) — the way back after a mis-click. */
+  const [worked, setWorked] = useState<
+    { item: QueueItem; outcome: OutreachOutcome; eventId: string | null }[]
+  >([]);
 
   const current = items[0] ?? null;
   const upNext = items.slice(1, 6);
@@ -268,6 +276,24 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
     if (!dialerSms(current.phone)) toast.error(NEEDS_DIALER);
   };
 
+  /** Deletes the mis-logged touch and puts the lead back at the front. */
+  const undo = (item: QueueItem, eventId: string | null) =>
+    startLog(async () => {
+      if (!eventId) return;
+      const r = await undoLeadOutreach(item.id, eventId);
+      if (!r.ok) {
+        toast.error(r.message);
+        return;
+      }
+      setWorked((list) => list.filter((w) => w.eventId !== eventId));
+      setDone((n) => Math.max(0, n - 1));
+      setItems((list) =>
+        list[0]?.id === item.id ? list : [item, ...list.filter((i) => i.id !== item.id)],
+      );
+      setDisqualOutcome(null);
+      toast.success(`Undone — ${item.name} is back at the front of the queue.`);
+    });
+
   const onOutcome = (outcome: OutreachOutcome) =>
     startLog(async () => {
       if (!current) return;
@@ -276,20 +302,28 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
         toast.error(r.message);
         return;
       }
+      const eventId = r.eventId ?? null;
+      const item = current;
       setDone((n) => n + 1);
+      setWorked((list) => [{ item, outcome, eventId }, ...list].slice(0, 20));
+      const undoAction = eventId
+        ? { action: { label: "Undo", onClick: () => undo(item, eventId) } }
+        : undefined;
       // Terminal outcomes stay on the card to capture the RCA reason (the
       // spreadsheet's RCA Lvl 1/2/3) before moving to the next lead.
       if (outcome in DISQUAL_PREFILL) {
         toast.success(
           `Logged: ${CHANNEL_LABEL[channel]} · ${OUTCOME_CHIPS.find((c) => c.outcome === outcome)?.label}.`,
+          undoAction,
         );
         setDisqualOutcome(outcome);
         return;
       }
       toast.success(
         outcome === "answered" || outcome === "replied"
-          ? `${current.name} marked as contacted — moved forward.`
+          ? `${item.name} marked as contacted — moved forward.`
           : `Logged: ${CHANNEL_LABEL[channel]} · ${OUTCOME_CHIPS.find((c) => c.outcome === outcome)?.label}.`,
+        undoAction,
       );
       advance();
     });
@@ -300,21 +334,60 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
     setShowHistory(false);
   };
 
+  const workedSection = worked.length > 0 && (
+    <div>
+      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Worked this session
+      </h3>
+      <ul className="divide-y rounded-md border">
+        {worked.map((w) => (
+          <li
+            key={`${w.item.id}-${w.eventId}`}
+            className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
+          >
+            <div className="min-w-0">
+              <span className="font-medium">{w.item.name}</span>
+              <span className="ml-2 text-xs text-muted-foreground">
+                {OUTCOME_CHIPS.find((c) => c.outcome === w.outcome)?.label}
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 shrink-0 px-2 text-xs"
+              disabled={logging || !w.eventId}
+              onClick={() => undo(w.item, w.eventId)}
+            >
+              Undo
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        Undo removes the logged touch and puts the lead back at the front. To
+        change a saved RCA reason, open the lead in the Leads table.
+      </p>
+    </div>
+  );
+
   if (!current) {
     return (
-      <Card>
-        <CardContent className="flex flex-col items-center gap-2 py-14 text-center">
-          <CheckCircle2 className="h-8 w-8 text-success" />
-          <p className="font-medium">
-            {done > 0 ? `Queue clear — ${done} leads worked this session.` : "Queue clear."}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {data.coolingDown > 0
-              ? `${data.coolingDown} contacted ${data.coolingDown === 1 ? "lead is" : "leads are"} waiting inside the follow-up window and will come back automatically.`
-              : "New leads and due follow-ups will show up here."}
-          </p>
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        <Card>
+          <CardContent className="flex flex-col items-center gap-2 py-14 text-center">
+            <CheckCircle2 className="h-8 w-8 text-success" />
+            <p className="font-medium">
+              {done > 0 ? `Queue clear — ${done} leads worked this session.` : "Queue clear."}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {data.coolingDown > 0
+                ? `${data.coolingDown} contacted ${data.coolingDown === 1 ? "lead is" : "leads are"} waiting inside the follow-up window and will come back automatically.`
+                : "New leads and due follow-ups will show up here."}
+            </p>
+          </CardContent>
+        </Card>
+        {workedSection}
+      </div>
     );
   }
 
@@ -471,6 +544,8 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
           </ul>
         </div>
       )}
+
+      {workedSection}
     </div>
   );
 }

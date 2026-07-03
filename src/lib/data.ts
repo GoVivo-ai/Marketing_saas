@@ -1490,3 +1490,169 @@ export async function getContactQueue(
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Funnel report — closes the spreadsheet's reporting gap: every lead counts
+// from the moment it enters (not only once it completes Contractor
+// Compliance), so each stage shows how many leads EVER REACHED it, whether
+// they are still there, moved on, or were later lost.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface FunnelStep {
+  id: string;
+  name: string;
+  color: string | null;
+  kind: string;
+  /** Leads that ever reached this stage (still here, past it, or lost after). */
+  count: number;
+  /** Share of all leads in the period. */
+  pctOfTotal: number;
+  /** Conversion from the previous step (null on the first). */
+  pctOfPrev: number | null;
+}
+
+export interface FunnelReport {
+  total: number;
+  steps: FunnelStep[];
+  lost: {
+    count: number;
+    pctOfTotal: number;
+    /** Top RCA reasons (Lvl 1 › Lvl 3), most frequent first. */
+    reasons: { l1: string; l3: string; count: number }[];
+    /** Lost leads without an RCA reason recorded yet. */
+    unclassified: number;
+  };
+}
+
+export async function getFunnelReport(
+  workspaceId: string,
+  opts: { start?: Date | null; end?: Date | null } = {},
+): Promise<FunnelReport> {
+  const stages = await db()
+    .select({
+      id: schema.stages.id,
+      name: schema.stages.name,
+      color: schema.stages.color,
+      kind: schema.stages.kind,
+      position: schema.stages.position,
+    })
+    .from(schema.stages)
+    .where(eq(schema.stages.workspaceId, workspaceId))
+    .orderBy(asc(schema.stages.position));
+  // The funnel path: open stages in order, then the won stage.
+  const path = [
+    ...stages.filter((s) => s.kind === "open"),
+    ...stages.filter((s) => s.kind === "won").slice(0, 1),
+  ];
+  const positionById = new Map(stages.map((s) => [s.id, s.position]));
+
+  const leadFilters = [eq(schema.leads.workspaceId, workspaceId)];
+  if (opts.start) leadFilters.push(gte(schema.leads.createdAt, opts.start));
+  if (opts.end) leadFilters.push(lte(schema.leads.createdAt, opts.end));
+
+  const [leadRows, moveRows] = await Promise.all([
+    db()
+      .select({
+        id: schema.leads.id,
+        stageId: schema.leads.stageId,
+        disqualL1: schema.leads.disqualL1,
+        disqualL3: schema.leads.disqualL3,
+      })
+      .from(schema.leads)
+      .where(and(...leadFilters)),
+    // Stage history: a lost lead still counts in every stage it passed
+    // through, which the current stageId alone can't tell us.
+    db()
+      .select({
+        leadId: schema.leadEvents.leadId,
+        payload: schema.leadEvents.payload,
+      })
+      .from(schema.leadEvents)
+      .innerJoin(schema.leads, eq(schema.leadEvents.leadId, schema.leads.id))
+      .where(
+        and(...leadFilters, eq(schema.leadEvents.type, "status_change")),
+      ),
+  ]);
+
+  // Furthest position each lead ever reached (current stage + history).
+  // Sitting in (or moving into) a lost stage isn't funnel progress — a lost
+  // stage's position sits past the open ones and would otherwise count the
+  // lead as having reached everything before it.
+  const lostIds = new Set(
+    stages.filter((s) => s.kind === "lost").map((s) => s.id),
+  );
+  const maxPos = new Map<string, number>();
+  const bump = (leadId: string, stageId: unknown) => {
+    if (typeof stageId !== "string" || lostIds.has(stageId)) return;
+    const pos = positionById.get(stageId);
+    if (pos == null) return;
+    const prev = maxPos.get(leadId);
+    if (prev == null || pos > prev) maxPos.set(leadId, pos);
+  };
+  for (const l of leadRows) bump(l.id, l.stageId);
+  for (const m of moveRows) {
+    const p = (m.payload ?? {}) as Record<string, unknown>;
+    bump(m.leadId, p.fromStageId);
+    bump(m.leadId, p.toStageId);
+  }
+
+  const total = leadRows.length;
+  const steps: FunnelStep[] = path.map((stage, i) => {
+    // Every lead reached the funnel's entry stage by definition.
+    const count =
+      i === 0
+        ? total
+        : leadRows.filter((l) => (maxPos.get(l.id) ?? -1) >= stage.position)
+            .length;
+    return {
+      id: stage.id,
+      name: stage.name,
+      color: stage.color,
+      kind: stage.kind,
+      count,
+      pctOfTotal: total > 0 ? Math.round((count / total) * 1000) / 10 : 0,
+      pctOfPrev: null,
+    };
+  });
+  for (let i = 1; i < steps.length; i++) {
+    steps[i].pctOfPrev =
+      steps[i - 1].count > 0
+        ? Math.round((steps[i].count / steps[i - 1].count) * 1000) / 10
+        : null;
+  }
+
+  // Lost breakdown by RCA — the "why" behind the funnel's leaks.
+  const lostLeads = leadRows.filter(
+    (l) => l.disqualL1 != null || (l.stageId != null && lostIds.has(l.stageId)),
+  );
+  const reasonCounts = new Map<string, { l1: string; l3: string; count: number }>();
+  let unclassified = 0;
+  for (const l of lostLeads) {
+    if (!l.disqualL1) {
+      unclassified++;
+      continue;
+    }
+    const key = `${l.disqualL1}›${l.disqualL3 ?? ""}`;
+    const entry = reasonCounts.get(key) ?? {
+      l1: l.disqualL1,
+      l3: l.disqualL3 ?? "—",
+      count: 0,
+    };
+    entry.count++;
+    reasonCounts.set(key, entry);
+  }
+
+  return {
+    total,
+    steps,
+    lost: {
+      count: lostLeads.length,
+      pctOfTotal:
+        total > 0 ? Math.round((lostLeads.length / total) * 1000) / 10 : 0,
+      reasons: [...reasonCounts.values()]
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 8),
+      unclassified,
+    },
+  };
+}
+

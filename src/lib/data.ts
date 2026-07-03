@@ -1,5 +1,18 @@
 import { cookies } from "next/headers";
-import { and, asc, desc, eq, gte, isNotNull, lt, lte, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { haversineKm } from "@/lib/geo";
@@ -1249,5 +1262,197 @@ export async function getPipeline(workspaceId: string): Promise<PipelineData> {
   }
 
   return { stages, cardsByStage, counts, cap: PIPELINE_CARD_CAP };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Contact queue — "who to work next", the spreadsheet's 2nd/3rd-outreach
+// columns turned into an ordered list: overdue follow-ups first (oldest touch
+// first), then untouched leads by AI score. Leads whose last outcome resolved
+// the conversation (answered/replied/not interested/wrong number) and leads
+// still inside the follow-up window are left out.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface QueueItem {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  campaign: string | null;
+  stageName: string | null;
+  stageColor: string | null;
+  aiScore: number | null;
+  aiSuggestedAction: string | null;
+  createdAt: Date;
+  geo: LeadGeo | null;
+  /** Outreach touches so far (calls/SMS/emails/WhatsApp, manual or platform). */
+  touches: number;
+  lastTouchAt: Date | null;
+  lastChannel: string | null;
+  lastOutcome: string | null;
+  /** Why the lead is queued: never touched vs. follow-up window elapsed. */
+  due: "new" | "follow_up";
+}
+
+export interface ContactQueueData {
+  items: QueueItem[];
+  total: number;
+  newCount: number;
+  followUpCount: number;
+  /** Touched leads still inside the follow-up window (not queued yet). */
+  coolingDown: number;
+}
+
+/** Days to wait after an unresolved touch before the lead re-enters the queue. */
+export const FOLLOW_UP_AFTER_DAYS = 2;
+const QUEUE_CAP = 100;
+
+const QUEUE_OUTREACH_TYPES = ["call", "sms", "email", "whatsapp"];
+/** Last outcomes that take a lead out of the chase loop. */
+const RESOLVED_OUTCOMES = new Set([
+  "answered",
+  "replied",
+  "not_interested",
+  "wrong_number",
+]);
+
+export async function getContactQueue(
+  workspaceId: string,
+): Promise<ContactQueueData> {
+  // Candidates: open-stage (or unstaged) leads that aren't disqualified.
+  const leadRows = await db()
+    .select({
+      id: schema.leads.id,
+      name: schema.leads.name,
+      phone: schema.leads.phone,
+      email: schema.leads.email,
+      aiScore: schema.leads.aiScore,
+      aiSuggestedAction: schema.leads.aiSuggestedAction,
+      createdAt: schema.leads.createdAt,
+      campaign: schema.campaigns.name,
+      stageName: schema.stages.name,
+      stageColor: schema.stages.color,
+      leadCity: schema.leads.geoCity,
+      leadLat: schema.leads.geoLat,
+      leadLng: schema.leads.geoLng,
+      targetCity: schema.adsets.cityName,
+      targetLat: schema.adsets.lat,
+      targetLng: schema.adsets.lng,
+      targetRadius: schema.adsets.radius,
+      targetUnit: schema.adsets.distanceUnit,
+    })
+    .from(schema.leads)
+    .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
+    .leftJoin(schema.stages, eq(schema.leads.stageId, schema.stages.id))
+    .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+    .where(
+      and(
+        eq(schema.leads.workspaceId, workspaceId),
+        isNull(schema.leads.disqualL1),
+        or(isNull(schema.leads.stageId), eq(schema.stages.kind, "open")),
+      ),
+    );
+
+  // Touch count + latest touch per lead, in two grouped queries (not per lead).
+  const [agg, latest] = await Promise.all([
+    db()
+      .select({
+        leadId: schema.leadEvents.leadId,
+        touches: sql<number>`count(*)::int`,
+        lastAt: sql<Date>`max(${schema.leadEvents.createdAt})`,
+      })
+      .from(schema.leadEvents)
+      .innerJoin(schema.leads, eq(schema.leadEvents.leadId, schema.leads.id))
+      .where(
+        and(
+          eq(schema.leads.workspaceId, workspaceId),
+          inArray(schema.leadEvents.type, QUEUE_OUTREACH_TYPES),
+        ),
+      )
+      .groupBy(schema.leadEvents.leadId),
+    db()
+      .selectDistinctOn([schema.leadEvents.leadId], {
+        leadId: schema.leadEvents.leadId,
+        type: schema.leadEvents.type,
+        payload: schema.leadEvents.payload,
+      })
+      .from(schema.leadEvents)
+      .innerJoin(schema.leads, eq(schema.leadEvents.leadId, schema.leads.id))
+      .where(
+        and(
+          eq(schema.leads.workspaceId, workspaceId),
+          inArray(schema.leadEvents.type, QUEUE_OUTREACH_TYPES),
+        ),
+      )
+      .orderBy(schema.leadEvents.leadId, desc(schema.leadEvents.createdAt)),
+  ]);
+  const aggById = new Map(agg.map((a) => [a.leadId, a]));
+  const latestById = new Map(latest.map((l) => [l.leadId, l]));
+
+  const windowMs = FOLLOW_UP_AFTER_DAYS * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const items: QueueItem[] = [];
+  let coolingDown = 0;
+
+  for (const r of leadRows) {
+    const a = aggById.get(r.id);
+    const last = latestById.get(r.id);
+    const payload = (last?.payload ?? {}) as Record<string, unknown>;
+    // Platform-placed calls/SMS carry no outcome (the agent logs it after) —
+    // treated as unresolved, so the lead comes back when the window elapses.
+    const lastOutcome = typeof payload.outcome === "string" ? payload.outcome : null;
+    const touches = a?.touches ?? 0;
+    const lastTouchAt = a ? new Date(a.lastAt) : null;
+
+    let due: QueueItem["due"];
+    if (touches === 0) {
+      due = "new";
+    } else if (lastOutcome && RESOLVED_OUTCOMES.has(lastOutcome)) {
+      continue; // conversation resolved — advance the stage or disqualify instead
+    } else if (now - (lastTouchAt?.getTime() ?? now) >= windowMs) {
+      due = "follow_up";
+    } else {
+      coolingDown++;
+      continue;
+    }
+
+    items.push({
+      id: r.id,
+      name: r.name ?? "Unknown",
+      phone: r.phone,
+      email: r.email,
+      campaign: r.campaign,
+      stageName: r.stageName,
+      stageColor: r.stageColor,
+      aiScore: r.aiScore,
+      aiSuggestedAction: r.aiSuggestedAction,
+      createdAt: r.createdAt,
+      geo: leadGeo(r),
+      touches,
+      lastTouchAt,
+      lastChannel: last?.type ?? null,
+      lastOutcome,
+      due,
+    });
+  }
+
+  // Overdue follow-ups first (longest-waiting first), then fresh leads by
+  // score — the queue decides the order so the agent doesn't have to.
+  items.sort((x, y) => {
+    if (x.due !== y.due) return x.due === "follow_up" ? -1 : 1;
+    if (x.due === "follow_up")
+      return (x.lastTouchAt?.getTime() ?? 0) - (y.lastTouchAt?.getTime() ?? 0);
+    return (
+      (y.aiScore ?? -1) - (x.aiScore ?? -1) ||
+      y.createdAt.getTime() - x.createdAt.getTime()
+    );
+  });
+
+  return {
+    items: items.slice(0, QUEUE_CAP),
+    total: items.length,
+    newCount: items.filter((i) => i.due === "new").length,
+    followUpCount: items.filter((i) => i.due === "follow_up").length,
+    coolingDown,
+  };
 }
 

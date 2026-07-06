@@ -5,6 +5,7 @@ import { formatDistanceToNow } from "date-fns";
 import {
   PhoneCall,
   MessageSquare,
+  Mail,
   MapPin,
   MapPinOff,
   SkipForward,
@@ -307,6 +308,14 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
     if (!dialerSms(current.phone)) toast.error(NEEDS_DIALER);
   };
 
+  // Opens the default mail client (e.g. Outlook) with the lead's address —
+  // the email counterpart of the post-call SMS option. No dialer needed.
+  const onEmail = () => {
+    if (!current?.email) return;
+    setChannel("email");
+    window.location.href = `mailto:${current.email}`;
+  };
+
   /** Deletes the mis-logged touch and puts the lead back at the front. */
   const undo = (item: QueueItem, eventId: string | null) =>
     startLog(async () => {
@@ -460,15 +469,35 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
                           <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
                           SMS
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!current.email}
+                          onClick={onEmail}
+                        >
+                          <Mail className="mr-1.5 h-3.5 w-3.5" />
+                          Email
+                        </Button>
                         <span className="ml-1 text-xs text-muted-foreground">
                           Logging as {CHANNEL_LABEL[channel]}
                         </span>
                       </>
                     ) : (
-                      <p className="text-xs text-muted-foreground">
-                        The in-app dialer isn&apos;t configured — log the outcome of
-                        calls made outside the platform below.
-                      </p>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!current.email}
+                          onClick={onEmail}
+                        >
+                          <Mail className="mr-1.5 h-3.5 w-3.5" />
+                          Email
+                        </Button>
+                        <p className="text-xs text-muted-foreground">
+                          The in-app dialer isn&apos;t configured — log the outcome of
+                          calls made outside the platform below.
+                        </p>
+                      </>
                     )}
                   </div>
 

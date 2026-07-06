@@ -424,6 +424,7 @@ function CardDetailSheet({
                 <LeadContactActions
                   phone={card.phone}
                   hasPhone={card.phone !== "—"}
+                  email={card.email}
                 />
               </div>
             </div>

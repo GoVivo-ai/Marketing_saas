@@ -7,8 +7,10 @@ const registry: Partial<Record<Platform, MarketingConnector>> = {
   google_ads: googleAdsConnector,
 };
 
-export function getConnector(platform: Platform): MarketingConnector {
-  const connector = registry[platform];
+// Accepts any platform value from the DB enum ("manual" included) and
+// throws for the ones that have no ad-platform connector.
+export function getConnector(platform: string): MarketingConnector {
+  const connector = registry[platform as Platform];
   if (!connector) {
     throw new Error(`No connector registered for platform "${platform}"`);
   }

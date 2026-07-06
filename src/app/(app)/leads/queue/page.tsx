@@ -1,5 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { ContactQueue } from "@/components/app/contact-queue";
+import { DateRangePicker } from "@/components/app/date-range-picker";
 import { LeadsFilter } from "@/components/app/leads-filter";
 import {
   FOLLOW_UP_AFTER_DAYS,
@@ -7,8 +8,17 @@ import {
   getQueueAdsetOptions,
   getWorkspaceContext,
 } from "@/lib/data";
+import { resolveDateRange } from "@/lib/date-range";
 
 export const dynamic = "force-dynamic";
+
+const RANGES = [
+  { value: "7", label: "Last 7 days" },
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 90 days" },
+  { value: "all", label: "All time" },
+];
+const DEFAULT_RANGE = "all";
 
 /** Stat tile matching the dashboard KPI cards (no delta — point-in-time). */
 function StatCard({ label, value, hint }: { label: string; value: number; hint: string }) {
@@ -32,15 +42,29 @@ function StatCard({ label, value, hint }: { label: string; value: number; hint: 
 export default async function ContactQueuePage({
   searchParams,
 }: {
-  searchParams: Promise<{ adset?: string }>;
+  searchParams: Promise<{
+    adset?: string;
+    range?: string;
+    from?: string;
+    to?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const adsetId = sp.adset ?? null;
+  const resolved = resolveDateRange(sp, {
+    presets: [7, 30, 90],
+    defaultPreset: DEFAULT_RANGE,
+    allowAllTime: true,
+  });
 
   const { active } = await getWorkspaceContext();
   const [queue, adsets] = active
     ? await Promise.all([
-        getContactQueue(active.id, { adsetId }),
+        getContactQueue(active.id, {
+          adsetId,
+          start: resolved.start,
+          end: resolved.end,
+        }),
         getQueueAdsetOptions(active.id),
       ])
     : [
@@ -60,17 +84,24 @@ export default async function ContactQueuePage({
             then new leads by score.
           </p>
         </div>
-        {/* Slice today's session to one ad set (e.g. only Redondo Beach). */}
-        <LeadsFilter
-          param="adset"
-          icon="adset"
-          allLabel="All ad sets"
-          activeValue={adsetId}
-          options={adsets.map((a) => ({
-            value: a.id,
-            label: `${a.label} (${a.count})`,
-          }))}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Slice today's session to one ad set (e.g. only Redondo Beach). */}
+          <LeadsFilter
+            param="adset"
+            icon="adset"
+            allLabel="All ad sets"
+            activeValue={adsetId}
+            options={adsets.map((a) => ({
+              value: a.id,
+              label: `${a.label} (${a.count})`,
+            }))}
+          />
+          <DateRangePicker
+            presets={RANGES}
+            defaultValue={DEFAULT_RANGE}
+            label={resolved.label}
+          />
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -87,8 +118,8 @@ export default async function ContactQueuePage({
         />
       </div>
 
-      {/* Keyed by the filter so a slice change resets the client-side list. */}
-      <ContactQueue key={adsetId ?? "all"} data={queue} />
+      {/* Keyed by the filters so a slice change resets the client-side list. */}
+      <ContactQueue key={`${adsetId ?? "all"}:${resolved.label}`} data={queue} />
     </div>
   );
 }

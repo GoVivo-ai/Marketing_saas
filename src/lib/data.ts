@@ -1351,7 +1351,12 @@ export async function getQueueAdsetOptions(
 
 export async function getContactQueue(
   workspaceId: string,
-  opts: { adsetId?: string | null } = {},
+  opts: {
+    adsetId?: string | null;
+    /** Restrict to leads created inside this window (inclusive). */
+    start?: Date | null;
+    end?: Date | null;
+  } = {},
 ): Promise<ContactQueueData> {
   // Candidates: open-stage (or unstaged) leads that aren't disqualified.
   const leadRows = await db()
@@ -1383,6 +1388,8 @@ export async function getContactQueue(
       and(
         queueCandidateWhere(workspaceId),
         opts.adsetId ? eq(schema.leads.adsetId, opts.adsetId) : undefined,
+        opts.start ? gte(schema.leads.createdAt, opts.start) : undefined,
+        opts.end ? lte(schema.leads.createdAt, opts.end) : undefined,
       ),
     );
 

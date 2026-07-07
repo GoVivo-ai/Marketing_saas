@@ -29,6 +29,8 @@ export const RCA_TAXONOMY = {
     "Interest / Decision": [
       "Contacted - Interested",
       "Contacted - No Interested",
+      "Contacted - No Interested (Payment)",
+      "Contacted - No Interested (Schedule)",
       "Contacted – Thinking about it / To decide",
       "Lead will call back",
     ],

@@ -1186,6 +1186,7 @@ export interface PipelineCard {
   campaign: string;
   platform: string;
   phone: string;
+  email: string;
   aiScore: number | null;
   stageId: string | null;
   createdAt: Date;
@@ -1232,6 +1233,7 @@ export async function getPipeline(workspaceId: string): Promise<PipelineData> {
         id: schema.leads.id,
         name: schema.leads.name,
         phone: schema.leads.phone,
+        email: schema.leads.email,
         platform: schema.leads.platform,
         aiScore: schema.leads.aiScore,
         stageId: schema.leads.stageId,
@@ -1255,6 +1257,7 @@ export async function getPipeline(workspaceId: string): Promise<PipelineData> {
       campaign: r.campaign ?? "—",
       platform: r.platform,
       phone: r.phone ?? "—",
+      email: r.email ?? "—",
       aiScore: r.aiScore,
       stageId: r.stageId,
       createdAt: r.createdAt,

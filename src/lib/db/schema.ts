@@ -36,6 +36,7 @@ export const platformEnum = pgEnum("platform", [
   "google_ads", // Phase 2
   "tiktok", // Phase 3
   "linkedin", // Phase 3
+  "manual", // Leads entered by hand (e.g. direct referrals from a client)
 ]);
 
 export const connectionStatusEnum = pgEnum("connection_status", [

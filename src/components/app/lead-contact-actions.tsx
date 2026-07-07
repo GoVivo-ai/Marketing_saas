@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { PhoneCall, MessageSquare } from "lucide-react";
+import { PhoneCall, MessageSquare, Mail } from "lucide-react";
 import {
   dialerCall,
   dialerSms,
@@ -25,18 +25,42 @@ const NEEDS_DIALER =
 export function LeadContactActions({
   phone,
   hasPhone,
+  email,
 }: {
   /** Lead phone in E.164 (e.g. +57…); the dialer places the call in-browser. */
   phone: string | null;
   hasPhone: boolean;
+  /** Lead email; the Email button opens the user's mail client (e.g. Outlook). */
+  email?: string | null;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  const address = email && email !== "—" ? email : null;
+
+  // Email doesn't need the dialer — a mailto: link opens the default mail
+  // client (Outlook et al.) with the lead's address ready to go.
+  const emailButton = (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={!address}
+      onClick={() => {
+        if (address) window.location.href = `mailto:${address}`;
+      }}
+    >
+      <Mail className="mr-1 h-3.5 w-3.5" />
+      Email
+    </Button>
+  );
+
   if (!isDialerConfigured) {
     return (
-      <p className="text-xs text-muted-foreground">
-        The in-app dialer isn&apos;t configured yet.
-      </p>
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-2">{emailButton}</div>
+        <p className="text-xs text-muted-foreground">
+          The in-app dialer isn&apos;t configured yet.
+        </p>
+      </div>
     );
   }
 
@@ -73,6 +97,7 @@ export function LeadContactActions({
         <MessageSquare className="mr-1 h-3.5 w-3.5" />
         SMS
       </Button>
+      {emailButton}
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>

@@ -207,6 +207,7 @@ export function LeadsTable({
                     <LeadContactActions
                       phone={selected.phone}
                       hasPhone={selected.phone !== "—"}
+                      email={selected.email}
                     />
                   </div>
 

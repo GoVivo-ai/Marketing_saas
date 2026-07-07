@@ -5,6 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { AddLeadDialog } from "@/components/app/add-lead-form";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { LeadsCampaignFilter } from "@/components/app/leads-campaign-filter";
 import { LeadsFilter } from "@/components/app/leads-filter";
@@ -125,6 +126,7 @@ export default async function LeadsPage({
             defaultValue={DEFAULT_RANGE}
             label={resolved.label}
           />
+          {active && <AddLeadDialog workspaceId={active.id} />}
         </div>
       </div>
 

@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
+import { currentUser, isAgency, getWorkspaceRole } from "@/lib/permissions";
+import { geocodeCityCached } from "@/lib/integrations/geocode";
 import {
   placeCall,
   sendText,
@@ -566,6 +568,89 @@ export async function clearLeadDisqual(leadId: string): Promise<LeadLogResult> {
     return { ok: true };
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export interface ManualLeadState {
+  error?: string;
+  success?: string;
+}
+
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/**
+ * Creates a lead entered by hand (e.g. a direct referral from the client) —
+ * the manual counterpart of the Meta sync. The lead lands in the workspace's
+ * first open stage with platform "manual" and shows up everywhere synced
+ * leads do (inbox, pipeline, contact queue).
+ */
+export async function createManualLead(
+  _prev: ManualLeadState,
+  formData: FormData,
+): Promise<ManualLeadState> {
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const u = await currentUser();
+  if (!u) return { error: "Unauthorized." };
+  if (!isAgency(u.role) && !(await getWorkspaceRole(u.id, workspaceId)))
+    return { error: "You don't have access to this workspace." };
+
+  const name = String(formData.get("name") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const city = String(formData.get("city") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+
+  if (!name) return { error: "Name is required." };
+  if (!phone && !email)
+    return { error: "Add at least one way to contact the lead (phone or email)." };
+  if (email && !EMAIL_RE.test(email)) return { error: "Invalid email." };
+
+  try {
+    // Same landing spot as synced leads: the first open pipeline stage.
+    const [defaultStage] = await db()
+      .select({ id: schema.stages.id })
+      .from(schema.stages)
+      .where(
+        and(
+          eq(schema.stages.workspaceId, workspaceId),
+          eq(schema.stages.kind, "open"),
+        ),
+      )
+      .orderBy(asc(schema.stages.position))
+      .limit(1);
+
+    const geo = city ? await geocodeCityCached(city) : null;
+
+    const [lead] = await db()
+      .insert(schema.leads)
+      .values({
+        workspaceId,
+        platform: "manual",
+        name,
+        phone: phone || null,
+        email: email || null,
+        geoCity: city || null,
+        geoLat: geo ? geo.lat.toFixed(6) : null,
+        geoLng: geo ? geo.lng.toFixed(6) : null,
+        stageId: defaultStage?.id ?? null,
+      })
+      .returning({ id: schema.leads.id });
+
+    if (note) {
+      await db().insert(schema.leadEvents).values({
+        leadId: lead.id,
+        userId: u.id,
+        type: "note",
+        payload: { text: note },
+      });
+    }
+
+    revalidatePath("/leads");
+    revalidatePath("/leads/pipeline");
+    revalidatePath("/leads/queue");
+    return { success: `${name} added to the pipeline.` };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
   }
 }
 

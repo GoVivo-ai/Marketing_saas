@@ -5,6 +5,7 @@ import {
   desc,
   eq,
   gte,
+  ilike,
   inArray,
   isNotNull,
   isNull,
@@ -1034,9 +1035,11 @@ export async function getLeadsPage(
     campaignId?: string | null;
     stageId?: string | null;
     city?: string | null;
+    /** Free-text search over the lead's name, email and phone. */
+    q?: string | null;
   } = {},
 ): Promise<LeadsPage> {
-  const { start, end, pageSize = 25, campaignId, stageId, city } = opts;
+  const { start, end, pageSize = 25, campaignId, stageId, city, q } = opts;
   // start/end null or omitted → unbounded on that side (all time when both).
   // Filtered against the lead's createdAt timestamp.
   const filters = [eq(schema.leads.workspaceId, workspaceId)];
@@ -1045,6 +1048,16 @@ export async function getLeadsPage(
   if (campaignId) filters.push(eq(schema.leads.campaignId, campaignId));
   if (stageId) filters.push(eq(schema.leads.stageId, stageId));
   if (city) filters.push(eq(schema.leads.geoCity, city));
+  // Find a specific lead by name, email or phone (case-insensitive substring).
+  if (q) {
+    const like = `%${q}%`;
+    const search = or(
+      ilike(schema.leads.name, like),
+      ilike(schema.leads.email, like),
+      ilike(schema.leads.phone, like),
+    );
+    if (search) filters.push(search);
+  }
   const where = and(...filters);
 
   const [{ total }] = await db()

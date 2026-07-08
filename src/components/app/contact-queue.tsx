@@ -24,6 +24,7 @@ import {
 } from "@/components/app/ringcentral-dialer";
 import { LeadActivity } from "@/components/app/lead-activity";
 import {
+  addLeadNote,
   logLeadOutreach,
   setLeadDisqual,
   undoLeadOutreach,
@@ -96,6 +97,94 @@ const DISQUAL_PREFILL: Partial<
     l3: "Wrong number - email sent to confirm",
   },
 };
+
+/**
+ * Follow-up dispositions offered after a connected call, straight from the RCA
+ * "Agent Driven → Process / Follow-up" branch. A connected lead isn't lost, so
+ * these are recorded as notes (not a disqualification) and the lead stays in
+ * the follow-up window.
+ */
+const FOLLOWUP_REASONS = [
+  "Requested info by email / SMS",
+  "Requested a callback",
+  "Profile created - Next Steps Explained",
+  "Email Sent / SMS Sent",
+] as const;
+
+/**
+ * Shown after a connected call ("answered") so the agent can record what the
+ * lead asked for — e.g. the offer info by email/SMS — instead of the card
+ * closing with no options. The touch was already logged (and auto-advanced the
+ * lead); this just attaches the follow-up reason as a note so it comes back.
+ */
+function AnswerFollowUp({
+  leadId,
+  onDone,
+}: {
+  leadId: string;
+  onDone: () => void;
+}) {
+  const [saving, startSave] = useTransition();
+  const [pending, setPending] = useState<string | null>(null);
+
+  const pick = (reason: string) =>
+    startSave(async () => {
+      setPending(reason);
+      const r = await addLeadNote(leadId, `Follow-up: ${reason}`);
+      if (!r.ok) {
+        toast.error(r.message);
+        setPending(null);
+        return;
+      }
+      toast.success(`Follow-up noted: ${reason}.`);
+      onDone();
+    });
+
+  return (
+    <div className="space-y-3 rounded-lg border p-4">
+      <div>
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          <CheckCircle2 className="h-4 w-4 text-success" />
+          Connected — any follow-up?
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          If the lead asked for the offer, record it so it comes back for
+          follow-up. Otherwise just move on.
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {FOLLOWUP_REASONS.map((reason) => (
+          <Button
+            key={reason}
+            size="sm"
+            variant="outline"
+            disabled={saving}
+            className="h-8 gap-1.5 font-normal"
+            onClick={() => pick(reason)}
+          >
+            {saving && pending === reason ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <span className="h-1.5 w-1.5 rounded-full bg-success" />
+            )}
+            {reason}
+          </Button>
+        ))}
+      </div>
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8"
+          disabled={saving}
+          onClick={onDone}
+        >
+          No follow-up — next
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 /** Compact RCA capture shown in the queue card after a terminal outcome. */
 function QueueDisqualify({
@@ -281,6 +370,8 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
   const [done, setDone] = useState(0);
   /** Set after a terminal outcome — the card asks for the RCA before moving on. */
   const [disqualOutcome, setDisqualOutcome] = useState<OutreachOutcome | null>(null);
+  /** Set after a connected call — the card offers a follow-up disposition. */
+  const [followUp, setFollowUp] = useState(false);
   /** Leads worked this session (newest first) — the way back after a mis-click. */
   const [worked, setWorked] = useState<
     { item: QueueItem; outcome: OutreachOutcome; eventId: string | null }[]
@@ -294,6 +385,7 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
     setShowHistory(false);
     setChannel("call");
     setDisqualOutcome(null);
+    setFollowUp(false);
   };
 
   const onCall = () => {
@@ -331,6 +423,7 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
         list[0]?.id === item.id ? list : [item, ...list.filter((i) => i.id !== item.id)],
       );
       setDisqualOutcome(null);
+      setFollowUp(false);
       toast.success(`Undone — ${item.name} is back at the front of the queue.`);
     });
 
@@ -359,8 +452,18 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
         setDisqualOutcome(outcome);
         return;
       }
+      // A connected call stays on the card so the agent can record a follow-up
+      // disposition (e.g. "Requested info by email / SMS") before moving on.
+      if (outcome === "answered") {
+        toast.success(
+          `${item.name} connected — add a follow-up if info was requested.`,
+          undoAction,
+        );
+        setFollowUp(true);
+        return;
+      }
       toast.success(
-        outcome === "answered" || outcome === "replied"
+        outcome === "replied"
           ? `${item.name} marked as contacted — moved forward.`
           : `Logged: ${CHANNEL_LABEL[channel]} · ${OUTCOME_CHIPS.find((c) => c.outcome === outcome)?.label}.`,
         undoAction,
@@ -395,7 +498,7 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
                     {current.campaign ? ` · ${current.campaign}` : ""}
                   </CardDescription>
                 </div>
-                {!disqualOutcome && (
+                {!disqualOutcome && !followUp && (
                   <Button size="sm" variant="ghost" onClick={onSkip}>
                     <SkipForward className="mr-1 h-3.5 w-3.5" />
                     Skip
@@ -450,6 +553,9 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
                   prefill={DISQUAL_PREFILL[disqualOutcome]}
                   onDone={advance}
                 />
+              ) : followUp ? (
+                /* Connected — offer a follow-up disposition before moving on. */
+                <AnswerFollowUp key={current.id} leadId={current.id} onDone={advance} />
               ) : (
                 <>
                   {/* Reach out … */}

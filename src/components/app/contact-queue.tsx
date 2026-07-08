@@ -129,16 +129,15 @@ function AnswerFollowUp({
   leadId: string;
   onDone: () => void;
 }) {
+  const [reason, setReason] = useState("");
   const [saving, startSave] = useTransition();
-  const [pending, setPending] = useState<string | null>(null);
 
-  const pick = (reason: string) =>
+  const save = () =>
     startSave(async () => {
-      setPending(reason);
+      if (!reason) return;
       const r = await addLeadNote(leadId, `Follow-up: ${reason}`);
       if (!r.ok) {
         toast.error(r.message);
-        setPending(null);
         return;
       }
       toast.success(`Follow-up noted: ${reason}.`);
@@ -153,30 +152,23 @@ function AnswerFollowUp({
           Connected — any follow-up?
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          If the lead asked for the offer, record it so it comes back for
-          follow-up. Otherwise just move on.
+          Mark where the lead stands so it comes back for follow-up. Otherwise
+          just move on.
         </p>
       </div>
-      <div className="flex flex-wrap gap-2">
-        {FOLLOWUP_REASONS.map((reason) => (
-          <Button
-            key={reason}
-            size="sm"
-            variant="outline"
-            disabled={saving}
-            className="h-8 gap-1.5 font-normal"
-            onClick={() => pick(reason)}
-          >
-            {saving && pending === reason ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <span className="h-1.5 w-1.5 rounded-full bg-success" />
-            )}
-            {reason}
-          </Button>
-        ))}
-      </div>
-      <div className="flex justify-end">
+      <Select value={reason} onValueChange={(v) => v && setReason(v)}>
+        <SelectTrigger className="h-9 text-sm" aria-label="Follow-up disposition">
+          <SelectValue placeholder="Choose a follow-up…" />
+        </SelectTrigger>
+        <SelectContent>
+          {FOLLOWUP_REASONS.map((r) => (
+            <SelectItem key={r} value={r}>
+              {r}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <div className="flex justify-end gap-2">
         <Button
           size="sm"
           variant="ghost"
@@ -185,6 +177,15 @@ function AnswerFollowUp({
           onClick={onDone}
         >
           No follow-up — next
+        </Button>
+        <Button
+          size="sm"
+          className="h-8"
+          disabled={!reason || saving}
+          onClick={save}
+        >
+          {saving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+          Save &amp; next
         </Button>
       </div>
     </div>

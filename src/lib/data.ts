@@ -16,6 +16,7 @@ import {
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { haversineKm } from "@/lib/geo";
+import { MIN_VEHICLE_YEAR, parseVehicleYear } from "@/lib/vehicle";
 
 /**
  * Read-side data layer for the product pages. Every function is scoped to
@@ -138,6 +139,23 @@ export interface LeadGeo {
   unit: "mile" | "kilometer" | null;
   /** Distance from the lead's city to the target centre, in `unit`. */
   distance: number | null;
+}
+
+/** A lead's vehicle against the minimum-year eligibility rule. */
+export interface VehicleFit {
+  status: "eligible" | "too_old" | "unknown";
+  /** Model year parsed from the lead's form answers, if any. */
+  year: number | null;
+  /** Minimum model year required to qualify. */
+  minYear: number;
+}
+
+/** Classify a lead's vehicle year against the minimum-year rule. */
+function vehicleFit(formData: Record<string, unknown> | null): VehicleFit {
+  const year = parseVehicleYear(formData);
+  const status =
+    year == null ? "unknown" : year >= MIN_VEHICLE_YEAR ? "eligible" : "too_old";
+  return { status, year, minYear: MIN_VEHICLE_YEAR };
 }
 
 const dateStr = (d: Date) => d.toISOString().slice(0, 10);
@@ -1287,6 +1305,8 @@ export interface QueueItem {
   aiSuggestedAction: string | null;
   createdAt: Date;
   geo: LeadGeo | null;
+  /** Whether the lead's vehicle meets the minimum-year eligibility rule. */
+  vehicle: VehicleFit;
   /** Outreach touches so far (calls/SMS/emails/WhatsApp, manual or platform). */
   touches: number;
   lastTouchAt: Date | null;
@@ -1377,6 +1397,7 @@ export async function getContactQueue(
       leadCity: schema.leads.geoCity,
       leadLat: schema.leads.geoLat,
       leadLng: schema.leads.geoLng,
+      formData: schema.leads.formData,
       targetCity: schema.adsets.cityName,
       targetLat: schema.adsets.lat,
       targetLng: schema.adsets.lng,
@@ -1471,6 +1492,7 @@ export async function getContactQueue(
       aiSuggestedAction: r.aiSuggestedAction,
       createdAt: r.createdAt,
       geo: leadGeo(r),
+      vehicle: vehicleFit(r.formData as Record<string, unknown> | null),
       touches,
       lastTouchAt,
       lastChannel: last?.type ?? null,

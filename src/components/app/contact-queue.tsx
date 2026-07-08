@@ -8,6 +8,8 @@ import {
   Mail,
   MapPin,
   MapPinOff,
+  CarFront,
+  AlertTriangle,
   SkipForward,
   History,
   Loader2,
@@ -335,6 +337,35 @@ function geoLine(item: QueueItem): {
   }
 }
 
+/** Vehicle-year verdict for the "Vehicle" cell, mirroring geoLine's shape. */
+function vehicleLine(item: QueueItem): {
+  text: string;
+  cls: string;
+  off: boolean;
+} {
+  const v = item.vehicle;
+  switch (v.status) {
+    case "eligible":
+      return {
+        text: `${v.year} — meets ${v.minYear}+`,
+        cls: "text-success",
+        off: false,
+      };
+    case "too_old":
+      return {
+        text: `${v.year} — too old (needs ${v.minYear}+)`,
+        cls: "text-destructive",
+        off: true,
+      };
+    default:
+      return {
+        text: `No year in form — confirm ${v.minYear}+`,
+        cls: "text-muted-foreground",
+        off: true,
+      };
+  }
+}
+
 function lastTouchLine(item: QueueItem): string {
   if (!item.lastTouchAt) return "Never contacted";
   const ago = formatDistanceToNow(new Date(item.lastTouchAt), { addSuffix: true });
@@ -478,6 +509,7 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
   };
 
   const geo = current ? geoLine(current) : null;
+  const veh = current ? vehicleLine(current) : null;
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
@@ -508,7 +540,7 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
             </CardHeader>
             <CardContent className="space-y-5">
               {/* Context the agent checks before dialing. */}
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                   <p className="text-xs text-muted-foreground">AI Score</p>
                   <p className="mt-0.5 text-sm font-medium">
@@ -525,6 +557,21 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
                         <MapPin className="h-3.5 w-3.5 shrink-0" />
                       )}
                       <span className="min-w-0">{geo.text}</span>
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 text-sm font-medium">—</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Vehicle</p>
+                  {veh ? (
+                    <p className={cn("mt-0.5 flex items-center gap-1.5 text-sm font-medium", veh.cls)}>
+                      {veh.off ? (
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      ) : (
+                        <CarFront className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <span className="min-w-0">{veh.text}</span>
                     </p>
                   ) : (
                     <p className="mt-0.5 text-sm font-medium">—</p>

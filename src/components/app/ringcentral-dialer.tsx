@@ -39,6 +39,11 @@ function widgetFrame(): Window | null {
   return iframe?.contentWindow ?? null;
 }
 
+/** The RingCentral panel element, used to anchor our close (X) to its corner. */
+function widgetFrameEl(): HTMLElement | null {
+  return document.getElementById(frameId);
+}
+
 /** Reveal the RingCentral dialpad (it starts hidden so it never covers the UI). */
 export function showDialer() {
   const a = adapter();
@@ -95,6 +100,10 @@ export function RingCentralDialer({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [dialpadOpen, setDialpadOpen] = useState(false);
+  /** Screen position of the close (X) pinned to the panel's top-right corner. */
+  const [framePos, setFramePos] = useState<{ top: number; left: number } | null>(
+    null,
+  );
 
   // Namespace the widget per company (workspace) so RingCentral sessions are
   // scoped to the company: everyone in it shares the same session, other
@@ -162,19 +171,54 @@ export function RingCentralDialer({
     };
   }, [prefix]);
 
+  // While the panel is open, pin the close (X) to the top-right corner of the
+  // RingCentral frame — the intuitive spot for a modal close. The panel resizes
+  // (sign-in vs dialpad) and RC animates it, so re-measure on a light interval.
+  useEffect(() => {
+    // framePos is only read while dialpadOpen, so a stale value when closed is
+    // harmless — no need to reset it here (which would be a sync effect-body set).
+    if (!dialpadOpen) return;
+    const SIZE = 28;
+    const MARGIN = 8;
+    const measure = () => {
+      const rect = widgetFrameEl()?.getBoundingClientRect();
+      if (!rect || rect.width === 0 || rect.height === 0) {
+        setFramePos(null);
+        return;
+      }
+      setFramePos({ top: rect.top + MARGIN, left: rect.right - SIZE - MARGIN });
+    };
+    const raf = requestAnimationFrame(measure);
+    const iv = setInterval(measure, 200);
+    window.addEventListener("resize", measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearInterval(iv);
+      window.removeEventListener("resize", measure);
+    };
+  }, [dialpadOpen]);
+
   if (!CLIENT_ID) return null;
+
+  /** Close → collapse the panel back to the floating hub (restore from there). */
+  const minimize = () => {
+    hideDialer();
+    setDialpadOpen(false);
+    setMenuOpen(false);
+  };
 
   const hubClick = () => {
     if (dialpadOpen) {
-      hideDialer();
-      setDialpadOpen(false);
-      setMenuOpen(false);
+      minimize();
       return;
     }
     setMenuOpen((v) => !v);
   };
 
   const anyOpen = menuOpen || dialpadOpen;
+  // Prefer the X pinned to the frame's corner; keep the hub's own X as a
+  // fallback only when the frame can't be measured, so a close is always there.
+  const showHub = !dialpadOpen || !framePos;
 
   // Elastic ease gives the blob a "snap" as it separates.
   const snap = "cubic-bezier(0.68,-0.6,0.32,1.6)";
@@ -183,14 +227,30 @@ export function RingCentralDialer({
     : "translateY(0) scale(0.6)";
 
   return (
-    // While the panel is open it renders bottom-right on top of our hub (the
-    // RingCentral iframe sits at a high z-index), which used to bury our close
-    // button — the "sign-in modal I can't close" report. Lift the hub above the
-    // panel whenever it's open so the X (or restore) control is always clickable.
-    <div
-      className="fixed bottom-5 right-5 h-36 w-14"
-      style={{ zIndex: anyOpen ? 2147483000 : 40 }}
-    >
+    <>
+      {/* Close pinned to the RingCentral panel's top-right corner — the RC frame
+          sits at a high z-index, so this floats just above it. Clicking it
+          minimizes the panel back to the hub (reopen from the phone button). */}
+      {dialpadOpen && framePos && (
+        <button
+          type="button"
+          onClick={minimize}
+          title="Minimize"
+          aria-label="Minimize RingCentral"
+          className="fixed flex h-7 w-7 items-center justify-center rounded-full bg-neutral-900/70 text-white shadow-md ring-1 ring-white/20 backdrop-blur transition hover:bg-neutral-900"
+          style={{ top: framePos.top, left: framePos.left, zIndex: 2147483001 }}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
+
+      {/* Floating hub — the opener, and a fallback close when the frame can't be
+          measured. Lifted above the panel while open so it's never buried. */}
+      {showHub && (
+        <div
+          className="fixed bottom-5 right-5 h-36 w-14"
+          style={{ zIndex: anyOpen ? 2147483000 : 40 }}
+        >
       {/* Gooey blob layer — solid shapes only; the SVG filter blurs + thresholds
           them so the bud appears to stretch off and pinch away from the hub. */}
       <div
@@ -257,6 +317,8 @@ export function RingCentralDialer({
           </filter>
         </defs>
       </svg>
-    </div>
+        </div>
+      )}
+    </>
   );
 }

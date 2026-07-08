@@ -39,9 +39,35 @@ function widgetFrame(): Window | null {
   return iframe?.contentWindow ?? null;
 }
 
-/** The RingCentral panel element, used to anchor our close (X) to its corner. */
+/** The RingCentral iframe element. */
 function widgetFrameEl(): HTMLElement | null {
   return document.getElementById(frameId);
+}
+
+/**
+ * Bounding box of the whole visible RingCentral panel — its title bar
+ * ("RingCentral") is rendered OUTSIDE the iframe, so measuring the iframe alone
+ * lands ~a header below the real top. Walk up to the panel's positioned
+ * container (header + iframe) so we can pin the close to its true top-right
+ * corner. Returns null when the panel isn't visible.
+ */
+function widgetPanelRect(): DOMRect | null {
+  const iframe = widgetFrameEl();
+  if (!iframe) return null;
+  let el: HTMLElement = iframe;
+  for (
+    let node = iframe.parentElement;
+    node && node !== document.body;
+    node = node.parentElement
+  ) {
+    const pos = getComputedStyle(node).position;
+    if (pos === "fixed" || pos === "absolute") {
+      el = node;
+      break;
+    }
+  }
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0 ? rect : null;
 }
 
 /** Reveal the RingCentral dialpad (it starts hidden so it never covers the UI). */
@@ -179,10 +205,10 @@ export function RingCentralDialer({
     // harmless — no need to reset it here (which would be a sync effect-body set).
     if (!dialpadOpen) return;
     const SIZE = 28;
-    const MARGIN = 8;
+    const MARGIN = 6;
     const measure = () => {
-      const rect = widgetFrameEl()?.getBoundingClientRect();
-      if (!rect || rect.width === 0 || rect.height === 0) {
+      const rect = widgetPanelRect();
+      if (!rect) {
         setFramePos(null);
         return;
       }

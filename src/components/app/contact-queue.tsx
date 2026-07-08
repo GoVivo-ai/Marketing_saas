@@ -347,19 +347,19 @@ function vehicleLine(item: QueueItem): {
   switch (v.status) {
     case "eligible":
       return {
-        text: `${v.year} — meets ${v.minYear}+`,
+        text: `Yes — vehicle ${v.minYear} or newer`,
         cls: "text-success",
         off: false,
       };
     case "too_old":
       return {
-        text: `${v.year} — too old (needs ${v.minYear}+)`,
+        text: `No — vehicle older than ${v.minYear}`,
         cls: "text-destructive",
         off: true,
       };
     default:
       return {
-        text: `No year in form — confirm ${v.minYear}+`,
+        text: `Not asked — confirm ${v.minYear}+`,
         cls: "text-muted-foreground",
         off: true,
       };

@@ -16,7 +16,7 @@ import {
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { haversineKm } from "@/lib/geo";
-import { MIN_VEHICLE_YEAR, parseVehicleYear } from "@/lib/vehicle";
+import { MIN_VEHICLE_YEAR, vehicleAnswer } from "@/lib/vehicle";
 
 /**
  * Read-side data layer for the product pages. Every function is scoped to
@@ -141,21 +141,23 @@ export interface LeadGeo {
   distance: number | null;
 }
 
-/** A lead's vehicle against the minimum-year eligibility rule. */
+/** A lead's answer to the vehicle-year eligibility question. */
 export interface VehicleFit {
+  /** eligible = answered Yes, too_old = answered No, unknown = not asked. */
   status: "eligible" | "too_old" | "unknown";
-  /** Model year parsed from the lead's form answers, if any. */
-  year: number | null;
-  /** Minimum model year required to qualify. */
+  /** Threshold model year the form asked about (e.g. 2012). */
   minYear: number;
 }
 
-/** Classify a lead's vehicle year against the minimum-year rule. */
+/**
+ * Classify a lead by its Yes/No answer to the Meta "vehicle model year N or
+ * newer?" question. The answer is the verdict; the threshold year comes from
+ * the question text (falling back to MIN_VEHICLE_YEAR for display).
+ */
 function vehicleFit(formData: Record<string, unknown> | null): VehicleFit {
-  const year = parseVehicleYear(formData);
-  const status =
-    year == null ? "unknown" : year >= MIN_VEHICLE_YEAR ? "eligible" : "too_old";
-  return { status, year, minYear: MIN_VEHICLE_YEAR };
+  const { meets, year } = vehicleAnswer(formData);
+  const status = meets == null ? "unknown" : meets ? "eligible" : "too_old";
+  return { status, minYear: year ?? MIN_VEHICLE_YEAR };
 }
 
 const dateStr = (d: Date) => d.toISOString().slice(0, 10);

@@ -102,15 +102,18 @@ const DISQUAL_PREFILL: Partial<
 
 /**
  * Follow-up dispositions offered after a connected call, straight from the RCA
- * "Agent Driven → Process / Follow-up" branch. A connected lead isn't lost, so
- * these are recorded as notes (not a disqualification) and the lead stays in
- * the follow-up window.
+ * "Process / Follow-up" branches. A connected lead isn't lost, so these are
+ * recorded as notes (not a disqualification) and the lead stays in the
+ * follow-up window. The two "Profile created" steps let the agent mark where a
+ * lead sits in profile creation (next steps explained → completing A1s) without
+ * the RCA/disqualify path wrongly moving it to Lost.
  */
 const FOLLOWUP_REASONS = [
   "Requested info by email / SMS",
   "Requested a callback",
-  "Profile created - Next Steps Explained",
   "Email Sent / SMS Sent",
+  "Profile created - Next Steps Explained",
+  "Profile created - Completing A1s",
 ] as const;
 
 /**

@@ -1,45 +1,54 @@
 /** Shared vehicle-eligibility logic for lead qualification. */
 
 /**
- * Minimum model year a lead's vehicle must be to qualify. VIVO only onboards
- * drivers whose vehicle is a 2015-or-newer model; anything older fails the
- * vehicle rule (RCA "Vehicle too old / Does not meet vehicle year").
+ * Fallback threshold year, only used for display when the form question does
+ * not state its own year. The real rule comes from the Meta lead-ad question
+ * itself — e.g. "Do you have a vehicle model year 2012 or newer?" — which the
+ * applicant answers Yes/No, so the ANSWER is the verdict and the year in the
+ * question text is just what we show.
  */
-export const MIN_VEHICLE_YEAR = 2015;
+export const MIN_VEHICLE_YEAR = 2012;
+
+export interface VehicleAnswer {
+  /** true = Yes (meets), false = No (doesn't), null = question not answered. */
+  meets: boolean | null;
+  /** Threshold year stated in the question text, if any (e.g. 2012). */
+  year: number | null;
+}
 
 /**
- * Pulls the vehicle model year from a lead's raw form answers, if present.
- * Meta delivers each lead-ad question as a `formData` key named after its
- * label, so we scan loosely — first keys explicitly about the year/model, then
- * broader vehicle keys — and take the first plausible 4-digit year.
- * Mirrors `findCity` in sync.ts, which parses the city the same way.
+ * Reads the vehicle-year eligibility answer from a lead's raw Meta form data.
+ * The form asks a yes/no question ("Do you have a vehicle model year 2012 or
+ * newer?"), so we find that question by its label and read the Yes/No answer;
+ * the threshold year is parsed from the question text for display.
  */
-export function parseVehicleYear(
+export function vehicleAnswer(
   formData: Record<string, unknown> | null | undefined,
-): number | null {
-  if (!formData) return null;
-  const thisYear = new Date().getFullYear();
-  const entries = Object.entries(formData);
-  // Two passes: prefer a key that names the year/model, then any vehicle key.
-  const passes: ((k: string) => boolean)[] = [
-    (k) => /\b(year|a[nñ]o|ano|modelo|model)\b/.test(k),
-    (k) => /(veh[íi]culo|vehicle|\bcar\b|\bauto\b|carro)/.test(k),
-  ];
-  for (const match of passes) {
-    for (const [key, value] of entries) {
-      if (!match(key.toLowerCase())) continue;
-      const year = extractYear(String(value ?? ""), thisYear);
-      if (year != null) return year;
-    }
+): VehicleAnswer {
+  if (!formData) return { meets: null, year: null };
+  for (const [key, value] of Object.entries(formData)) {
+    const k = key.toLowerCase();
+    const aboutVehicle = /(veh[íi]culo|vehicle|carro|\bcar\b|\bauto\b)/.test(k);
+    const aboutYear = /\b(year|a[nñ]o|ano|model|modelo)\b/.test(k);
+    if (!aboutVehicle || !aboutYear) continue;
+    const meets = parseYesNo(String(value ?? ""));
+    if (meets === null) continue;
+    return { meets, year: extractYear(k) };
   }
+  return { meets: null, year: null };
+}
+
+/** Interpret a Yes/No answer (English or Spanish), or null if not yes/no. */
+function parseYesNo(text: string): boolean | null {
+  const v = text.trim().toLowerCase();
+  if (!v) return null;
+  if (/^(yes|yeah|yep|y|s[íi]|si|s|true|1)\b/.test(v)) return true;
+  if (/^(no|nope|n|false|0)\b/.test(v)) return false;
   return null;
 }
 
-/** First plausible model year in a string (1980 … current+1), or null. */
-function extractYear(text: string, thisYear: number): number | null {
-  const m = text.match(/\b(19[89]\d|20\d\d)\b/);
-  if (!m) return null;
-  const year = Number(m[1]);
-  if (year < 1980 || year > thisYear + 1) return null;
-  return year;
+/** First plausible 4-digit threshold year (2000–2039) in a string, or null. */
+function extractYear(text: string): number | null {
+  const m = text.match(/\b(20[0-3]\d)\b/);
+  return m ? Number(m[1]) : null;
 }

@@ -138,9 +138,27 @@ export function RingCentralDialer({
       setMenuOpen(false);
     };
     window.addEventListener(OPEN_EVENT, onOpen);
+    // The widget can also show itself — an incoming/active call, or the sign-in
+    // prompt after an auth redirect. Mirror that into our state so the hub is
+    // always in its closeable (X) state and the agent can dismiss the panel.
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== WIDGET_ORIGIN) return;
+      const type =
+        (e.data && (e.data as { type?: string }).type) || "";
+      if (
+        type === "rc-call-ring-notify" ||
+        type === "rc-active-call-notify" ||
+        type === "rc-login-popup-notify"
+      ) {
+        setDialpadOpen(true);
+        setMenuOpen(false);
+      }
+    };
+    window.addEventListener("message", onMessage);
     return () => {
       clearInterval(iv);
       window.removeEventListener(OPEN_EVENT, onOpen);
+      window.removeEventListener("message", onMessage);
     };
   }, [prefix]);
 
@@ -165,7 +183,14 @@ export function RingCentralDialer({
     : "translateY(0) scale(0.6)";
 
   return (
-    <div className="fixed bottom-5 right-5 z-40 h-36 w-14">
+    // While the panel is open it renders bottom-right on top of our hub (the
+    // RingCentral iframe sits at a high z-index), which used to bury our close
+    // button — the "sign-in modal I can't close" report. Lift the hub above the
+    // panel whenever it's open so the X (or restore) control is always clickable.
+    <div
+      className="fixed bottom-5 right-5 h-36 w-14"
+      style={{ zIndex: anyOpen ? 2147483000 : 40 }}
+    >
       {/* Gooey blob layer — solid shapes only; the SVG filter blurs + thresholds
           them so the bud appears to stretch off and pinch away from the hub. */}
       <div

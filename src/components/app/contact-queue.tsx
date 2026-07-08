@@ -112,6 +112,14 @@ const FOLLOWUP_REASONS = [
   "Requested info by email / SMS",
   "Requested a callback",
   "Email Sent / SMS Sent",
+] as const;
+
+/**
+ * The "Profile created" progression — grouped in one dropdown so the agent
+ * marks where the lead sits in profile creation (next steps explained →
+ * completing A1s) without cluttering the quick dispositions above.
+ */
+const PROFILE_STEPS = [
   "Profile created - Next Steps Explained",
   "Profile created - Completing A1s",
 ] as const;
@@ -129,15 +137,16 @@ function AnswerFollowUp({
   leadId: string;
   onDone: () => void;
 }) {
-  const [reason, setReason] = useState("");
   const [saving, startSave] = useTransition();
+  const [pending, setPending] = useState<string | null>(null);
 
-  const save = () =>
+  const pick = (reason: string) =>
     startSave(async () => {
-      if (!reason) return;
+      setPending(reason);
       const r = await addLeadNote(leadId, `Follow-up: ${reason}`);
       if (!r.ok) {
         toast.error(r.message);
+        setPending(null);
         return;
       }
       toast.success(`Follow-up noted: ${reason}.`);
@@ -156,19 +165,42 @@ function AnswerFollowUp({
           just move on.
         </p>
       </div>
-      <Select value={reason} onValueChange={(v) => v && setReason(v)}>
-        <SelectTrigger className="h-9 text-sm" aria-label="Follow-up disposition">
-          <SelectValue placeholder="Choose a follow-up…" />
-        </SelectTrigger>
-        <SelectContent>
-          {FOLLOWUP_REASONS.map((r) => (
-            <SelectItem key={r} value={r}>
-              {r}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {FOLLOWUP_REASONS.map((reason) => (
+          <Button
+            key={reason}
+            size="sm"
+            variant="outline"
+            disabled={saving}
+            className="h-8 gap-1.5 font-normal"
+            onClick={() => pick(reason)}
+          >
+            {saving && pending === reason ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <span className="h-1.5 w-1.5 rounded-full bg-success" />
+            )}
+            {reason}
+          </Button>
+        ))}
+        {/* Profile-created progression grouped in its own dropdown. */}
+        <Select value="" onValueChange={(v) => v && pick(v)} disabled={saving}>
+          <SelectTrigger
+            className="h-8 w-auto gap-1.5 text-sm font-normal"
+            aria-label="Profile created"
+          >
+            <SelectValue placeholder="Profile created…" />
+          </SelectTrigger>
+          <SelectContent>
+            {PROFILE_STEPS.map((step) => (
+              <SelectItem key={step} value={step}>
+                {step.replace("Profile created - ", "")}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex justify-end">
         <Button
           size="sm"
           variant="ghost"
@@ -177,15 +209,6 @@ function AnswerFollowUp({
           onClick={onDone}
         >
           No follow-up — next
-        </Button>
-        <Button
-          size="sm"
-          className="h-8"
-          disabled={!reason || saving}
-          onClick={save}
-        >
-          {saving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-          Save &amp; next
         </Button>
       </div>
     </div>

@@ -9,6 +9,7 @@ import { AddLeadDialog } from "@/components/app/add-lead-form";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { LeadsCampaignFilter } from "@/components/app/leads-campaign-filter";
 import { LeadsFilter } from "@/components/app/leads-filter";
+import { LeadsSearch } from "@/components/app/leads-search";
 import { Pagination } from "@/components/app/pagination";
 import { auth } from "@/lib/auth";
 import { isAnyTelephonyConnected } from "@/lib/integrations/telephony";
@@ -43,6 +44,7 @@ export default async function LeadsPage({
     campaign?: string;
     stage?: string;
     city?: string;
+    q?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -55,6 +57,7 @@ export default async function LeadsPage({
   const campaignId = sp.campaign ?? null;
   const stageId = sp.stage ?? null;
   const city = sp.city ?? null;
+  const q = sp.q?.trim() || null;
 
   const session = await auth();
   const contactConnected = session?.user?.id
@@ -71,6 +74,7 @@ export default async function LeadsPage({
           campaignId,
           stageId,
           city,
+          q,
         }),
         getLeadCampaignOptions(active.id),
         getLeadStageOptions(active.id),
@@ -87,7 +91,8 @@ export default async function LeadsPage({
     resolved.start != null ||
     campaignId != null ||
     stageId != null ||
-    city != null;
+    city != null ||
+    q != null;
 
   return (
     <div className="space-y-6">
@@ -102,6 +107,7 @@ export default async function LeadsPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <LeadsSearch initialValue={q ?? ""} />
           <LeadsCampaignFilter campaigns={campaigns} activeId={campaignId} />
           <LeadsFilter
             param="stage"
@@ -140,9 +146,11 @@ export default async function LeadsPage({
         <CardContent>
           {result.total === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              {isFiltered
-                ? `No leads in ${resolved.label.toLowerCase()}. Try a wider range.`
-                : "No leads synced yet. They will appear here after the first sync of a connected account."}
+              {q
+                ? `No leads match “${q}”. Try a name, phone or email.`
+                : isFiltered
+                  ? `No leads in ${resolved.label.toLowerCase()}. Try a wider range.`
+                  : "No leads synced yet. They will appear here after the first sync of a connected account."}
             </p>
           ) : (
             <>

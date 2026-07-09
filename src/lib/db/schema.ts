@@ -209,6 +209,14 @@ export const campaigns = pgTable(
     status: text("status").notNull().default("ACTIVE"),
     objective: text("objective"),
     dailyBudget: numeric("daily_budget", { precision: 12, scale: 2 }),
+    /**
+     * Per-campaign AI lead-scoring criteria (free-text prompt). When set, it
+     * overrides the workspace-wide `qualificationCriteria` for leads belonging
+     * to this campaign — so each campaign can be scored on its own terms.
+     * Nullable = fall back to the workspace criteria. Preserved across re-syncs
+     * (the platform upsert never writes this column).
+     */
+    scoringCriteria: text("scoring_criteria"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [

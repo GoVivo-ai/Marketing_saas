@@ -78,6 +78,7 @@ export interface CampaignDetail {
   platform: string;
   status: string;
   objective: string | null;
+  scoringCriteria: string | null;
 }
 
 /** One ad set with 30-day metrics and its audience-location geometry. */
@@ -493,6 +494,7 @@ export async function getCampaignById(
       platform: schema.campaigns.platform,
       status: schema.campaigns.status,
       objective: schema.campaigns.objective,
+      scoringCriteria: schema.campaigns.scoringCriteria,
     })
     .from(schema.campaigns)
     .where(

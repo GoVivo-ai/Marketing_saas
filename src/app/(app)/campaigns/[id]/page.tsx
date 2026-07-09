@@ -11,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { AdSetExplorer } from "@/components/app/adset-explorer";
+import { CampaignScoringForm } from "@/components/app/campaign-scoring-form";
 import {
   getAdSetRows,
   getCampaignById,
@@ -104,6 +105,22 @@ export default async function CampaignDetailPage({
         </CardHeader>
         <CardContent>
           <AdSetExplorer adsets={adsets} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>AI lead scoring</CardTitle>
+          <CardDescription>
+            Define how the AI should score leads from this campaign. This prompt
+            overrides the workspace-wide criteria for this campaign only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CampaignScoringForm
+            campaignId={campaign.id}
+            scoringCriteria={campaign.scoringCriteria}
+          />
         </CardContent>
       </Card>
     </div>

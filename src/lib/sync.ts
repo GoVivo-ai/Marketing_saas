@@ -5,7 +5,12 @@ import { listAdSets, fetchAdSetDailyMetrics } from "@/lib/integrations/meta";
 import { geocodeCity, geocodeCityCached } from "@/lib/integrations/geocode";
 import { decryptSecret } from "@/lib/crypto";
 import { getSecret } from "@/lib/settings";
-import { scoreLead, radiusBoostByLeadId, withRadiusBoost } from "@/lib/ai/lead-scoring";
+import {
+  scoreLead,
+  radiusBoostByLeadId,
+  withRadiusBoost,
+  campaignCriteriaByLeadId,
+} from "@/lib/ai/lead-scoring";
 import { isAiConfigured } from "@/lib/ai/provider";
 
 export interface SyncStats {
@@ -384,13 +389,16 @@ export async function syncConnection(
   if (freshLeads.length && workspace && (await isAiConfigured(conn.workspaceId))) {
     // In-radius leads score higher — they live where the service operates.
     const boosts = await radiusBoostByLeadId(freshLeads.map((l) => l.id));
+    // Per-campaign criteria overrides the workspace-wide criteria when present.
+    const criteria = await campaignCriteriaByLeadId(freshLeads.map((l) => l.id));
     for (const lead of freshLeads) {
       try {
         const result = await scoreLead({
           workspaceId: conn.workspaceId,
           workspaceName: workspace.name,
           industry: workspace.industry ?? undefined,
-          qualificationCriteria: workspace.qualificationCriteria ?? undefined,
+          qualificationCriteria:
+            criteria.get(lead.id) ?? workspace.qualificationCriteria ?? undefined,
           formData: lead.formData,
         });
         const { score, applied } = withRadiusBoost(

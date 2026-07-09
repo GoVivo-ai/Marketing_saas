@@ -54,6 +54,26 @@ export async function scoreLead(input: {
 }
 
 /**
+ * Resolves the AI scoring criteria for each lead: the lead's campaign
+ * criteria when it has one, otherwise null (caller falls back to the
+ * workspace-wide criteria). Returns a map of leadId → campaign criteria.
+ */
+export async function campaignCriteriaByLeadId(
+  leadIds: string[],
+): Promise<Map<string, string | null>> {
+  if (!leadIds.length) return new Map();
+  const rows = await db()
+    .select({
+      id: schema.leads.id,
+      criteria: schema.campaigns.scoringCriteria,
+    })
+    .from(schema.leads)
+    .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
+    .where(inArray(schema.leads.id, leadIds));
+  return new Map(rows.map((r) => [r.id, r.criteria ?? null]));
+}
+
+/**
  * Radius boost per lead: leads inside their ad set's audience radius score
  * higher (in-radius leads convert better — they live where the service
  * operates). Returns a map of leadId → boost points (0/5/10).
@@ -120,7 +140,10 @@ export async function scorePendingLeads(
     )
     .limit(limit);
 
-  const boosts = await radiusBoostByLeadId(pending.map((l) => l.id));
+  const [boosts, criteria] = await Promise.all([
+    radiusBoostByLeadId(pending.map((l) => l.id)),
+    campaignCriteriaByLeadId(pending.map((l) => l.id)),
+  ]);
 
   let scored = 0;
   for (const lead of pending) {
@@ -129,7 +152,9 @@ export async function scorePendingLeads(
         workspaceId,
         workspaceName: ws.name,
         industry: ws.industry ?? undefined,
-        qualificationCriteria: ws.qualificationCriteria ?? undefined,
+        // Per-campaign criteria wins; fall back to the workspace-wide criteria.
+        qualificationCriteria:
+          criteria.get(lead.id) ?? ws.qualificationCriteria ?? undefined,
         formData: (lead.formData ?? {}) as Record<string, unknown>,
       });
       const { score, applied } = withRadiusBoost(r.score, boosts.get(lead.id) ?? 0);
@@ -158,4 +183,84 @@ export async function scorePendingLeads(
       ),
     );
   return { scored, remaining: Number(remaining) };
+}
+
+/**
+ * Re-scores every lead of a single campaign, regardless of whether it already
+ * has a score. Used after the campaign's `scoringCriteria` prompt is edited so
+ * the change is applied to leads that were already scored under the old prompt.
+ * Uses the campaign's own criteria (falling back to the workspace criteria when
+ * the campaign has none). Returns how many leads were re-scored.
+ */
+export async function rescoreCampaignLeads(
+  workspaceId: string,
+  campaignId: string,
+): Promise<{ scored: number; total: number }> {
+  if (!(await isAiConfigured(workspaceId))) return { scored: 0, total: 0 };
+
+  const [ws] = await db()
+    .select({
+      name: schema.workspaces.name,
+      industry: schema.workspaces.industry,
+      qualificationCriteria: schema.workspaces.qualificationCriteria,
+    })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, workspaceId))
+    .limit(1);
+  if (!ws) return { scored: 0, total: 0 };
+
+  const [campaign] = await db()
+    .select({ scoringCriteria: schema.campaigns.scoringCriteria })
+    .from(schema.campaigns)
+    .where(
+      and(
+        eq(schema.campaigns.id, campaignId),
+        eq(schema.campaigns.workspaceId, workspaceId),
+      ),
+    )
+    .limit(1);
+  if (!campaign) return { scored: 0, total: 0 };
+
+  // The campaign's own criteria wins; fall back to the workspace-wide criteria.
+  const criteria = campaign.scoringCriteria ?? ws.qualificationCriteria ?? undefined;
+
+  const leads = await db()
+    .select({ id: schema.leads.id, formData: schema.leads.formData })
+    .from(schema.leads)
+    .where(
+      and(
+        eq(schema.leads.workspaceId, workspaceId),
+        eq(schema.leads.campaignId, campaignId),
+      ),
+    );
+
+  const boosts = await radiusBoostByLeadId(leads.map((l) => l.id));
+
+  let scored = 0;
+  for (const lead of leads) {
+    try {
+      const r = await scoreLead({
+        workspaceId,
+        workspaceName: ws.name,
+        industry: ws.industry ?? undefined,
+        qualificationCriteria: criteria,
+        formData: (lead.formData ?? {}) as Record<string, unknown>,
+      });
+      const { score, applied } = withRadiusBoost(r.score, boosts.get(lead.id) ?? 0);
+      await db()
+        .update(schema.leads)
+        .set({
+          aiScore: score,
+          radiusBoost: applied,
+          aiScoreReason: r.reason,
+          aiSuggestedAction: r.suggestedAction,
+        })
+        .where(eq(schema.leads.id, lead.id));
+      scored++;
+    } catch {
+      // Transient failure — the old score is kept; the operator can retry.
+    }
+  }
+
+  return { scored, total: leads.length };
 }

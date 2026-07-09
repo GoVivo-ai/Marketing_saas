@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { currentUser, isAgency, getWorkspaceRole } from "@/lib/permissions";
@@ -392,11 +392,14 @@ const UNDO_WINDOW_MS = 15 * 60_000;
  */
 export async function undoLeadOutreach(
   leadId: string,
-  eventId: string,
+  eventId?: string | null,
 ): Promise<LeadLogResult> {
   const { userId, lead } = await requireLeadAccess(leadId);
   try {
-    const [event] = await db()
+    // Prefer the exact event the UI points at; when the client didn't capture
+    // an id, fall back to this user's most recent manual touch on the lead so
+    // the Undo button still works instead of silently doing nothing.
+    const candidates = await db()
       .select({
         id: schema.leadEvents.id,
         leadId: schema.leadEvents.leadId,
@@ -406,17 +409,29 @@ export async function undoLeadOutreach(
         createdAt: schema.leadEvents.createdAt,
       })
       .from(schema.leadEvents)
-      .where(eq(schema.leadEvents.id, eventId))
-      .limit(1);
+      .where(
+        eventId
+          ? eq(schema.leadEvents.id, eventId)
+          : and(
+              eq(schema.leadEvents.leadId, leadId),
+              eq(schema.leadEvents.userId, userId),
+              inArray(schema.leadEvents.type, [...OUTREACH_CHANNELS]),
+            ),
+      )
+      .orderBy(desc(schema.leadEvents.createdAt))
+      .limit(eventId ? 1 : 10);
 
-    const payload = (event?.payload ?? {}) as Record<string, unknown>;
-    if (
-      !event ||
-      event.leadId !== leadId ||
-      event.userId !== userId ||
-      !OUTREACH_CHANNELS.includes(event.type as OutreachChannel) ||
-      payload.manual !== true
-    )
+    // The most recent candidate that is actually an undoable manual touch.
+    const event = candidates.find((e) => {
+      const p = (e.payload ?? {}) as Record<string, unknown>;
+      return (
+        e.leadId === leadId &&
+        e.userId === userId &&
+        OUTREACH_CHANNELS.includes(e.type as OutreachChannel) &&
+        p.manual === true
+      );
+    });
+    if (!event)
       return { ok: false, message: "This touch can't be undone." };
     if (Date.now() - event.createdAt.getTime() > UNDO_WINDOW_MS)
       return { ok: false, message: "Too late to undo — add a correcting note instead." };

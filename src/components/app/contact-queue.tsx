@@ -482,20 +482,25 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
   /** Deletes the mis-logged touch and puts the lead back at the front. */
   const undo = (item: QueueItem, eventId: string | null) =>
     startLog(async () => {
-      if (!eventId) return;
-      const r = await undoLeadOutreach(item.id, eventId);
-      if (!r.ok) {
-        toast.error(r.message);
-        return;
+      try {
+        const r = await undoLeadOutreach(item.id, eventId);
+        if (!r.ok) {
+          toast.error(r.message);
+          return;
+        }
+        setWorked((list) =>
+          list.filter((w) => (eventId ? w.eventId !== eventId : w.item.id !== item.id)),
+        );
+        setDone((n) => Math.max(0, n - 1));
+        setItems((list) =>
+          list[0]?.id === item.id ? list : [item, ...list.filter((i) => i.id !== item.id)],
+        );
+        setDisqualOutcome(null);
+        setFollowUp(false);
+        toast.success(`Undone — ${item.name} is back at the front of the queue.`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Couldn't undo. Try again.");
       }
-      setWorked((list) => list.filter((w) => w.eventId !== eventId));
-      setDone((n) => Math.max(0, n - 1));
-      setItems((list) =>
-        list[0]?.id === item.id ? list : [item, ...list.filter((i) => i.id !== item.id)],
-      );
-      setDisqualOutcome(null);
-      setFollowUp(false);
-      toast.success(`Undone — ${item.name} is back at the front of the queue.`);
     });
 
   const onOutcome = (outcome: OutreachOutcome) =>
@@ -821,7 +826,7 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
                       size="sm"
                       variant="ghost"
                       className="h-7 shrink-0 px-2 text-xs"
-                      disabled={logging || !w.eventId}
+                      disabled={logging}
                       onClick={() => undo(w.item, w.eventId)}
                     >
                       Undo

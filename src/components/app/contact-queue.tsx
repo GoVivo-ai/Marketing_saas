@@ -139,11 +139,16 @@ function AnswerFollowUp({
 }) {
   const [saving, startSave] = useTransition();
   const [pending, setPending] = useState<string | null>(null);
+  const [note, setNote] = useState("");
 
   const pick = (reason: string) =>
     startSave(async () => {
       setPending(reason);
-      const r = await addLeadNote(leadId, `Follow-up: ${reason}`);
+      // Any note the agent typed is appended to the disposition so it comes
+      // through in the lead's history alongside the reason.
+      const trimmed = note.trim();
+      const body = trimmed ? `Follow-up: ${reason} — ${trimmed}` : `Follow-up: ${reason}`;
+      const r = await addLeadNote(leadId, body);
       if (!r.ok) {
         toast.error(r.message);
         setPending(null);
@@ -165,6 +170,14 @@ function AnswerFollowUp({
           just move on.
         </p>
       </div>
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={2}
+        disabled={saving}
+        placeholder="Optional note — add details before picking a disposition below."
+        className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
+      />
       <div className="flex flex-wrap items-center gap-2">
         {FOLLOWUP_REASONS.map((reason) => (
           <Button

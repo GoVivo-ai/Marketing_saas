@@ -1383,6 +1383,19 @@ export interface QueueItem {
   due: "new" | "follow_up";
 }
 
+/** A contacted lead still inside the follow-up window — not workable yet. */
+export interface WaitingItem {
+  id: string;
+  name: string;
+  phone: string | null;
+  campaign: string | null;
+  aiScore: number | null;
+  lastTouchAt: Date;
+  lastChannel: string | null;
+  /** When it re-enters the queue as a due follow-up (lastTouch + window). */
+  dueAt: Date;
+}
+
 export interface ContactQueueData {
   items: QueueItem[];
   total: number;
@@ -1390,6 +1403,8 @@ export interface ContactQueueData {
   followUpCount: number;
   /** Touched leads still inside the follow-up window (not queued yet). */
   coolingDown: number;
+  /** The waiting leads themselves, soonest to come back first. */
+  waiting: WaitingItem[];
 }
 
 /** Days to wait after an unresolved touch before the lead re-enters the queue. */
@@ -1523,6 +1538,7 @@ export async function getContactQueue(
   const windowMs = FOLLOW_UP_AFTER_DAYS * 24 * 60 * 60 * 1000;
   const now = Date.now();
   const items: QueueItem[] = [];
+  const waiting: WaitingItem[] = [];
   let coolingDown = 0;
 
   for (const r of leadRows) {
@@ -1544,6 +1560,18 @@ export async function getContactQueue(
       due = "follow_up";
     } else {
       coolingDown++;
+      if (lastTouchAt) {
+        waiting.push({
+          id: r.id,
+          name: r.name ?? "Unknown",
+          phone: r.phone,
+          campaign: formatCampaignName(r.campaign) || null,
+          aiScore: r.aiScore,
+          lastTouchAt,
+          lastChannel: last?.type ?? null,
+          dueAt: new Date(lastTouchAt.getTime() + windowMs),
+        });
+      }
       continue;
     }
 
@@ -1580,12 +1608,15 @@ export async function getContactQueue(
     );
   });
 
+  waiting.sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
+
   return {
     items: items.slice(0, QUEUE_CAP),
     total: items.length,
     newCount: items.filter((i) => i.due === "new").length,
     followUpCount: items.filter((i) => i.due === "follow_up").length,
     coolingDown,
+    waiting,
   };
 }
 

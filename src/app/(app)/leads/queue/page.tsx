@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { ContactQueue } from "@/components/app/contact-queue";
+import { WaitingList } from "@/components/app/waiting-list";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { LeadsFilter } from "@/components/app/leads-filter";
 import {
@@ -82,7 +83,9 @@ export default async function ContactQueuePage({
   const sp = await searchParams;
   const adsetId = sp.adset ?? null;
   const filter =
-    sp.filter === "follow_up" || sp.filter === "new" ? sp.filter : null;
+    sp.filter === "follow_up" || sp.filter === "new" || sp.filter === "waiting"
+      ? sp.filter
+      : null;
   const resolved = resolveDateRange(sp, {
     presets: [7, 30, 90],
     defaultPreset: DEFAULT_RANGE,
@@ -100,7 +103,14 @@ export default async function ContactQueuePage({
         getQueueAdsetOptions(active.id),
       ])
     : [
-        { items: [], total: 0, newCount: 0, followUpCount: 0, coolingDown: 0 },
+        {
+          items: [],
+          total: 0,
+          newCount: 0,
+          followUpCount: 0,
+          coolingDown: 0,
+          waiting: [],
+        },
         [],
       ];
 
@@ -172,6 +182,8 @@ export default async function ContactQueuePage({
           label="Waiting"
           value={queue.coolingDown}
           hint="Contacted — inside the follow-up window"
+          href={hrefWith("waiting")}
+          active={filter === "waiting"}
         />
       </div>
 
@@ -180,7 +192,9 @@ export default async function ContactQueuePage({
           <span className="font-medium">
             {filter === "follow_up"
               ? `Showing follow-ups only (${viewData.items.length})`
-              : `Showing new leads only (${viewData.items.length})`}
+              : filter === "new"
+                ? `Showing new leads only (${viewData.items.length})`
+                : `Showing waiting leads (${queue.waiting.length})`}
           </span>
           <Link href={hrefWith(null)} className="text-primary hover:underline">
             Show all
@@ -188,11 +202,15 @@ export default async function ContactQueuePage({
         </div>
       )}
 
-      {/* Keyed by the filters so a slice change resets the client-side list. */}
-      <ContactQueue
-        key={`${adsetId ?? "all"}:${resolved.label}:${filter ?? "all"}`}
-        data={viewData}
-      />
+      {filter === "waiting" ? (
+        <WaitingList items={queue.waiting} />
+      ) : (
+        // Keyed by the filters so a slice change resets the client-side list.
+        <ContactQueue
+          key={`${adsetId ?? "all"}:${resolved.label}:${filter ?? "all"}`}
+          data={viewData}
+        />
+      )}
     </div>
   );
 }

@@ -292,6 +292,58 @@ export async function addLeadNote(
   }
 }
 
+export type LeadUpdateResult = { ok: true } | { ok: false; message: string };
+
+/** Empty/whitespace → null, so cleared fields are stored as NULL not "". */
+const nullify = (v: string | null | undefined): string | null => {
+  const t = (v ?? "").trim();
+  return t.length ? t : null;
+};
+
+/**
+ * Edits a lead's contact fields (name/phone/email) and its form responses
+ * (`formData`). Agents use this to fix bad or missing data that came in from
+ * the ad platform. Overwrites `formData` wholesale with the map the client
+ * sends (empty keys dropped); re-sync never touches `formData`, so manual edits
+ * are safe from being clobbered.
+ */
+export async function updateLeadInfo(input: {
+  leadId: string;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  formData: Record<string, string>;
+}): Promise<LeadUpdateResult> {
+  const { lead } = await requireLeadAccess(input.leadId);
+
+  // Keep only non-empty keys, trimmed; values stay strings (as the platform
+  // delivers them). Guards against a stray blank row from the editor.
+  const formData: Record<string, string> = {};
+  for (const [rawKey, rawValue] of Object.entries(input.formData ?? {})) {
+    const key = rawKey.trim();
+    if (key) formData[key] = typeof rawValue === "string" ? rawValue : String(rawValue);
+  }
+
+  try {
+    await db()
+      .update(schema.leads)
+      .set({
+        name: nullify(input.name),
+        phone: nullify(input.phone),
+        email: nullify(input.email),
+        formData,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.leads.id, lead.id));
+    revalidatePath("/leads");
+    revalidatePath("/leads/pipeline");
+    revalidatePath("/leads/queue");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /**
  * Logs a contact attempt the agent made outside the platform (or to record the
  * outcome of one). A positive outcome auto-advances the lead, mirroring how a

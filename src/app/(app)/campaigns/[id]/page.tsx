@@ -15,6 +15,7 @@ import { CampaignScoringForm } from "@/components/app/campaign-scoring-form";
 import {
   getAdSetRows,
   getCampaignById,
+  getCampaignFormFields,
   getWorkspaceContext,
 } from "@/lib/data";
 import { resolveDateRange } from "@/lib/date-range";
@@ -54,10 +55,13 @@ export default async function CampaignDetailPage({
   const campaign = await getCampaignById(active.id, id);
   if (!campaign) redirect("/campaigns");
 
-  const adsets = await getAdSetRows(active.id, id, {
-    start: resolved.start!,
-    end: resolved.end!,
-  });
+  const [adsets, formFields] = await Promise.all([
+    getAdSetRows(active.id, id, {
+      start: resolved.start!,
+      end: resolved.end!,
+    }),
+    getCampaignFormFields(active.id, id),
+  ]);
   const totals = adsets.reduce(
     (acc, a) => ({ spend: acc.spend + a.spend, leads: acc.leads + a.leads }),
     { spend: 0, leads: 0 },
@@ -120,6 +124,7 @@ export default async function CampaignDetailPage({
           <CampaignScoringForm
             campaignId={campaign.id}
             scoringCriteria={campaign.scoringCriteria}
+            formFields={formFields}
           />
         </CardContent>
       </Card>

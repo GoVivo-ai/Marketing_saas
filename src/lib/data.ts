@@ -507,6 +507,45 @@ export async function getCampaignById(
   return c ?? null;
 }
 
+export interface CampaignFormField {
+  key: string;
+  /** A representative answer from a recent lead, shown as context. */
+  example: string;
+}
+
+/**
+ * The distinct form questions leads answer in a campaign, each with a sample
+ * answer. Surfaced next to the AI scoring-criteria editor so the operator can
+ * see exactly which fields they can reference when writing the prompt.
+ * Samples the most recent leads (fields vary lead to lead).
+ */
+export async function getCampaignFormFields(
+  workspaceId: string,
+  campaignId: string,
+): Promise<CampaignFormField[]> {
+  const rows = await db()
+    .select({ formData: schema.leads.formData })
+    .from(schema.leads)
+    .where(
+      and(
+        eq(schema.leads.workspaceId, workspaceId),
+        eq(schema.leads.campaignId, campaignId),
+        isNotNull(schema.leads.formData),
+      ),
+    )
+    .orderBy(desc(schema.leads.createdAt))
+    .limit(50);
+
+  const fields = new Map<string, string>();
+  for (const r of rows) {
+    for (const [key, value] of Object.entries(r.formData ?? {})) {
+      if (fields.has(key)) continue;
+      fields.set(key, typeof value === "string" ? value : JSON.stringify(value));
+    }
+  }
+  return [...fields].map(([key, example]) => ({ key, example }));
+}
+
 /** Ad sets of a campaign with metrics over a range + audience-location geometry. */
 export async function getAdSetRows(
   workspaceId: string,

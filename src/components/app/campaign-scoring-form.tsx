@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
-import { CircleCheck, Loader2, RefreshCw } from "lucide-react";
+import { useActionState, useState } from "react";
+import { CircleCheck, Loader2, RefreshCw, Plus } from "lucide-react";
 import {
   saveCampaignScoringCriteria,
   rescoreCampaign,
   type CampaignScoringState,
 } from "@/lib/actions/campaigns";
+import type { CampaignFormField } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 
@@ -26,10 +27,13 @@ function Feedback({ state }: { state: CampaignScoringState }) {
 export function CampaignScoringForm({
   campaignId,
   scoringCriteria,
+  formFields,
 }: {
   campaignId: string;
   scoringCriteria: string | null;
+  formFields: CampaignFormField[];
 }) {
+  const [criteria, setCriteria] = useState(scoringCriteria ?? "");
   const [saveState, saveAction, saving] = useActionState(
     saveCampaignScoringCriteria,
     initial,
@@ -39,8 +43,46 @@ export function CampaignScoringForm({
     initial,
   );
 
+  // Append a field name to the prompt so the operator can reference it without
+  // retyping the exact question the way the platform delivers it.
+  const insertField = (key: string) =>
+    setCriteria((c) => (c.trim() ? `${c.replace(/\s*$/, "")} ${key}` : key));
+
   return (
     <div className="space-y-4">
+      {formFields.length > 0 && (
+        <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Questions leads answer in this campaign
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Click a field to add it to your prompt. The AI sees these answers for
+            every lead — reference them to define what a good lead looks like.
+          </p>
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {formFields.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => insertField(f.key)}
+                title={f.example ? `e.g. ${f.example}` : undefined}
+                className="group inline-flex items-center gap-1 rounded-full border bg-background px-2.5 py-1 text-xs hover:border-primary hover:text-primary"
+              >
+                <Plus className="h-3 w-3 opacity-50 group-hover:opacity-100" />
+                <span className="font-medium capitalize">
+                  {f.key.replaceAll("_", " ")}
+                </span>
+                {f.example && (
+                  <span className="max-w-[140px] truncate text-muted-foreground">
+                    · {f.example}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <form action={saveAction} className="space-y-3">
         <input type="hidden" name="campaignId" value={campaignId} />
         <div className="space-y-2">
@@ -48,7 +90,8 @@ export function CampaignScoringForm({
           <textarea
             id="scoring-criteria"
             name="scoringCriteria"
-            defaultValue={scoringCriteria ?? ""}
+            value={criteria}
+            onChange={(e) => setCriteria(e.target.value)}
             rows={4}
             placeholder="What makes a good lead for THIS campaign (budget, location, intent, role…). This prompt guides the AI score for its leads. Leave empty to use the workspace-wide criteria."
             className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"

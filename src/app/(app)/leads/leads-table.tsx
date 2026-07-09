@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { format, formatDistanceToNow } from "date-fns";
-import { Mail, Phone, Loader2, MapPin, MapPinOff } from "lucide-react";
+import { Loader2, MapPin, MapPinOff } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -21,7 +21,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LeadContactActions } from "@/components/app/lead-contact-actions";
+import { LeadInfoEditor } from "@/components/app/lead-info-editor";
 import { LeadActivity } from "@/components/app/lead-activity";
 import { LeadDisqualify } from "@/components/app/lead-disqualify";
 import { cn } from "@/lib/utils";
@@ -178,38 +178,13 @@ export function LeadsTable({
                   value="details"
                   className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 pt-4 pb-6"
                 >
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Contact
-                    </h4>
-                    <div className="space-y-1.5">
-                      <p className="flex items-center gap-2">
-                        <Mail className="size-4 shrink-0 text-muted-foreground" />
-                        {selected.email !== "—" ? (
-                          <a href={`mailto:${selected.email}`} className="hover:underline">
-                            {selected.email}
-                          </a>
-                        ) : (
-                          <span className="text-muted-foreground">No email</span>
-                        )}
-                      </p>
-                      <p className="flex items-center gap-2">
-                        <Phone className="size-4 shrink-0 text-muted-foreground" />
-                        {selected.phone !== "—" ? (
-                          <a href={`tel:${selected.phone}`} className="hover:underline">
-                            {selected.phone}
-                          </a>
-                        ) : (
-                          <span className="text-muted-foreground">No phone</span>
-                        )}
-                      </p>
-                    </div>
-                    <LeadContactActions
-                      phone={selected.phone}
-                      hasPhone={selected.phone !== "—"}
-                      email={selected.email}
-                    />
-                  </div>
+                  <LeadInfoEditor
+                    key={selected.id}
+                    lead={selected}
+                    onSaved={(patch) =>
+                      setSelected((cur) => (cur ? { ...cur, ...patch } : cur))
+                    }
+                  />
 
                   <Separator />
 
@@ -273,26 +248,6 @@ export function LeadsTable({
                     )}
                   </div>
 
-                  {selected.formData && Object.keys(selected.formData).length > 0 && (
-                    <>
-                      <Separator />
-                      <div className="space-y-3 text-sm">
-                        <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          Form responses
-                        </h4>
-                        {Object.entries(selected.formData).map(([key, value]) => (
-                          <div key={key} className="space-y-0.5">
-                            <p className="text-xs capitalize text-muted-foreground">
-                              {key.replaceAll("_", " ")}
-                            </p>
-                            <p className="break-words font-medium">
-                              {typeof value === "string" ? value : JSON.stringify(value)}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
                 </TabsContent>
               </Tabs>
             </>

@@ -20,6 +20,15 @@ import { haversineKm } from "@/lib/geo";
 import { MIN_VEHICLE_YEAR, vehicleAnswer } from "@/lib/vehicle";
 
 /**
+ * Ad platforms deliver campaign names in snake/underscore case
+ * (e.g. "US_Miami_Owners_2024"). Show them with plain spaces so they read
+ * naturally in the UI. Display-only — the stored name is left untouched.
+ */
+export function formatCampaignName(name: string | null | undefined): string {
+  return (name ?? "").replaceAll("_", " ").replace(/\s+/g, " ").trim();
+}
+
+/**
  * Read-side data layer for the product pages. Every function is scoped to
  * one workspace.
  */
@@ -333,7 +342,7 @@ export async function getOverview(
       const m = byCampaign.get(c.id) ?? { spend: 0, leads: 0 };
       return {
         id: c.id,
-        name: c.name,
+        name: formatCampaignName(c.name),
         platform: c.platform,
         objective: c.objective,
         status: c.status,
@@ -460,7 +469,7 @@ export async function getCampaignRows(
       const cplOlder = cplOf(older);
       return {
         id: c.id,
-        name: c.name,
+        name: formatCampaignName(c.name),
         platform: c.platform,
         status: c.status,
         objective: c.objective,
@@ -504,7 +513,7 @@ export async function getCampaignById(
       ),
     )
     .limit(1);
-  return c ?? null;
+  return c ? { ...c, name: formatCampaignName(c.name) } : null;
 }
 
 export interface CampaignFormField {
@@ -1029,7 +1038,9 @@ export async function getLeadCampaignOptions(
     .from(schema.leads)
     .innerJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
     .where(eq(schema.leads.workspaceId, workspaceId));
-  return rows.sort((a, b) => a.name.localeCompare(b.name));
+  return rows
+    .map((r) => ({ id: r.id, name: formatCampaignName(r.name) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Pipeline stages for the leads stage filter (ordered, with color). */
@@ -1156,7 +1167,7 @@ export async function getLeadsPage(
     name: r.name ?? "Unknown",
     email: r.email ?? "—",
     phone: r.phone ?? "—",
-    campaign: r.campaign ?? "—",
+    campaign: formatCampaignName(r.campaign) || "—",
     platform: r.platform,
     externalId: r.externalId,
     status: r.status,
@@ -1328,7 +1339,7 @@ export async function getPipeline(workspaceId: string): Promise<PipelineData> {
     cardsByStage[st.id] = rows.map((r) => ({
       id: r.id,
       name: r.name ?? "Unknown",
-      campaign: r.campaign ?? "—",
+      campaign: formatCampaignName(r.campaign) || "—",
       platform: r.platform,
       phone: r.phone ?? "—",
       email: r.email ?? "—",
@@ -1541,7 +1552,7 @@ export async function getContactQueue(
       name: r.name ?? "Unknown",
       phone: r.phone,
       email: r.email,
-      campaign: r.campaign,
+      campaign: formatCampaignName(r.campaign) || null,
       stageName: r.stageName,
       stageColor: r.stageColor,
       aiScore: r.aiScore,

@@ -16,6 +16,7 @@ import {
   getAdSetRows,
   getCampaignById,
   getCampaignFormFields,
+  getPromptTemplates,
   getWorkspaceContext,
 } from "@/lib/data";
 import { resolveDateRange } from "@/lib/date-range";
@@ -55,12 +56,13 @@ export default async function CampaignDetailPage({
   const campaign = await getCampaignById(active.id, id);
   if (!campaign) redirect("/campaigns");
 
-  const [adsets, formFields] = await Promise.all([
+  const [adsets, formFields, templates] = await Promise.all([
     getAdSetRows(active.id, id, {
       start: resolved.start!,
       end: resolved.end!,
     }),
     getCampaignFormFields(active.id, id),
+    getPromptTemplates(active.id),
   ]);
   const totals = adsets.reduce(
     (acc, a) => ({ spend: acc.spend + a.spend, leads: acc.leads + a.leads }),
@@ -123,8 +125,10 @@ export default async function CampaignDetailPage({
         <CardContent>
           <CampaignScoringForm
             campaignId={campaign.id}
+            workspaceId={active.id}
             scoringCriteria={campaign.scoringCriteria}
             formFields={formFields}
+            templates={templates}
           />
         </CardContent>
       </Card>

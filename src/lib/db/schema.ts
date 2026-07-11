@@ -479,6 +479,29 @@ export const leads = pgTable(
 );
 
 /**
+ * Named, reusable AI scoring-criteria prompts. Saved from the campaign
+ * scoring editor so the same criteria can be loaded into other campaigns,
+ * tweaked and re-saved. Shows who created it and when.
+ */
+export const promptTemplates = pgTable(
+  "prompt_templates",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    content: text("content").notNull(),
+    createdById: text("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("prompt_template_name_unique").on(t.workspaceId, t.name)],
+);
+
+/**
  * Score-based auto-contact rule, one per workspace. When enabled, every lead
  * whose fresh AI score lands above/below the threshold is contacted
  * automatically: either an SMS is sent through the sender's connected

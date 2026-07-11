@@ -1,15 +1,36 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { CircleCheck, Loader2, RefreshCw, Plus } from "lucide-react";
+import { useActionState, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { format } from "date-fns";
+import {
+  BookmarkPlus,
+  CircleCheck,
+  Loader2,
+  RefreshCw,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import {
   saveCampaignScoringCriteria,
   rescoreCampaign,
   type CampaignScoringState,
 } from "@/lib/actions/campaigns";
-import type { CampaignFormField } from "@/lib/data";
+import {
+  savePromptTemplate,
+  deletePromptTemplate,
+} from "@/lib/actions/prompt-templates";
+import type { CampaignFormField, PromptTemplate } from "@/lib/data";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const initial: CampaignScoringState = {};
 
@@ -26,13 +47,18 @@ function Feedback({ state }: { state: CampaignScoringState }) {
 
 export function CampaignScoringForm({
   campaignId,
+  workspaceId,
   scoringCriteria,
   formFields,
+  templates = [],
 }: {
   campaignId: string;
+  workspaceId: string;
   scoringCriteria: string | null;
   formFields: CampaignFormField[];
+  templates?: PromptTemplate[];
 }) {
+  const router = useRouter();
   const [criteria, setCriteria] = useState(scoringCriteria ?? "");
   const [saveState, saveAction, saving] = useActionState(
     saveCampaignScoringCriteria,
@@ -42,6 +68,45 @@ export function CampaignScoringForm({
     rescoreCampaign,
     initial,
   );
+
+  // Prompt templates: load one into the editor, save the editor as one.
+  const [templateId, setTemplateId] = useState("");
+  const [templateName, setTemplateName] = useState("");
+  const [savingTpl, startSaveTpl] = useTransition();
+  const [deletingTpl, startDeleteTpl] = useTransition();
+  const [tplError, setTplError] = useState<string | null>(null);
+  const loaded = templates.find((t) => t.id === templateId) ?? null;
+
+  const loadTemplate = (id: string) => {
+    const t = templates.find((x) => x.id === id);
+    if (!t) return;
+    setTemplateId(id);
+    setTemplateName(t.name);
+    setCriteria(t.content);
+    setTplError(null);
+  };
+
+  const saveTemplate = () =>
+    startSaveTpl(async () => {
+      const res = await savePromptTemplate(workspaceId, templateName, criteria);
+      setTplError(res.ok ? null : res.error);
+      if (res.ok) {
+        setTemplateId(res.id);
+        router.refresh();
+      }
+    });
+
+  const deleteTemplate = () =>
+    startDeleteTpl(async () => {
+      if (!loaded) return;
+      const res = await deletePromptTemplate(workspaceId, loaded.id);
+      setTplError(res.ok ? null : res.error);
+      if (res.ok) {
+        setTemplateId("");
+        setTemplateName("");
+        router.refresh();
+      }
+    });
 
   // Append a field name to the prompt so the operator can reference it without
   // retyping the exact question the way the platform delivers it.
@@ -82,6 +147,85 @@ export function CampaignScoringForm({
           </div>
         </div>
       )}
+
+      {/* Prompt templates — reuse a saved criteria prompt across campaigns. */}
+      <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Prompt templates
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={templateId} onValueChange={(v) => v && loadTemplate(v)}>
+            <SelectTrigger
+              className="h-8 w-64 text-xs"
+              aria-label="Load template"
+            >
+              <SelectValue placeholder="Load a template…" />
+            </SelectTrigger>
+            <SelectContent>
+              {templates.length === 0 && (
+                <p className="px-3 py-2 text-xs text-muted-foreground">
+                  No templates yet — write a prompt and save it below.
+                </p>
+              )}
+              {templates.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            value={templateName}
+            onChange={(e) => setTemplateName(e.target.value)}
+            placeholder="Template name…"
+            className="h-8 w-52 text-xs"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={savingTpl || !templateName.trim() || !criteria.trim()}
+            onClick={saveTemplate}
+          >
+            {savingTpl ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <BookmarkPlus className="mr-1 h-3.5 w-3.5" />
+            )}
+            Save as template
+          </Button>
+          {loaded && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={deletingTpl}
+              onClick={deleteTemplate}
+              aria-label="Delete template"
+            >
+              {deletingTpl ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5 text-destructive" />
+              )}
+            </Button>
+          )}
+        </div>
+        {loaded && (
+          <p className="text-xs text-muted-foreground">
+            Created by {loaded.createdBy ?? "unknown"} ·{" "}
+            {format(loaded.createdAt, "PPp")}
+            {loaded.updatedAt.getTime() !== loaded.createdAt.getTime() &&
+              ` · updated ${format(loaded.updatedAt, "PPp")}`}
+          </p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Loading a template replaces the prompt below (edit freely — the
+          campaign only changes when you press Save criteria). Saving with an
+          existing template&apos;s name updates that template.
+        </p>
+        {tplError && <p className="text-xs text-destructive">{tplError}</p>}
+      </div>
 
       <form action={saveAction} className="space-y-3">
         <input type="hidden" name="campaignId" value={campaignId} />

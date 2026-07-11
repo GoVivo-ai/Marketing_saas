@@ -11,6 +11,13 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { MapPin, MapPinOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AdSetRow } from "@/lib/data";
@@ -30,18 +37,34 @@ type StatusFilter = "all" | "active" | "paused";
 export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusFilter>("all");
+  // Cascading location filter: state (region) first, then its cities.
+  // "all" = no filter (the Select component doesn't allow empty values).
+  const [region, setRegion] = useState("all");
+  const [city, setCity] = useState("all");
 
   const counts = {
     all: adsets.length,
     active: adsets.filter((a) => a.status === "ACTIVE").length,
     paused: adsets.filter((a) => a.status !== "ACTIVE").length,
   };
-  const visible = adsets.filter((a) =>
-    status === "all"
-      ? true
-      : status === "active"
-        ? a.status === "ACTIVE"
-        : a.status !== "ACTIVE",
+  const regions = [...new Set(adsets.map((a) => a.region).filter(Boolean))].sort() as string[];
+  const cities = [
+    ...new Set(
+      adsets
+        .filter((a) => region === "all" || a.region === region)
+        .map((a) => a.city)
+        .filter(Boolean),
+    ),
+  ].sort() as string[];
+  const visible = adsets.filter(
+    (a) =>
+      (status === "all"
+        ? true
+        : status === "active"
+          ? a.status === "ACTIVE"
+          : a.status !== "ACTIVE") &&
+      (region === "all" || a.region === region) &&
+      (city === "all" || a.city === city),
   );
   const locatedCount = visible.filter((a) => a.lat != null && a.lng != null).length;
 
@@ -61,7 +84,7 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         {filters.map((f) => (
           <Button
             key={f.value}
@@ -75,6 +98,52 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
             {f.label}
           </Button>
         ))}
+
+        {regions.length > 0 && (
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            <Select
+              value={region}
+              onValueChange={(v) => {
+                if (!v) return;
+                setRegion(v);
+                setCity("all");
+                setSelectedId(null);
+              }}
+            >
+              <SelectTrigger className="h-8 w-44 text-xs" aria-label="State">
+                <SelectValue placeholder="State…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All states</SelectItem>
+                {regions.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={city}
+              onValueChange={(v) => {
+                if (!v) return;
+                setCity(v);
+                setSelectedId(null);
+              }}
+            >
+              <SelectTrigger className="h-8 w-44 text-xs" aria-label="City">
+                <SelectValue placeholder="City…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All cities</SelectItem>
+                {cities.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-5">

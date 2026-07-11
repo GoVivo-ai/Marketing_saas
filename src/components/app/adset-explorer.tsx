@@ -29,7 +29,14 @@ type StatusFilter = "all" | "active" | "paused";
  * place highlights it in the other. A status filter narrows both panels to
  * active or paused ad sets.
  */
-export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
+export function AdSetExplorer({
+  adsets,
+  toolbar,
+}: {
+  adsets: AdSetRow[];
+  /** Extra filter controls (e.g. the date-range picker) shown in the filter row. */
+  toolbar?: React.ReactNode;
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusFilter>("all");
   // Cascading location filter: states (regions) first, then their cities.
@@ -132,8 +139,9 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
           </Button>
         ))}
 
-        {regionOptions.length > 0 && (
-          <div className="ml-auto flex flex-wrap items-center gap-3">
+        <div className="ml-auto flex flex-wrap items-center gap-3">
+          {regionOptions.length > 0 && (
+            <>
             <MultiFilter
               title="State"
               icon="state"
@@ -169,8 +177,10 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
                 setSelectedId(null);
               }}
             />
-          </div>
-        )}
+            </>
+          )}
+          {toolbar}
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-5">

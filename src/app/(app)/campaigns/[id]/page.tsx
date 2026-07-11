@@ -94,11 +94,6 @@ export default async function CampaignDetailPage({
             CPL {cpl ? usd(cpl) : "—"} · {resolved.label.toLowerCase()}
           </p>
         </div>
-        <DateRangePicker
-          presets={RANGES}
-          defaultValue={DEFAULT_RANGE}
-          label={resolved.label}
-        />
       </div>
 
       <Card>
@@ -110,7 +105,21 @@ export default async function CampaignDetailPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <AdSetExplorer adsets={adsets} />
+          <AdSetExplorer
+            adsets={adsets}
+            toolbar={
+              <label className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Period
+                </span>
+                <DateRangePicker
+                  presets={RANGES}
+                  defaultValue={DEFAULT_RANGE}
+                  label={resolved.label}
+                />
+              </label>
+            }
+          />
         </CardContent>
       </Card>
 

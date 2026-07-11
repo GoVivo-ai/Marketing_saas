@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -459,9 +460,12 @@ function automationScript(
 export function ContactQueue({
   data,
   automation,
+  defaultCriteria,
 }: {
   data: ContactQueueData;
   automation?: QueueAutomation | null;
+  /** Workspace-wide criteria, shown when the lead's campaign has none. */
+  defaultCriteria?: string | null;
 }) {
   const [items, setItems] = useState(data.items);
   const [channel, setChannel] = useState<OutreachChannel>("call");
@@ -595,7 +599,13 @@ export function ContactQueue({
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <CardTitle className="flex flex-wrap items-center gap-2.5">
-                    {current.name}
+                    <Link
+                      href={`/leads?lead=${current.id}`}
+                      className="hover:text-primary hover:underline"
+                      title="Open lead details"
+                    >
+                      {current.name}
+                    </Link>
                     <DueBadge due={current.due} />
                   </CardTitle>
                   <CardDescription className="mt-1.5">
@@ -680,6 +690,23 @@ export function ContactQueue({
                   </div>
                 );
               })()}
+
+              {/* What "a good lead" means for THIS lead — the campaign's
+                  scoring criteria, or the workspace-wide one as fallback. */}
+              {(current.criteria ?? defaultCriteria) && (
+                <div className="rounded-lg border bg-muted/40 p-3">
+                  <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <ListChecks className="h-3.5 w-3.5" />
+                    Evaluation criteria
+                    {current.criteria == null && (
+                      <span className="normal-case font-normal">(workspace default)</span>
+                    )}
+                  </p>
+                  <p className="mt-1 text-sm leading-snug whitespace-pre-wrap text-muted-foreground">
+                    {current.criteria ?? defaultCriteria}
+                  </p>
+                </div>
+              )}
 
               {disqualOutcome ? (
                 /* Terminal outcome logged — capture the RCA reason, then move on. */

@@ -18,6 +18,7 @@ import {
   getLeadCityOptions,
   getLeadStageOptions,
   getLeadsPage,
+  getLeadRowById,
   getWorkspaceContext,
 } from "@/lib/data";
 import { resolveDateRange } from "@/lib/date-range";
@@ -45,6 +46,8 @@ export default async function LeadsPage({
     stage?: string;
     city?: string;
     q?: string;
+    /** Deep link: auto-open this lead's detail sheet (e.g. from the queue). */
+    lead?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -87,6 +90,11 @@ export default async function LeadsPage({
         [],
       ];
 
+  // Deep-linked lead (?lead=<id>): fetched on its own so the sheet opens even
+  // when the lead isn't on the current page or inside the current filters.
+  const initialLead =
+    active && sp.lead ? await getLeadRowById(active.id, sp.lead) : null;
+
   const isFiltered =
     resolved.start != null ||
     campaignId != null ||
@@ -112,6 +120,7 @@ export default async function LeadsPage({
           <LeadsFilter
             param="stage"
             icon="stage"
+            title="Stage"
             allLabel="All stages"
             activeValue={stageId}
             options={stages.map((s) => ({
@@ -123,6 +132,7 @@ export default async function LeadsPage({
           <LeadsFilter
             param="city"
             icon="city"
+            title="Area"
             allLabel="All areas"
             activeValue={city}
             options={cities.map((c) => ({ value: c, label: c }))}
@@ -154,7 +164,11 @@ export default async function LeadsPage({
             </p>
           ) : (
             <>
-              <LeadsTable rows={result.rows} contactConnected={contactConnected} />
+              <LeadsTable
+                rows={result.rows}
+                contactConnected={contactConnected}
+                initialLead={initialLead}
+              />
               <Pagination page={result.page} totalPages={result.totalPages} />
             </>
           )}

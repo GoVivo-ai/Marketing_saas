@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { format, formatDistanceToNow } from "date-fns";
 import { Loader2, MapPin, MapPinOff } from "lucide-react";
 import {
@@ -46,11 +47,28 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
 export function LeadsTable({
   rows,
   contactConnected,
+  initialLead = null,
 }: {
   rows: LeadRow[];
   contactConnected: boolean;
+  /** Deep-linked lead (?lead=<id>) whose sheet opens on load. */
+  initialLead?: LeadRow | null;
 }) {
-  const [selected, setSelected] = useState<LeadRow | null>(null);
+  const [selected, setSelected] = useState<LeadRow | null>(initialLead);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const close = () => {
+    setSelected(null);
+    // Drop the ?lead= deep link so refresh/back doesn't reopen the sheet.
+    if (searchParams.has("lead")) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("lead");
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    }
+  };
 
   return (
     <>
@@ -122,7 +140,7 @@ export function LeadsTable({
         </TableBody>
       </Table>
 
-      <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
+      <Sheet open={selected !== null} onOpenChange={(open) => !open && close()}>
         <SheetContent
           side="right"
           className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl!"

@@ -3,11 +3,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ContactQueue } from "@/components/app/contact-queue";
 import { WaitingList } from "@/components/app/waiting-list";
 import { DateRangePicker } from "@/components/app/date-range-picker";
-import { LeadsFilter } from "@/components/app/leads-filter";
+import { LeadsFilter, LeadsMultiFilter } from "@/components/app/leads-filter";
 import {
   FOLLOW_UP_AFTER_DAYS,
   getContactQueue,
   getQueueAdsetOptions,
+  getQueueGeoOptions,
+  getWorkspaceCriteria,
   getWorkspaceContext,
 } from "@/lib/data";
 import { resolveDateRange } from "@/lib/date-range";
@@ -75,6 +77,8 @@ export default async function ContactQueuePage({
 }: {
   searchParams: Promise<{
     adset?: string;
+    state?: string;
+    city?: string;
     range?: string;
     from?: string;
     to?: string;
@@ -83,6 +87,9 @@ export default async function ContactQueuePage({
 }) {
   const sp = await searchParams;
   const adsetId = sp.adset ?? null;
+  // Multi-select location filters — comma-separated in the URL, absent = all.
+  const states = sp.state ? sp.state.split(",").filter(Boolean) : [];
+  const cities = sp.city ? sp.city.split(",").filter(Boolean) : [];
   const filter =
     sp.filter === "follow_up" || sp.filter === "new" || sp.filter === "waiting"
       ? sp.filter
@@ -105,14 +112,18 @@ export default async function ContactQueuePage({
           message: automation.message,
         }
       : null;
-  const [queue, adsets] = active
+  const [queue, adsets, geo, workspaceCriteria] = active
     ? await Promise.all([
         getContactQueue(active.id, {
           adsetId,
+          regions: states,
+          cities,
           start: resolved.start,
           end: resolved.end,
         }),
         getQueueAdsetOptions(active.id),
+        getQueueGeoOptions(active.id),
+        getWorkspaceCriteria(active.id),
       ])
     : [
         {
@@ -124,7 +135,26 @@ export default async function ContactQueuePage({
           waiting: [],
         },
         [],
+        [],
+        null,
       ];
+
+  // Location filter options: states from every geo pair; cities narrowed to
+  // the selected states (cascading, like the campaign explorer).
+  const stateOptions = [
+    ...new Set(geo.map((g) => g.region).filter(Boolean)),
+  ].sort() as string[];
+  const cityOptions = [
+    ...new Set(
+      geo
+        .filter(
+          (g) =>
+            states.length === 0 || (g.region && states.includes(g.region)),
+        )
+        .map((g) => g.city)
+        .filter(Boolean),
+    ),
+  ].sort() as string[];
 
   // Clicking a stat tile filters the working queue to that bucket. The tiles
   // keep showing the full totals; only the queue below narrows.
@@ -135,6 +165,8 @@ export default async function ContactQueuePage({
   const hrefWith = (f: string | null) => {
     const p = new URLSearchParams();
     if (adsetId) p.set("adset", adsetId);
+    if (sp.state) p.set("state", sp.state);
+    if (sp.city) p.set("city", sp.city);
     if (sp.range) p.set("range", sp.range);
     if (sp.from) p.set("from", sp.from);
     if (sp.to) p.set("to", sp.to);
@@ -160,6 +192,7 @@ export default async function ContactQueuePage({
           <LeadsFilter
             param="adset"
             icon="adset"
+            title="Ad set"
             allLabel="All ad sets"
             activeValue={adsetId}
             options={adsets.map((a) => ({
@@ -167,11 +200,32 @@ export default async function ContactQueuePage({
               label: `${a.label} (${a.count})`,
             }))}
           />
-          <DateRangePicker
-            presets={RANGES}
-            defaultValue={DEFAULT_RANGE}
-            label={resolved.label}
+          <LeadsMultiFilter
+            param="state"
+            icon="state"
+            title="State"
+            allLabel="All states"
+            activeValues={states}
+            options={stateOptions.map((s) => ({ value: s, label: s }))}
           />
+          <LeadsMultiFilter
+            param="city"
+            icon="city"
+            title="City"
+            allLabel="All cities"
+            activeValues={cities}
+            options={cityOptions.map((c) => ({ value: c, label: c }))}
+          />
+          <label className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              Created
+            </span>
+            <DateRangePicker
+              presets={RANGES}
+              defaultValue={DEFAULT_RANGE}
+              label={resolved.label}
+            />
+          </label>
         </div>
       </div>
 
@@ -219,9 +273,10 @@ export default async function ContactQueuePage({
       ) : (
         // Keyed by the filters so a slice change resets the client-side list.
         <ContactQueue
-          key={`${adsetId ?? "all"}:${resolved.label}:${filter ?? "all"}`}
+          key={`${adsetId ?? "all"}:${sp.state ?? ""}:${sp.city ?? ""}:${resolved.label}:${filter ?? "all"}`}
           data={viewData}
           automation={queueAutomation}
+          defaultCriteria={workspaceCriteria}
         />
       )}
     </div>

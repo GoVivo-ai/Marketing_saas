@@ -3,6 +3,7 @@ import { z } from "zod";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { radiusBoost } from "@/lib/geo";
+import { runScoreAutomation } from "@/lib/automations";
 import { anthropicProvider, isAiConfigured } from "./provider";
 
 const MODEL = "claude-haiku-4-5-20251001"; // high volume, low latency — cheap model
@@ -146,6 +147,7 @@ export async function scorePendingLeads(
   ]);
 
   let scored = 0;
+  const scoredIds: string[] = [];
   for (const lead of pending) {
     try {
       const r = await scoreLead({
@@ -168,9 +170,17 @@ export async function scorePendingLeads(
         })
         .where(eq(schema.leads.id, lead.id));
       scored++;
+      scoredIds.push(lead.id);
     } catch {
       // Transient failure — left pending, retried on the next run.
     }
+  }
+
+  // Auto-contact freshly scored leads per the workspace's score automation.
+  try {
+    await runScoreAutomation(workspaceId, scoredIds);
+  } catch {
+    // Non-fatal — leads stay un-contacted and a later pass retries.
   }
 
   const [{ remaining }] = await db()
@@ -237,6 +247,7 @@ export async function rescoreCampaignLeads(
   const boosts = await radiusBoostByLeadId(leads.map((l) => l.id));
 
   let scored = 0;
+  const scoredIds: string[] = [];
   for (const lead of leads) {
     try {
       const r = await scoreLead({
@@ -257,9 +268,19 @@ export async function rescoreCampaignLeads(
         })
         .where(eq(schema.leads.id, lead.id));
       scored++;
+      scoredIds.push(lead.id);
     } catch {
       // Transient failure — the old score is kept; the operator can retry.
     }
+  }
+
+  // Auto-contact per the score automation. The once-per-lead guard inside
+  // means a re-score never texts leads the automation (or a human) already
+  // reached — only leads whose new score now matches the rule.
+  try {
+    await runScoreAutomation(workspaceId, scoredIds);
+  } catch {
+    // Non-fatal.
   }
 
   return { scored, total: leads.length };

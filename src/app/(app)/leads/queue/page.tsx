@@ -11,6 +11,7 @@ import {
   getWorkspaceContext,
 } from "@/lib/data";
 import { resolveDateRange } from "@/lib/date-range";
+import { getScoreAutomation } from "@/lib/automations";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +94,17 @@ export default async function ContactQueuePage({
   });
 
   const { active } = await getWorkspaceContext();
+  // Score-automation rule: when it flags leads in the queue, matching leads
+  // show the configured script on their card.
+  const automation = active ? await getScoreAutomation(active.id) : null;
+  const queueAutomation =
+    automation?.enabled && automation.action === "queue"
+      ? {
+          direction: automation.direction,
+          threshold: automation.threshold,
+          message: automation.message,
+        }
+      : null;
   const [queue, adsets] = active
     ? await Promise.all([
         getContactQueue(active.id, {
@@ -209,6 +221,7 @@ export default async function ContactQueuePage({
         <ContactQueue
           key={`${adsetId ?? "all"}:${resolved.label}:${filter ?? "all"}`}
           data={viewData}
+          automation={queueAutomation}
         />
       )}
     </div>

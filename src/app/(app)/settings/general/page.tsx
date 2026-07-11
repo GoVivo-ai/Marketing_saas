@@ -1,15 +1,20 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { eq } from "drizzle-orm";
-import { Building2, KeyRound, Users, ImageIcon, Phone } from "lucide-react";
+import { and, eq, isNotNull, ne, or } from "drizzle-orm";
+import { Building2, KeyRound, Users, ImageIcon, Phone, Zap } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
 import { canManageWorkspace } from "@/lib/permissions";
 import { getDialpadTokens, isDialpadConnected } from "@/lib/settings";
+import { getScoreAutomation } from "@/lib/automations";
 import { ChangePasswordForm } from "@/components/app/change-password-form";
 import { DialpadConnectCard } from "@/components/app/dialpad-connect-card";
 import { CompanyProfileForm, WorkspaceLogoForm } from "@/components/app/org-forms";
+import {
+  ScoreAutomationForm,
+  type SenderOption,
+} from "@/components/app/score-automation-form";
 import {
   Card,
   CardContent,
@@ -38,6 +43,47 @@ export default async function GeneralSettingsPage() {
         resultLabel: string;
       }
     | null = null;
+  let automationRule: Awaited<ReturnType<typeof getScoreAutomation>> = null;
+  let senders: SenderOption[] = [];
+  if (active && canManage) {
+    // Score-automation rule + who can be the automated-SMS sender: agency
+    // users and this workspace's members, flagging telephony connection.
+    automationRule = await getScoreAutomation(active.id);
+    const senderRows = await db()
+      .selectDistinctOn([schema.users.id], {
+        id: schema.users.id,
+        name: schema.users.name,
+        email: schema.users.email,
+        rcConnectedAt: schema.users.rcConnectedAt,
+        dpConnectedAt: schema.users.dpConnectedAt,
+      })
+      .from(schema.users)
+      .leftJoin(
+        schema.workspaceMembers,
+        and(
+          eq(schema.workspaceMembers.userId, schema.users.id),
+          eq(schema.workspaceMembers.workspaceId, active.id),
+        ),
+      )
+      .where(
+        or(
+          ne(schema.users.role, "client"),
+          isNotNull(schema.workspaceMembers.id),
+        ),
+      );
+    senders = senderRows
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        telephonyConnected: u.rcConnectedAt != null || u.dpConnectedAt != null,
+      }))
+      .sort(
+        (a, b) =>
+          Number(b.telephonyConnected) - Number(a.telephonyConnected) ||
+          a.name.localeCompare(b.name),
+      );
+  }
   if (active && canManage) {
     const [w] = await db()
       .select({
@@ -93,6 +139,36 @@ export default async function GeneralSettingsPage() {
                 industry={company.industry}
                 qualificationCriteria={company.criteria}
                 resultLabel={company.resultLabel}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Zap className="h-4 w-4 text-primary" />
+                Score automation
+              </CardTitle>
+              <CardDescription>
+                Contact leads automatically based on their AI score: send an
+                SMS the moment a lead is scored, or flag it in the Contact
+                Queue with a ready-made script for the agent.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ScoreAutomationForm
+                workspaceId={active.id}
+                rule={
+                  automationRule ?? {
+                    enabled: false,
+                    direction: "above",
+                    threshold: 70,
+                    action: "sms",
+                    message: "",
+                    senderUserId: null,
+                  }
+                }
+                senders={senders}
               />
             </CardContent>
           </Card>

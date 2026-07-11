@@ -433,7 +433,36 @@ function DueBadge({ due }: { due: QueueItem["due"] }) {
   );
 }
 
-export function ContactQueue({ data }: { data: ContactQueueData }) {
+/** The workspace's score-automation rule, when it flags leads in the queue. */
+export interface QueueAutomation {
+  direction: "above" | "below";
+  threshold: number;
+  message: string;
+}
+
+function automationScript(
+  automation: QueueAutomation | null | undefined,
+  lead: QueueItem,
+): string | null {
+  if (!automation || lead.aiScore == null) return null;
+  const matches =
+    automation.direction === "below"
+      ? lead.aiScore <= automation.threshold
+      : lead.aiScore >= automation.threshold;
+  if (!matches) return null;
+  const firstName = lead.name?.trim().split(/\s+/)[0] ?? "";
+  return automation.message
+    .replaceAll("{name}", firstName || "there")
+    .replaceAll("{campaign}", lead.campaign ?? "");
+}
+
+export function ContactQueue({
+  data,
+  automation,
+}: {
+  data: ContactQueueData;
+  automation?: QueueAutomation | null;
+}) {
   const [items, setItems] = useState(data.items);
   const [channel, setChannel] = useState<OutreachChannel>("call");
   const [showHistory, setShowHistory] = useState(false);
@@ -636,6 +665,21 @@ export function ContactQueue({ data }: { data: ContactQueueData }) {
                   </p>
                 </div>
               )}
+
+              {(() => {
+                const script = automationScript(automation, current);
+                if (!script) return null;
+                return (
+                  <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-primary">
+                      Score automation — script for this lead
+                    </p>
+                    <p className="mt-1 text-sm leading-snug whitespace-pre-wrap">
+                      {script}
+                    </p>
+                  </div>
+                );
+              })()}
 
               {disqualOutcome ? (
                 /* Terminal outcome logged — capture the RCA reason, then move on. */

@@ -100,7 +100,11 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
         ))}
 
         {regions.length > 0 && (
-          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <div className="ml-auto flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                State
+              </span>
             <Select
               value={region}
               onValueChange={(v) => {
@@ -122,6 +126,11 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
                 ))}
               </SelectContent>
             </Select>
+            </label>
+            <label className="flex items-center gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                City
+              </span>
             <Select
               value={city}
               onValueChange={(v) => {
@@ -142,6 +151,7 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
                 ))}
               </SelectContent>
             </Select>
+            </label>
           </div>
         )}
       </div>

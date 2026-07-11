@@ -5,19 +5,14 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { MultiFilter } from "@/components/app/multi-filter";
 import { MapPin, MapPinOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AdSetRow } from "@/lib/data";
@@ -37,16 +32,18 @@ type StatusFilter = "all" | "active" | "paused";
 export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusFilter>("all");
-  // Cascading location filter: state (region) first, then its cities.
-  // "all" = no filter (the Select component doesn't allow empty values).
-  const [region, setRegion] = useState("all");
-  const [city, setCity] = useState("all");
+  // Cascading location filter: states (regions) first, then their cities.
+  // Both are multi-select; an empty selection means "all".
+  const [regions, setRegions] = useState<string[]>([]);
+  const [cityFilter, setCityFilter] = useState<string[]>([]);
 
-  const regions = [...new Set(adsets.map((a) => a.region).filter(Boolean))].sort() as string[];
-  const cities = [
+  const regionOptions = [
+    ...new Set(adsets.map((a) => a.region).filter(Boolean)),
+  ].sort() as string[];
+  const cityOptions = [
     ...new Set(
       adsets
-        .filter((a) => region === "all" || a.region === region)
+        .filter((a) => regions.length === 0 || (a.region && regions.includes(a.region)))
         .map((a) => a.city)
         .filter(Boolean),
     ),
@@ -55,8 +52,8 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
   // Paused pills always describe what's actually being filtered.
   const inLocation = adsets.filter(
     (a) =>
-      (region === "all" || a.region === region) &&
-      (city === "all" || a.city === city),
+      (regions.length === 0 || (a.region != null && regions.includes(a.region))) &&
+      (cityFilter.length === 0 || (a.city != null && cityFilter.includes(a.city))),
   );
   const counts = {
     all: inLocation.length,
@@ -103,59 +100,43 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
           </Button>
         ))}
 
-        {regions.length > 0 && (
+        {regionOptions.length > 0 && (
           <div className="ml-auto flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground">
-                State
-              </span>
-            <Select
-              value={region}
-              onValueChange={(v) => {
-                if (!v) return;
-                setRegion(v);
-                setCity("all");
+            <MultiFilter
+              title="State"
+              icon="state"
+              allLabel="All states"
+              options={regionOptions.map((r) => ({ value: r, label: r }))}
+              selected={regions}
+              onChange={(next) => {
+                setRegions(next);
+                // Drop selected cities that are no longer inside the states.
+                setCityFilter((cur) =>
+                  next.length === 0
+                    ? cur
+                    : cur.filter((c) =>
+                        adsets.some(
+                          (a) =>
+                            a.city === c &&
+                            a.region != null &&
+                            next.includes(a.region),
+                        ),
+                      ),
+                );
                 setSelectedId(null);
               }}
-            >
-              <SelectTrigger className="h-8 w-44 text-xs" aria-label="State">
-                <SelectValue placeholder="State…" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All states</SelectItem>
-                {regions.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {r}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            </label>
-            <label className="flex items-center gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground">
-                City
-              </span>
-            <Select
-              value={city}
-              onValueChange={(v) => {
-                if (!v) return;
-                setCity(v);
+            />
+            <MultiFilter
+              title="City"
+              icon="city"
+              allLabel="All cities"
+              options={cityOptions.map((c) => ({ value: c, label: c }))}
+              selected={cityFilter}
+              onChange={(next) => {
+                setCityFilter(next);
                 setSelectedId(null);
               }}
-            >
-              <SelectTrigger className="h-8 w-44 text-xs" aria-label="City">
-                <SelectValue placeholder="City…" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All cities</SelectItem>
-                {cities.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            </label>
+            />
           </div>
         )}
       </div>
@@ -251,6 +232,31 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
                 );
               })}
             </TableBody>
+            {visible.length > 0 && (
+              /* Ads Manager-style totals for the current slice: summed spend
+                 and leads, CPL recomputed from the totals (not averaged). */
+              <TableFooter>
+                <TableRow>
+                  <TableCell className="font-medium">
+                    Totals · {visible.length} ad set{visible.length === 1 ? "" : "s"}
+                  </TableCell>
+                  <TableCell />
+                  <TableCell className="text-right font-medium">
+                    {usd(visible.reduce((s, a) => s + a.spend, 0))}
+                  </TableCell>
+                  <TableCell className="text-right font-medium">
+                    {visible.reduce((s, a) => s + a.leads, 0)}
+                  </TableCell>
+                  <TableCell className="text-right font-medium">
+                    {(() => {
+                      const spend = visible.reduce((s, a) => s + a.spend, 0);
+                      const leads = visible.reduce((s, a) => s + a.leads, 0);
+                      return leads > 0 ? usd(spend / leads) : "—";
+                    })()}
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
+            )}
           </Table>
         </div>
       </div>

@@ -15,7 +15,12 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DateRangePicker } from "@/components/app/date-range-picker";
-import { getFunnelReport, getWorkspaceContext } from "@/lib/data";
+import { LeadsMultiFilter } from "@/components/app/leads-filter";
+import {
+  getFunnelReport,
+  getWorkspaceContext,
+  getWorkspaceGeoOptions,
+} from "@/lib/data";
 import { resolveDateRange } from "@/lib/date-range";
 import { cn } from "@/lib/utils";
 
@@ -50,7 +55,13 @@ const planned = [
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
+  searchParams: Promise<{
+    range?: string;
+    from?: string;
+    to?: string;
+    state?: string;
+    city?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const resolved = resolveDateRange(sp, {
@@ -58,14 +69,36 @@ export default async function ReportsPage({
     defaultPreset: DEFAULT_RANGE,
     allowAllTime: true,
   });
+  // Multi-select location filters — comma-separated in the URL, absent = all.
+  const states = sp.state ? sp.state.split(",").filter(Boolean) : [];
+  const cities = sp.city ? sp.city.split(",").filter(Boolean) : [];
 
   const { active } = await getWorkspaceContext();
-  const funnel = active
-    ? await getFunnelReport(active.id, {
-        start: resolved.start,
-        end: resolved.end,
-      })
-    : null;
+  const [funnel, geo] = active
+    ? await Promise.all([
+        getFunnelReport(active.id, {
+          start: resolved.start,
+          end: resolved.end,
+          regions: states,
+          cities,
+        }),
+        getWorkspaceGeoOptions(active.id),
+      ])
+    : [null, []];
+
+  const stateOptions = [
+    ...new Set(geo.map((g) => g.region).filter(Boolean)),
+  ].sort() as string[];
+  const cityOptions = [
+    ...new Set(
+      geo
+        .filter(
+          (g) => states.length === 0 || (g.region && states.includes(g.region)),
+        )
+        .map((g) => g.city)
+        .filter(Boolean),
+    ),
+  ].sort() as string[];
 
   return (
     <div className="space-y-6">
@@ -79,11 +112,34 @@ export default async function ReportsPage({
             completes the process
           </p>
         </div>
-        <DateRangePicker
-          presets={RANGES}
-          defaultValue={DEFAULT_RANGE}
-          label={resolved.label}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <LeadsMultiFilter
+            param="state"
+            icon="state"
+            title="State"
+            allLabel="All states"
+            activeValues={states}
+            options={stateOptions.map((s) => ({ value: s, label: s }))}
+          />
+          <LeadsMultiFilter
+            param="city"
+            icon="city"
+            title="City"
+            allLabel="All cities"
+            activeValues={cities}
+            options={cityOptions.map((c) => ({ value: c, label: c }))}
+          />
+          <label className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              Period
+            </span>
+            <DateRangePicker
+              presets={RANGES}
+              defaultValue={DEFAULT_RANGE}
+              label={resolved.label}
+            />
+          </label>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">

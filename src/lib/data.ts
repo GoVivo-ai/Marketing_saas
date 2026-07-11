@@ -1147,7 +1147,18 @@ export async function getLeadsPage(
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, opts.page ?? 1), totalPages);
 
-  const rows = await db()
+  const rows = await leadRowQuery()
+    .where(where)
+    .orderBy(desc(schema.leads.createdAt))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  return { rows: rows.map(mapLeadRow), total, page, pageSize, totalPages };
+}
+
+/** Base query returning leads in the shape the Leads table renders. */
+function leadRowQuery() {
+  return db()
     .select({
       id: schema.leads.id,
       name: schema.leads.name,
@@ -1184,12 +1195,13 @@ export async function getLeadsPage(
     .leftJoin(schema.users, eq(schema.leads.assignedToId, schema.users.id))
     .leftJoin(schema.stages, eq(schema.leads.stageId, schema.stages.id))
     .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
-    .where(where)
-    .orderBy(desc(schema.leads.createdAt))
-    .limit(pageSize)
-    .offset((page - 1) * pageSize);
+    .$dynamic();
+}
 
-  const mapped = rows.map((r) => ({
+function mapLeadRow(
+  r: Awaited<ReturnType<typeof leadRowQuery>>[number],
+): LeadRow {
+  return {
     id: r.id,
     name: r.name ?? "Unknown",
     email: r.email ?? "—",
@@ -1212,9 +1224,27 @@ export async function getLeadsPage(
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     geo: leadGeo(r),
-  }));
+  };
+}
 
-  return { rows: mapped, total, page, pageSize, totalPages };
+/**
+ * One lead in the exact shape the Leads table uses — powers deep links
+ * (/leads?lead=<id>, e.g. clicking a name in the Contact Queue) regardless of
+ * the table's current filters or pagination.
+ */
+export async function getLeadRowById(
+  workspaceId: string,
+  leadId: string,
+): Promise<LeadRow | null> {
+  const rows = await leadRowQuery()
+    .where(
+      and(
+        eq(schema.leads.workspaceId, workspaceId),
+        eq(schema.leads.id, leadId),
+      ),
+    )
+    .limit(1);
+  return rows[0] ? mapLeadRow(rows[0]) : null;
 }
 
 /** Classify a lead against its ad set's audience radius (near = ≤ 1.5× radius). */
@@ -1397,6 +1427,8 @@ export interface QueueItem {
   stageColor: string | null;
   aiScore: number | null;
   aiSuggestedAction: string | null;
+  /** The campaign's scoring criteria (null → workspace criteria applies). */
+  criteria: string | null;
   createdAt: Date;
   geo: LeadGeo | null;
   /** Whether the lead's vehicle meets the minimum-year eligibility rule. */
@@ -1481,10 +1513,74 @@ export async function getQueueAdsetOptions(
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  content: string;
+  createdBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Saved scoring-prompt templates of a workspace, newest first. */
+export async function getPromptTemplates(
+  workspaceId: string,
+): Promise<PromptTemplate[]> {
+  const rows = await db()
+    .select({
+      id: schema.promptTemplates.id,
+      name: schema.promptTemplates.name,
+      content: schema.promptTemplates.content,
+      createdBy: schema.users.name,
+      createdAt: schema.promptTemplates.createdAt,
+      updatedAt: schema.promptTemplates.updatedAt,
+    })
+    .from(schema.promptTemplates)
+    .leftJoin(schema.users, eq(schema.promptTemplates.createdById, schema.users.id))
+    .where(eq(schema.promptTemplates.workspaceId, workspaceId))
+    .orderBy(desc(schema.promptTemplates.updatedAt));
+  return rows;
+}
+
+/** The workspace-wide lead qualification criteria (AI scoring fallback). */
+export async function getWorkspaceCriteria(
+  workspaceId: string,
+): Promise<string | null> {
+  const [w] = await db()
+    .select({ criteria: schema.workspaces.qualificationCriteria })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, workspaceId))
+    .limit(1);
+  return w?.criteria ?? null;
+}
+
+/**
+ * Distinct state (region) / city pairs targeted by ad sets that still have
+ * workable leads — options for the queue's location filters.
+ */
+export async function getQueueGeoOptions(
+  workspaceId: string,
+): Promise<{ region: string | null; city: string | null }[]> {
+  const rows = await db()
+    .selectDistinct({
+      region: schema.adsets.cityRegion,
+      city: schema.adsets.cityName,
+    })
+    .from(schema.leads)
+    .innerJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+    .leftJoin(schema.stages, eq(schema.leads.stageId, schema.stages.id))
+    .where(queueCandidateWhere(workspaceId));
+  return rows;
+}
+
 export async function getContactQueue(
   workspaceId: string,
   opts: {
     adsetId?: string | null;
+    /** Restrict to leads whose ad set targets one of these states (regions). */
+    regions?: string[] | null;
+    /** Restrict to leads whose ad set targets one of these cities. */
+    cities?: string[] | null;
     /** Restrict to leads created inside this window (inclusive). */
     start?: Date | null;
     end?: Date | null;
@@ -1499,6 +1595,7 @@ export async function getContactQueue(
       email: schema.leads.email,
       aiScore: schema.leads.aiScore,
       aiSuggestedAction: schema.leads.aiSuggestedAction,
+      criteria: schema.campaigns.scoringCriteria,
       createdAt: schema.leads.createdAt,
       campaign: schema.campaigns.name,
       stageName: schema.stages.name,
@@ -1521,6 +1618,12 @@ export async function getContactQueue(
       and(
         queueCandidateWhere(workspaceId),
         opts.adsetId ? eq(schema.leads.adsetId, opts.adsetId) : undefined,
+        opts.regions?.length
+          ? inArray(schema.adsets.cityRegion, opts.regions)
+          : undefined,
+        opts.cities?.length
+          ? inArray(schema.adsets.cityName, opts.cities)
+          : undefined,
         opts.start ? gte(schema.leads.createdAt, opts.start) : undefined,
         opts.end ? lte(schema.leads.createdAt, opts.end) : undefined,
       ),
@@ -1612,6 +1715,7 @@ export async function getContactQueue(
       stageColor: r.stageColor,
       aiScore: r.aiScore,
       aiSuggestedAction: r.aiSuggestedAction,
+      criteria: r.criteria,
       createdAt: r.createdAt,
       geo: leadGeo(r),
       vehicle: vehicleFit(r.formData as Record<string, unknown> | null),
@@ -1680,9 +1784,28 @@ export interface FunnelReport {
   };
 }
 
+/** Distinct state (region) / city pairs targeted by the workspace's ad sets. */
+export async function getWorkspaceGeoOptions(
+  workspaceId: string,
+): Promise<{ region: string | null; city: string | null }[]> {
+  return db()
+    .selectDistinct({
+      region: schema.adsets.cityRegion,
+      city: schema.adsets.cityName,
+    })
+    .from(schema.adsets)
+    .where(eq(schema.adsets.workspaceId, workspaceId));
+}
+
 export async function getFunnelReport(
   workspaceId: string,
-  opts: { start?: Date | null; end?: Date | null } = {},
+  opts: {
+    start?: Date | null;
+    end?: Date | null;
+    /** Restrict to leads whose ad set targets one of these states/cities. */
+    regions?: string[] | null;
+    cities?: string[] | null;
+  } = {},
 ): Promise<FunnelReport> {
   const stages = await db()
     .select({
@@ -1705,6 +1828,11 @@ export async function getFunnelReport(
   const leadFilters = [eq(schema.leads.workspaceId, workspaceId)];
   if (opts.start) leadFilters.push(gte(schema.leads.createdAt, opts.start));
   if (opts.end) leadFilters.push(lte(schema.leads.createdAt, opts.end));
+  // Location slice — via the lead's ad set targeting (state/city).
+  if (opts.regions?.length)
+    leadFilters.push(inArray(schema.adsets.cityRegion, opts.regions));
+  if (opts.cities?.length)
+    leadFilters.push(inArray(schema.adsets.cityName, opts.cities));
 
   const [leadRows, moveRows] = await Promise.all([
     db()
@@ -1715,6 +1843,7 @@ export async function getFunnelReport(
         disqualL3: schema.leads.disqualL3,
       })
       .from(schema.leads)
+      .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
       .where(and(...leadFilters)),
     // Stage history: a lost lead still counts in every stage it passed
     // through, which the current stageId alone can't tell us.
@@ -1725,6 +1854,7 @@ export async function getFunnelReport(
       })
       .from(schema.leadEvents)
       .innerJoin(schema.leads, eq(schema.leadEvents.leadId, schema.leads.id))
+      .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
       .where(
         and(...leadFilters, eq(schema.leadEvents.type, "status_change")),
       ),

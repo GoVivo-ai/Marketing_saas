@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { MultiFilter, type MultiFilterIcon } from "@/components/app/multi-filter";
 
 export interface FilterOption {
   value: string;
@@ -34,6 +35,53 @@ const ICONS = { stage: Layers, city: MapPin, adset: Crosshair } as const;
 export type FilterIcon = keyof typeof ICONS;
 
 /**
+ * Multi-select leads filter driven by a URL search param (comma-separated
+ * values; absent = all). Same checkbox dropdown as the in-memory MultiFilter,
+ * but routed so Server Components can filter on it.
+ */
+export function LeadsMultiFilter({
+  param,
+  icon,
+  title,
+  allLabel,
+  options,
+  activeValues,
+}: {
+  param: string;
+  icon: MultiFilterIcon;
+  title: string;
+  allLabel: string;
+  options: FilterOption[];
+  activeValues: string[];
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [pending, startTransition] = useTransition();
+
+  const onChange = (values: string[]) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("page"); // a new filter starts at page 1
+    if (values.length) params.set(param, values.join(","));
+    else params.delete(param);
+    const query = params.toString();
+    startTransition(() => router.push(query ? `${pathname}?${query}` : pathname));
+  };
+
+  return (
+    <MultiFilter
+      title={title}
+      icon={icon}
+      allLabel={allLabel}
+      options={options}
+      selected={activeValues}
+      onChange={onChange}
+      pending={pending}
+    />
+  );
+}
+
+/**
  * Generic single-select leads filter driven by a URL search param. Used for the
  * stage ("Not Interested" / "Not Qualified" segmented views) and city/area
  * slices that replace the spreadsheet's separate tabs.
@@ -41,12 +89,15 @@ export type FilterIcon = keyof typeof ICONS;
 export function LeadsFilter({
   param,
   icon,
+  title,
   allLabel,
   options,
   activeValue,
 }: {
   param: string;
   icon: FilterIcon;
+  /** Small muted name shown before the control, so users know what it filters. */
+  title?: string;
   allLabel: string;
   options: FilterOption[];
   activeValue: string | null;
@@ -68,7 +119,7 @@ export function LeadsFilter({
     startTransition(() => router.push(query ? `${pathname}?${query}` : pathname));
   };
 
-  return (
+  const dropdown = (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={<Button variant="outline" size="sm" className="max-w-[240px] gap-1.5" />}
@@ -102,5 +153,13 @@ export function LeadsFilter({
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+
+  if (!title) return dropdown;
+  return (
+    <label className="flex items-center gap-1.5">
+      <span className="text-xs font-medium text-muted-foreground">{title}</span>
+      {dropdown}
+    </label>
   );
 }

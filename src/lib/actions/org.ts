@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { canManageWorkspace, currentUser } from "@/lib/permissions";
+import { summarizeCriteria } from "@/lib/ai/lead-scoring";
 
 export interface OrgActionState {
   error?: string;
@@ -169,9 +170,20 @@ export async function updateWorkspaceProfile(
   // What this client calls a conversion/result (Sales, Hires, Appointments…).
   const resultLabel = String(formData.get("resultLabel") ?? "").trim() || "Sales";
 
+  // Agent-facing digest shown in the Contact Queue instead of the full prompt.
+  const qualificationCriteriaSummary = qualificationCriteria
+    ? await summarizeCriteria(workspaceId, qualificationCriteria)
+    : null;
+
   await db()
     .update(schema.workspaces)
-    .set({ name, industry, qualificationCriteria, resultLabel })
+    .set({
+      name,
+      industry,
+      qualificationCriteria,
+      qualificationCriteriaSummary,
+      resultLabel,
+    })
     .where(eq(schema.workspaces.id, workspaceId));
   // Name shows in the sidebar/switcher, so refresh the whole layout.
   revalidatePath("/", "layout");

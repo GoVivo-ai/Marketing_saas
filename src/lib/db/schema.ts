@@ -140,6 +140,8 @@ export const workspaces = pgTable("workspaces", {
    * what actually matters for this client's business.
    */
   qualificationCriteria: text("qualification_criteria"),
+  /** Short AI digest of qualificationCriteria for agent-facing surfaces. */
+  qualificationCriteriaSummary: text("qualification_criteria_summary"),
   /** Brand color used to theme the client portal. */
   accentColor: text("accent_color"),
   /**
@@ -217,6 +219,12 @@ export const campaigns = pgTable(
      * (the platform upsert never writes this column).
      */
     scoringCriteria: text("scoring_criteria"),
+    /**
+     * Short AI-generated digest of scoringCriteria (a few bullets), shown to
+     * agents in the Contact Queue instead of the full prompt. Regenerated
+     * whenever the criteria is saved.
+     */
+    scoringCriteriaSummary: text("scoring_criteria_summary"),
     /**
      * The questions of the campaign's lead-gen form(s), refreshed from the
      * platform on every sync. Source of truth for the fields shown next to

@@ -75,8 +75,16 @@ export function MultiFilter({
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="max-h-[340px] w-64 overflow-auto">
+          {/* Select all ticks every option so single ones can be unticked;
+              Clear goes back to the implicit "all" (no filter). */}
+          <DropdownMenuItem
+            closeOnClick={false}
+            onClick={() => onChange(options.map((o) => o.value))}
+          >
+            <span className="flex-1">Select all ({options.length})</span>
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => onChange([])}>
-            <span className="flex-1">{allLabel}</span>
+            <span className="flex-1">{allLabel} (clear)</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           {options.map((o) => (

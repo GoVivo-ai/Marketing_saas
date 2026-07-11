@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { canManageWorkspace } from "@/lib/permissions";
-import { rescoreCampaignLeads } from "@/lib/ai/lead-scoring";
+import { rescoreCampaignLeads, summarizeCriteria } from "@/lib/ai/lead-scoring";
 
 export interface CampaignScoringState {
   error?: string;
@@ -43,9 +43,15 @@ export async function saveCampaignScoringCriteria(
   const scoringCriteria =
     String(formData.get("scoringCriteria") ?? "").trim() || null;
 
+  // Agent-facing digest of the prompt, shown in the Contact Queue. Nullable —
+  // when AI is unavailable the queue falls back to the full criteria text.
+  const scoringCriteriaSummary = scoringCriteria
+    ? await summarizeCriteria(auth.workspaceId, scoringCriteria)
+    : null;
+
   await db()
     .update(schema.campaigns)
-    .set({ scoringCriteria })
+    .set({ scoringCriteria, scoringCriteriaSummary })
     .where(
       and(
         eq(schema.campaigns.id, campaignId),

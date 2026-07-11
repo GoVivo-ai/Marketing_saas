@@ -62,6 +62,68 @@ function renderMessage(
     .replaceAll("{campaign}", lead.campaign ?? "");
 }
 
+export interface ScoreAutomationUsage {
+  /** Leads ever auto-contacted by the automation. */
+  total: number;
+  /** Auto-contacted in the last 30 days. */
+  last30Days: number;
+  /** Most recent auto-contacted leads, newest first. */
+  recent: {
+    id: string;
+    name: string | null;
+    aiScore: number | null;
+    campaign: string | null;
+    autoContactedAt: Date;
+  }[];
+}
+
+/** Usage stats for the Settings card: how much the automation has worked. */
+export async function getScoreAutomationUsage(
+  workspaceId: string,
+): Promise<ScoreAutomationUsage> {
+  const since = new Date(Date.now() - 30 * 86_400_000);
+  const [counts, recent] = await Promise.all([
+    db()
+      .select({
+        total: sql<number>`count(*)::int`,
+        last30: sql<number>`count(*) filter (where ${schema.leads.autoContactedAt} >= ${since})::int`,
+      })
+      .from(schema.leads)
+      .where(
+        and(
+          eq(schema.leads.workspaceId, workspaceId),
+          isNotNull(schema.leads.autoContactedAt),
+        ),
+      ),
+    db()
+      .select({
+        id: schema.leads.id,
+        name: schema.leads.name,
+        aiScore: schema.leads.aiScore,
+        campaign: schema.campaigns.name,
+        autoContactedAt: schema.leads.autoContactedAt,
+      })
+      .from(schema.leads)
+      .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
+      .where(
+        and(
+          eq(schema.leads.workspaceId, workspaceId),
+          isNotNull(schema.leads.autoContactedAt),
+        ),
+      )
+      .orderBy(sql`${schema.leads.autoContactedAt} desc`)
+      .limit(8),
+  ]);
+  return {
+    total: counts[0]?.total ?? 0,
+    last30Days: counts[0]?.last30 ?? 0,
+    recent: recent.map((r) => ({
+      ...r,
+      autoContactedAt: r.autoContactedAt!,
+    })),
+  };
+}
+
 /**
  * Auto-contacts the given (just-scored) leads per the workspace rule.
  * Only the "sms" action acts here — "queue" leads are highlighted at render

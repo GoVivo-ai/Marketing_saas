@@ -6,8 +6,21 @@ import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
 import { canManageWorkspace } from "@/lib/permissions";
-import { getDialpadTokens, isDialpadConnected } from "@/lib/settings";
-import { getScoreAutomation } from "@/lib/automations";
+import {
+  getDialpadTokens,
+  isDialpadConnected,
+  getRingCentralTokens,
+  isRingCentralConnected,
+  getRingCentralEnv,
+} from "@/lib/settings";
+import { isRingCentralConfigured } from "@/lib/integrations/ringcentral";
+import { currentUser } from "@/lib/permissions";
+import { RingCentralConnectCard } from "@/components/app/ringcentral-connect-card";
+import {
+  getScoreAutomation,
+  getScoreAutomationUsage,
+  type ScoreAutomationUsage,
+} from "@/lib/automations";
 import { ChangePasswordForm } from "@/components/app/change-password-form";
 import { DialpadConnectCard } from "@/components/app/dialpad-connect-card";
 import { CompanyProfileForm, WorkspaceLogoForm } from "@/components/app/org-forms";
@@ -32,6 +45,16 @@ export default async function GeneralSettingsPage() {
   const dpConnected = userId ? await isDialpadConnected(userId) : false;
   const dpTokens = userId && dpConnected ? await getDialpadTokens(userId) : null;
 
+  // Server-side RingCentral connection (REST API): powers click-to-call/SMS
+  // actions and the score automation's automated sends.
+  const rcConnected = userId ? await isRingCentralConnected(userId) : false;
+  const rcTokens = userId && rcConnected ? await getRingCentralTokens(userId) : null;
+  const [rcEnv, rcEnvConfigured, me] = await Promise.all([
+    getRingCentralEnv(),
+    isRingCentralConfigured(),
+    currentUser(),
+  ]);
+
   const { active } = await getWorkspaceContext();
   const canManage = active ? await canManageWorkspace(active.id) : false;
   let company:
@@ -44,11 +67,15 @@ export default async function GeneralSettingsPage() {
       }
     | null = null;
   let automationRule: Awaited<ReturnType<typeof getScoreAutomation>> = null;
+  let automationUsage: ScoreAutomationUsage | null = null;
   let senders: SenderOption[] = [];
   if (active && canManage) {
     // Score-automation rule + who can be the automated-SMS sender: agency
     // users and this workspace's members, flagging telephony connection.
-    automationRule = await getScoreAutomation(active.id);
+    [automationRule, automationUsage] = await Promise.all([
+      getScoreAutomation(active.id),
+      getScoreAutomationUsage(active.id),
+    ]);
     const senderRows = await db()
       .selectDistinctOn([schema.users.id], {
         id: schema.users.id,
@@ -155,7 +182,53 @@ export default async function GeneralSettingsPage() {
                 Queue with a ready-made script for the agent.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-5">
+              {automationUsage && automationUsage.total > 0 && (
+                <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Usage
+                  </p>
+                  <p className="text-sm">
+                    <span className="font-semibold">{automationUsage.total}</span>{" "}
+                    leads auto-contacted ·{" "}
+                    <span className="font-semibold">
+                      {automationUsage.last30Days}
+                    </span>{" "}
+                    in the last 30 days
+                  </p>
+                  <ul className="space-y-1 text-sm">
+                    {automationUsage.recent.map((l) => (
+                      <li
+                        key={l.id}
+                        className="flex items-center justify-between gap-3"
+                      >
+                        <Link
+                          href={`/leads?lead=${l.id}`}
+                          className="min-w-0 truncate hover:text-primary hover:underline"
+                        >
+                          {l.name ?? "Unknown"}
+                          {l.aiScore != null && (
+                            <span className="text-muted-foreground">
+                              {" "}
+                              · score {l.aiScore}
+                            </span>
+                          )}
+                        </Link>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {l.autoContactedAt.toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-muted-foreground">
+                    Each send is also logged on the lead&apos;s activity
+                    timeline, marked as automated.
+                  </p>
+                </div>
+              )}
               <ScoreAutomationForm
                 workspaceId={active.id}
                 rule={
@@ -200,21 +273,15 @@ export default async function GeneralSettingsPage() {
           description="Call and text leads straight from the pipeline. RingCentral runs in the in-app dialer; Dialpad is available as an alternative."
         />
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Phone className="h-4 w-4 text-primary" />
-                RingCentral dialer
-              </CardTitle>
-              <CardDescription>
-                Calling and SMS happen in the in-app dialer — no phone or
-                call-forwarding needed. Click the phone button at the
-                bottom-right of any page, sign in once with your RingCentral
-                account, then use Call / SMS on any lead. Audio runs through your
-                browser, so agents in any country can call.
-              </CardDescription>
-            </CardHeader>
-          </Card>
+          <Suspense>
+            <RingCentralConnectCard
+              connected={rcConnected}
+              fromNumber={rcTokens?.fromNumber ?? null}
+              isAdmin={me?.role === "agency_admin"}
+              env={rcEnv}
+              envConfigured={rcEnvConfigured}
+            />
+          </Suspense>
           <Suspense>
             <DialpadConnectCard
               connected={dpConnected}
@@ -222,6 +289,21 @@ export default async function GeneralSettingsPage() {
             />
           </Suspense>
         </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Phone className="h-4 w-4 text-primary" />
+              In-app dialer (RingCentral Embeddable)
+            </CardTitle>
+            <CardDescription>
+              Independently of the connection above, the in-app dialer at the
+              bottom-right of any page lets agents call/SMS through the
+              browser — sign in once with your RingCentral account inside the
+              widget. The connection above is what powers automated SMS and
+              server-side click-to-call.
+            </CardDescription>
+          </CardHeader>
+        </Card>
       </section>
 
       <section className="space-y-3">

@@ -1542,12 +1542,19 @@ export async function getPromptTemplates(
   return rows;
 }
 
-/** The workspace-wide lead qualification criteria (AI scoring fallback). */
+/**
+ * The workspace-wide qualification criteria for agent-facing surfaces:
+ * the short AI digest when available, else the raw prompt.
+ */
 export async function getWorkspaceCriteria(
   workspaceId: string,
 ): Promise<string | null> {
   const [w] = await db()
-    .select({ criteria: schema.workspaces.qualificationCriteria })
+    .select({
+      criteria: sql<
+        string | null
+      >`coalesce(${schema.workspaces.qualificationCriteriaSummary}, ${schema.workspaces.qualificationCriteria})`,
+    })
     .from(schema.workspaces)
     .where(eq(schema.workspaces.id, workspaceId))
     .limit(1);
@@ -1595,7 +1602,10 @@ export async function getContactQueue(
       email: schema.leads.email,
       aiScore: schema.leads.aiScore,
       aiSuggestedAction: schema.leads.aiSuggestedAction,
-      criteria: schema.campaigns.scoringCriteria,
+      // The agent-facing digest when available, else the raw prompt.
+      criteria: sql<
+        string | null
+      >`coalesce(${schema.campaigns.scoringCriteriaSummary}, ${schema.campaigns.scoringCriteria})`,
       createdAt: schema.leads.createdAt,
       campaign: schema.campaigns.name,
       stageName: schema.stages.name,

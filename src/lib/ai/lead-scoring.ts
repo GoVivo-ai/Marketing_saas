@@ -55,6 +55,44 @@ export async function scoreLead(input: {
 }
 
 /**
+ * Boils a scoring-criteria prompt down to a few agent-facing bullets — what
+ * the Contact Queue shows instead of the full prompt. Returns null when AI
+ * isn't configured or the call fails (callers fall back gracefully).
+ */
+export async function summarizeCriteria(
+  workspaceId: string,
+  criteria: string,
+): Promise<string | null> {
+  if (!criteria.trim()) return null;
+  try {
+    if (!(await isAiConfigured(workspaceId))) return null;
+    const anthropic = await anthropicProvider(workspaceId);
+    const { object } = await generateObject({
+      model: anthropic(MODEL),
+      schema: z.object({
+        summary: z
+          .string()
+          .describe(
+            "3-5 short bullet lines (each starting with '• '), no intro/outro",
+          ),
+      }),
+      prompt: [
+        `Summarize these lead-qualification criteria as a quick checklist a`,
+        `phone agent can scan in 5 seconds while calling a lead. 3-5 bullets,`,
+        `each a few words. Keep the SAME LANGUAGE the criteria is written in.`,
+        ``,
+        `<criteria>`,
+        criteria,
+        `</criteria>`,
+      ].join("\n"),
+    });
+    return object.summary.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolves the AI scoring criteria for each lead: the lead's campaign
  * criteria when it has one, otherwise null (caller falls back to the
  * workspace-wide criteria). Returns a map of leadId → campaign criteria.

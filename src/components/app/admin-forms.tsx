@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { CircleCheck, Copy, Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { CircleCheck, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import {
   createWorkspace,
   createUser,
@@ -11,6 +11,7 @@ import {
   type AdminActionState,
 } from "@/lib/actions/admin";
 import { Button } from "@/components/ui/button";
+import { CopySecret } from "@/components/app/copy-secret";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -25,17 +26,7 @@ function Feedback({ state }: { state: AdminActionState }) {
         <CircleCheck className="h-4 w-4" />
         {state.success}
       </p>
-      {state.tempPassword && (
-        <button
-          type="button"
-          onClick={() => navigator.clipboard?.writeText(state.tempPassword!)}
-          className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2 font-mono text-sm"
-          title="Click to copy"
-        >
-          {state.tempPassword}
-          <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-        </button>
-      )}
+      {state.tempPassword && <CopySecret value={state.tempPassword} />}
     </div>
   );
 }
@@ -170,16 +161,7 @@ export function ResetPasswordButton({ userId }: { userId: string }) {
         )}
         Reset password
       </Button>
-      {state.tempPassword && (
-        <button
-          type="button"
-          onClick={() => navigator.clipboard?.writeText(state.tempPassword!)}
-          className="rounded-md border bg-muted px-2 py-1 font-mono text-xs"
-          title="Click to copy"
-        >
-          {state.tempPassword}
-        </button>
-      )}
+      {state.tempPassword && <CopySecret value={state.tempPassword} />}
       {state.error && <p className="text-xs text-destructive">{state.error}</p>}
     </form>
   );

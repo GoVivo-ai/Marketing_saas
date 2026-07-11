@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, isNotNull, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, isNotNull, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { sendText, normalizeE164 } from "@/lib/integrations/telephony";
 
@@ -82,17 +82,23 @@ export async function getScoreAutomationUsage(
   workspaceId: string,
 ): Promise<ScoreAutomationUsage> {
   const since = new Date(Date.now() - 30 * 86_400_000);
-  const [counts, recent] = await Promise.all([
+  const [totalRows, last30Rows, recent] = await Promise.all([
     db()
-      .select({
-        total: sql<number>`count(*)::int`,
-        last30: sql<number>`count(*) filter (where ${schema.leads.autoContactedAt} >= ${since})::int`,
-      })
+      .select({ n: sql<number>`count(*)::int` })
       .from(schema.leads)
       .where(
         and(
           eq(schema.leads.workspaceId, workspaceId),
           isNotNull(schema.leads.autoContactedAt),
+        ),
+      ),
+    db()
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.leads)
+      .where(
+        and(
+          eq(schema.leads.workspaceId, workspaceId),
+          gte(schema.leads.autoContactedAt, since),
         ),
       ),
     db()
@@ -115,8 +121,8 @@ export async function getScoreAutomationUsage(
       .limit(8),
   ]);
   return {
-    total: counts[0]?.total ?? 0,
-    last30Days: counts[0]?.last30 ?? 0,
+    total: totalRows[0]?.n ?? 0,
+    last30Days: last30Rows[0]?.n ?? 0,
     recent: recent.map((r) => ({
       ...r,
       autoContactedAt: r.autoContactedAt!,

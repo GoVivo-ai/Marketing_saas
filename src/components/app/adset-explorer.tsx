@@ -67,7 +67,39 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
         ? a.status === "ACTIVE"
         : a.status !== "ACTIVE",
   );
-  const locatedCount = visible.filter((a) => a.lat != null && a.lng != null).length;
+
+  // One row per CITY: campaigns often split a city across several ad sets —
+  // collapse them so the table and map show each city once with combined
+  // spend/leads (CPL recomputed), the widest radius and "active if any is".
+  const byCity = new Map<string, AdSetRow & { adsetCount: number }>();
+  for (const a of visible) {
+    const key = a.city
+      ? `${a.city.trim().toLowerCase()}|${a.region?.trim().toLowerCase() ?? ""}`
+      : `adset:${a.id}`; // no targeted city — keep the ad set as its own row
+    const cur = byCity.get(key);
+    if (!cur) {
+      byCity.set(key, { ...a, adsetCount: 1 });
+      continue;
+    }
+    cur.adsetCount++;
+    cur.spend += a.spend;
+    cur.leads += a.leads;
+    cur.impressions += a.impressions;
+    cur.clicks += a.clicks;
+    if (cur.status !== "ACTIVE" && a.status === "ACTIVE") cur.status = "ACTIVE";
+    if ((cur.lat == null || cur.lng == null) && a.lat != null && a.lng != null) {
+      cur.lat = a.lat;
+      cur.lng = a.lng;
+    }
+    if (a.radius != null && (cur.radius == null || a.radius > cur.radius)) {
+      cur.radius = a.radius;
+      cur.distanceUnit = a.distanceUnit;
+    }
+  }
+  const cityRows = [...byCity.values()]
+    .map((r) => ({ ...r, cpl: r.leads > 0 ? r.spend / r.leads : 0 }))
+    .sort((x, y) => y.spend - x.spend);
+  const locatedCount = cityRows.filter((a) => a.lat != null && a.lng != null).length;
 
   if (adsets.length === 0) {
     return (
@@ -144,12 +176,12 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
       <div className="grid gap-6 lg:grid-cols-5">
         <div className="lg:col-span-3">
           <CityRadiusMap
-            adsets={visible}
+            adsets={cityRows}
             selectedId={selectedId}
             onSelect={setSelectedId}
           />
           <p className="mt-2 text-xs text-muted-foreground">
-            {locatedCount} of {visible.length} ad sets placed on the map · the
+            {locatedCount} of {cityRows.length} cities placed on the map · the
             circle shows the audience radius. Click a city to focus it.
           </p>
         </div>
@@ -168,7 +200,7 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visible.length === 0 && (
+              {cityRows.length === 0 && (
                 <TableRow>
                   <TableCell
                     colSpan={5}
@@ -178,7 +210,7 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
                   </TableCell>
                 </TableRow>
               )}
-              {visible.map((a) => {
+              {cityRows.map((a) => {
                 const located = a.lat != null && a.lng != null;
                 return (
                   <TableRow
@@ -210,6 +242,7 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
                           </p>
                           <p className="truncate text-xs text-muted-foreground">
                             {a.region ?? a.name}
+                            {a.adsetCount > 1 ? ` · ${a.adsetCount} ad sets` : ""}
                           </p>
                         </div>
                         {a.status !== "ACTIVE" && (
@@ -233,13 +266,14 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
                 );
               })}
             </TableBody>
-            {visible.length > 0 && (
+            {cityRows.length > 0 && (
               /* Ads Manager-style totals for the current slice: summed spend
                  and leads, CPL recomputed from the totals (not averaged). */
               <TableFooter className="[&_td]:sticky [&_td]:bottom-0 [&_td]:z-10 [&_td]:bg-card">
                 <TableRow>
                   <TableCell className="font-medium">
-                    Totals · {visible.length} ad set{visible.length === 1 ? "" : "s"}
+                    Totals · {cityRows.length} {cityRows.length === 1 ? "city" : "cities"} ·{" "}
+                    {visible.length} ad set{visible.length === 1 ? "" : "s"}
                   </TableCell>
                   <TableCell />
                   <TableCell className="text-right font-medium">

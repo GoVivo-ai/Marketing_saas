@@ -159,7 +159,12 @@ export function CampaignScoringForm({
               className="h-8 w-64 text-xs"
               aria-label="Load template"
             >
-              <SelectValue placeholder="Load a template…" />
+              {/* Render the name ourselves: right after saving, the fresh
+                  template isn't in the list yet and the raw id (a UUID)
+                  would show otherwise. */}
+              <SelectValue placeholder="Load a template…">
+                {templateId ? loaded?.name ?? templateName : undefined}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {templates.length === 0 && (

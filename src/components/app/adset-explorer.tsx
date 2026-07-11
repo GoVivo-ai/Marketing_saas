@@ -157,7 +157,8 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
       <div className="lg:col-span-2">
         <div className="max-h-[420px] overflow-auto rounded-xl border">
           <Table>
-            <TableHeader>
+            {/* Header and totals stay pinned while the rows scroll. */}
+            <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-card">
               <TableRow>
                 <TableHead>City</TableHead>
                 <TableHead className="text-right">Radius</TableHead>
@@ -235,7 +236,7 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
             {visible.length > 0 && (
               /* Ads Manager-style totals for the current slice: summed spend
                  and leads, CPL recomputed from the totals (not averaged). */
-              <TableFooter>
+              <TableFooter className="[&_td]:sticky [&_td]:bottom-0 [&_td]:z-10 [&_td]:bg-card">
                 <TableRow>
                   <TableCell className="font-medium">
                     Totals · {visible.length} ad set{visible.length === 1 ? "" : "s"}

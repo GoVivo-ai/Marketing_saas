@@ -42,11 +42,6 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
   const [region, setRegion] = useState("all");
   const [city, setCity] = useState("all");
 
-  const counts = {
-    all: adsets.length,
-    active: adsets.filter((a) => a.status === "ACTIVE").length,
-    paused: adsets.filter((a) => a.status !== "ACTIVE").length,
-  };
   const regions = [...new Set(adsets.map((a) => a.region).filter(Boolean))].sort() as string[];
   const cities = [
     ...new Set(
@@ -56,15 +51,24 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
         .filter(Boolean),
     ),
   ].sort() as string[];
-  const visible = adsets.filter(
+  // Status counts reflect the current state/city slice, so the All/Active/
+  // Paused pills always describe what's actually being filtered.
+  const inLocation = adsets.filter(
     (a) =>
-      (status === "all"
-        ? true
-        : status === "active"
-          ? a.status === "ACTIVE"
-          : a.status !== "ACTIVE") &&
       (region === "all" || a.region === region) &&
       (city === "all" || a.city === city),
+  );
+  const counts = {
+    all: inLocation.length,
+    active: inLocation.filter((a) => a.status === "ACTIVE").length,
+    paused: inLocation.filter((a) => a.status !== "ACTIVE").length,
+  };
+  const visible = inLocation.filter((a) =>
+    status === "all"
+      ? true
+      : status === "active"
+        ? a.status === "ACTIVE"
+        : a.status !== "ACTIVE",
   );
   const locatedCount = visible.filter((a) => a.lat != null && a.lng != null).length;
 

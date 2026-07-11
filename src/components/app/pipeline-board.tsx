@@ -12,7 +12,6 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import Link from "next/link";
 import { toast } from "sonner";
 import {
   Phone,
@@ -21,21 +20,11 @@ import {
   Loader2,
   ChevronRight,
   Download,
-  ExternalLink,
 } from "lucide-react";
-import { moveLeadToStage } from "@/lib/actions/leads";
+import { moveLeadToStage, getLeadDetail } from "@/lib/actions/leads";
 import { Button } from "@/components/ui/button";
-import type { Stage, PipelineCard } from "@/lib/data";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
-import { LeadContactActions } from "@/components/app/lead-contact-actions";
+import type { Stage, PipelineCard, LeadRow } from "@/lib/data";
+import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
 import { StageManager } from "@/components/app/stage-manager";
 
 type Board = Record<string, PipelineCard[]>;
@@ -46,7 +35,6 @@ export function PipelineBoard({
   cardsByStage,
   counts,
   cap,
-  contactConnected,
   canManage,
 }: {
   workspaceId: string;
@@ -54,14 +42,31 @@ export function PipelineBoard({
   cardsByStage: Board;
   counts: Record<string, number>;
   cap: number;
-  contactConnected: boolean;
   canManage: boolean;
 }) {
   const [board, setBoard] = useState<Board>(cardsByStage);
   const [count, setCount] = useState<Record<string, number>>(counts);
-  const [selected, setSelected] = useState<PipelineCard | null>(null);
+  // Clicking a card opens THE lead detail (same sheet as the Leads table),
+  // fetched on demand so the board payload stays light.
+  const [selected, setSelected] = useState<LeadRow | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const [activeCard, setActiveCard] = useState<PipelineCard | null>(null);
   const [, startTransition] = useTransition();
+
+  const openDetail = (card: PipelineCard) => {
+    setOpeningId(card.id);
+    startTransition(async () => {
+      try {
+        const row = await getLeadDetail(card.id);
+        if (row) setSelected(row);
+        else toast.error("Couldn't load the lead detail.");
+      } catch {
+        toast.error("Couldn't load the lead detail.");
+      } finally {
+        setOpeningId(null);
+      }
+    });
+  };
   // Distance-based activation: a plain click (no movement) opens the lead
   // detail; dragging starts only after the pointer moves a few pixels. The
   // old tiny press-delay turned nearly every click into a micro-drag, which
@@ -170,7 +175,8 @@ export function PipelineBoard({
       <div className="flex h-[calc(100vh-11rem)] flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm text-muted-foreground">
-            Press and hold a card to drag it between stages.
+            Drag a card by its ⋮⋮ handle to move it between stages — click
+            anywhere else on the card to open the lead.
           </p>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={exportCsv}>
@@ -192,7 +198,8 @@ export function PipelineBoard({
                 total={count[stage.id] ?? 0}
                 cap={cap}
                 conversion={conv != null ? fmtPct(conv) : null}
-                onCardClick={setSelected}
+                onCardClick={openDetail}
+                openingId={openingId}
               />
             );
           })}
@@ -204,15 +211,12 @@ export function PipelineBoard({
         {activeCard ? <LeadCardContent card={activeCard} overlay /> : null}
       </DragOverlay>
 
-      <CardDetailSheet
-        card={selected}
-        stages={stages}
-        contactConnected={contactConnected}
+      <LeadDetailSheet
+        lead={selected}
         onClose={() => setSelected(null)}
-        onMoved={(card, to) => {
-          setBoard((b) => relocate(b, card.id, card.stageId ?? "", to));
-          setSelected(null);
-        }}
+        onPatch={(patch) =>
+          setSelected((cur) => (cur ? { ...cur, ...patch } : cur))
+        }
       />
     </DndContext>
   );
@@ -225,6 +229,7 @@ function StageColumn({
   cap,
   conversion,
   onCardClick,
+  openingId,
 }: {
   stage: Stage;
   cards: PipelineCard[];
@@ -233,6 +238,8 @@ function StageColumn({
   /** Formatted conversion rate from the previous stage (null on the first). */
   conversion: string | null;
   onCardClick: (c: PipelineCard) => void;
+  /** Card whose detail is currently being fetched (shows a spinner). */
+  openingId: string | null;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const accent = stage.color ?? "#94a3b8";
@@ -271,7 +278,12 @@ function StageColumn({
         }`}
       >
         {cards.map((card) => (
-          <LeadCard key={card.id} card={card} onClick={() => onCardClick(card)} />
+          <LeadCard
+            key={card.id}
+            card={card}
+            opening={openingId === card.id}
+            onClick={() => onCardClick(card)}
+          />
         ))}
         {cards.length === 0 && (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -288,21 +300,44 @@ function StageColumn({
   );
 }
 
-function LeadCard({ card, onClick }: { card: PipelineCard; onClick: () => void }) {
+function LeadCard({
+  card,
+  onClick,
+  opening = false,
+}: {
+  card: PipelineCard;
+  onClick: () => void;
+  opening?: boolean;
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: card.id,
     data: { stageId: card.stageId },
   });
-  // The original stays in place but dims while its overlay clone is dragged.
+  // Dragging happens ONLY from the grip handle; the rest of the card is a
+  // plain click target that opens the lead detail — so the cursor tells the
+  // truth: grab on the handle, pointer everywhere else.
   return (
     <div
       ref={setNodeRef}
       onClick={onClick}
-      className={`touch-none ${isDragging ? "opacity-40" : ""}`}
-      {...listeners}
-      {...attributes}
+      className={`cursor-pointer ${isDragging ? "opacity-40" : ""} ${
+        opening ? "animate-pulse" : ""
+      }`}
     >
-      <LeadCardContent card={card} />
+      <LeadCardContent
+        card={card}
+        dragHandle={
+          <span
+            {...listeners}
+            {...attributes}
+            onClick={(e) => e.stopPropagation()}
+            title="Drag to move"
+            className="-m-1 touch-none rounded p-1 cursor-grab active:cursor-grabbing hover:bg-muted"
+          >
+            <GripVertical className="h-4 w-4 text-muted-foreground/60" />
+          </span>
+        }
+      />
     </div>
   );
 }
@@ -311,20 +346,26 @@ function LeadCard({ card, onClick }: { card: PipelineCard; onClick: () => void }
 function LeadCardContent({
   card,
   overlay = false,
+  dragHandle,
 }: {
   card: PipelineCard;
   overlay?: boolean;
+  dragHandle?: React.ReactNode;
 }) {
   return (
     <div
       className={`rounded-lg border bg-card p-3 shadow-sm select-none ${
         overlay
           ? "rotate-2 scale-[1.03] cursor-grabbing shadow-2xl ring-2 ring-primary/40"
-          : "cursor-grab active:cursor-grabbing"
+          : ""
       }`}
     >
       <div className="flex items-start gap-1.5">
-        <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/40" />
+        <span className="mt-0.5 shrink-0">
+          {dragHandle ?? (
+            <GripVertical className="h-4 w-4 text-muted-foreground/40" />
+          )}
+        </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{card.name}</p>
           <p className="truncate text-xs text-muted-foreground">{card.campaign}</p>
@@ -347,109 +388,5 @@ function LeadCardContent({
         </div>
       </div>
     </div>
-  );
-}
-
-function CardDetailSheet({
-  card,
-  stages,
-  contactConnected,
-  onClose,
-  onMoved,
-}: {
-  card: PipelineCard | null;
-  stages: Stage[];
-  contactConnected: boolean;
-  onClose: () => void;
-  onMoved: (card: PipelineCard, toStageId: string) => void;
-}) {
-  const [, startTransition] = useTransition();
-
-  return (
-    <Sheet open={card !== null} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="overflow-y-auto sm:max-w-md">
-        {card && (
-          <>
-            <SheetHeader>
-              <SheetTitle>{card.name}</SheetTitle>
-              <SheetDescription>{card.campaign}</SheetDescription>
-            </SheetHeader>
-            <div className="space-y-6 px-4 pb-6">
-              <Button
-                variant="outline"
-                size="sm"
-                render={<Link href={`/leads?lead=${card.id}`} />}
-              >
-                <ExternalLink className="mr-1 h-3.5 w-3.5" />
-                View full details
-              </Button>
-
-              <div className="space-y-2">
-                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Stage
-                </label>
-                <select
-                  value={card.stageId ?? ""}
-                  onChange={(e) => {
-                    const to = e.target.value;
-                    startTransition(async () => {
-                      const res = await moveLeadToStage(card.id, to);
-                      if (res.ok) {
-                        toast.success("Stage updated.");
-                        onMoved(card, to);
-                      } else {
-                        toast.error("Couldn't update the stage.");
-                      }
-                    });
-                  }}
-                  className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                >
-                  {stages.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {card.aiScore != null && (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    AI Score
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Progress value={card.aiScore} className="h-1.5" />
-                    <span className="text-sm font-medium">{card.aiScore}</span>
-                  </div>
-                </div>
-              )}
-
-              <Separator />
-
-              <div className="space-y-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Contact
-                </p>
-                <p className="flex items-center gap-2 text-sm">
-                  <Phone className="size-4 shrink-0 text-muted-foreground" />
-                  {card.phone !== "—" ? (
-                    <a href={`tel:${card.phone}`} className="hover:underline">
-                      {card.phone}
-                    </a>
-                  ) : (
-                    <span className="text-muted-foreground">No phone</span>
-                  )}
-                </p>
-                <LeadContactActions
-                  phone={card.phone}
-                  hasPhone={card.phone !== "—"}
-                  email={card.email}
-                />
-              </div>
-            </div>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
   );
 }

@@ -4,6 +4,7 @@ import { ContactQueue } from "@/components/app/contact-queue";
 import { WaitingList } from "@/components/app/waiting-list";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { LeadsFilter, LeadsMultiFilter } from "@/components/app/leads-filter";
+import { LeadsSearch } from "@/components/app/leads-search";
 import {
   FOLLOW_UP_AFTER_DAYS,
   getContactQueue,
@@ -79,6 +80,7 @@ export default async function ContactQueuePage({
     adset?: string;
     state?: string;
     city?: string;
+    q?: string;
     range?: string;
     from?: string;
     to?: string;
@@ -90,6 +92,7 @@ export default async function ContactQueuePage({
   // Multi-select location filters — comma-separated in the URL, absent = all.
   const states = sp.state ? sp.state.split(",").filter(Boolean) : [];
   const cities = sp.city ? sp.city.split(",").filter(Boolean) : [];
+  const q = sp.q?.trim() || null;
   const filter =
     sp.filter === "follow_up" || sp.filter === "new" || sp.filter === "waiting"
       ? sp.filter
@@ -118,6 +121,7 @@ export default async function ContactQueuePage({
           adsetId,
           regions: states,
           cities,
+          q,
           start: resolved.start,
           end: resolved.end,
         }),
@@ -165,6 +169,7 @@ export default async function ContactQueuePage({
   const hrefWith = (f: string | null) => {
     const p = new URLSearchParams();
     if (adsetId) p.set("adset", adsetId);
+    if (sp.q) p.set("q", sp.q);
     if (sp.state) p.set("state", sp.state);
     if (sp.city) p.set("city", sp.city);
     if (sp.range) p.set("range", sp.range);
@@ -188,6 +193,7 @@ export default async function ContactQueuePage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <LeadsSearch initialValue={q ?? ""} />
           {/* Slice today's session to one ad set (e.g. only Redondo Beach). */}
           <LeadsFilter
             param="adset"
@@ -273,7 +279,7 @@ export default async function ContactQueuePage({
       ) : (
         // Keyed by the filters so a slice change resets the client-side list.
         <ContactQueue
-          key={`${adsetId ?? "all"}:${sp.state ?? ""}:${sp.city ?? ""}:${resolved.label}:${filter ?? "all"}`}
+          key={`${adsetId ?? "all"}:${q ?? ""}:${sp.state ?? ""}:${sp.city ?? ""}:${resolved.label}:${filter ?? "all"}`}
           data={viewData}
           automation={queueAutomation}
           defaultCriteria={workspaceCriteria}

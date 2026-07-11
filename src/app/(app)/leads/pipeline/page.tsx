@@ -1,11 +1,9 @@
-import { auth } from "@/lib/auth";
 import {
   getWorkspaceContext,
   getPipeline,
   getWorkspaceGeoOptions,
 } from "@/lib/data";
 import { canManageWorkspace } from "@/lib/permissions";
-import { isAnyTelephonyConnected } from "@/lib/integrations/telephony";
 import { resolveDateRange } from "@/lib/date-range";
 import { PipelineBoard } from "@/components/app/pipeline-board";
 import { LeadsMultiFilter } from "@/components/app/leads-filter";
@@ -52,7 +50,6 @@ export default async function PipelinePage({
   const states = sp.state ? sp.state.split(",").filter(Boolean) : [];
   const cities = sp.city ? sp.city.split(",").filter(Boolean) : [];
 
-  const session = await auth();
   const [pipeline, canManage, geo] = await Promise.all([
     getPipeline(active.id, {
       regions: states,
@@ -63,9 +60,6 @@ export default async function PipelinePage({
     canManageWorkspace(active.id),
     getWorkspaceGeoOptions(active.id),
   ]);
-  const contactConnected = session?.user?.id
-    ? await isAnyTelephonyConnected(session.user.id)
-    : false;
 
   const stateOptions = [
     ...new Set(geo.map((g) => g.region).filter(Boolean)),
@@ -131,7 +125,6 @@ export default async function PipelinePage({
         cardsByStage={pipeline.cardsByStage}
         counts={pipeline.counts}
         cap={pipeline.cap}
-        contactConnected={contactConnected}
         canManage={canManage}
       />
     </div>

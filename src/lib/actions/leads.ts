@@ -13,6 +13,7 @@ import {
   NoProviderConnectedError,
 } from "@/lib/integrations/telephony";
 import { isValidRcaPath } from "@/lib/rca";
+import { getLeadRowById, type LeadRow } from "@/lib/data";
 import {
   OUTREACH_CHANNELS,
   OUTREACH_OUTCOMES,
@@ -758,4 +759,13 @@ export async function smsLead(
       message: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * Full lead detail in the Leads-table row shape — lets other surfaces
+ * (e.g. the Pipeline board) open the same LeadDetailSheet on demand.
+ */
+export async function getLeadDetail(leadId: string): Promise<LeadRow | null> {
+  const { lead } = await requireLeadAccess(leadId);
+  return getLeadRowById(lead.workspaceId, leadId);
 }

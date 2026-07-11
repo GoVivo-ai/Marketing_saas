@@ -1608,6 +1608,8 @@ export async function getContactQueue(
     regions?: string[] | null;
     /** Restrict to leads whose ad set targets one of these cities. */
     cities?: string[] | null;
+    /** Free-text search over the lead's name, email and phone. */
+    q?: string | null;
     /** Restrict to leads created inside this window (inclusive). */
     start?: Date | null;
     end?: Date | null;
@@ -1653,6 +1655,13 @@ export async function getContactQueue(
           : undefined,
         opts.cities?.length
           ? inArray(schema.adsets.cityName, opts.cities)
+          : undefined,
+        opts.q
+          ? or(
+              ilike(schema.leads.name, `%${opts.q}%`),
+              ilike(schema.leads.email, `%${opts.q}%`),
+              ilike(schema.leads.phone, `%${opts.q}%`),
+            )
           : undefined,
         opts.start ? gte(schema.leads.createdAt, opts.start) : undefined,
         opts.end ? lte(schema.leads.createdAt, opts.end) : undefined,

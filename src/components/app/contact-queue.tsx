@@ -492,6 +492,19 @@ export function ContactQueue({
     setFollowUp(false);
   };
 
+  /** Jump the queue: bring an Up-next lead to the front to work it now. */
+  const workNow = (id: string) => {
+    setItems((list) => {
+      const i = list.findIndex((x) => x.id === id);
+      if (i <= 0) return list;
+      return [list[i], ...list.slice(0, i), ...list.slice(i + 1)];
+    });
+    setShowHistory(false);
+    setChannel("call");
+    setDisqualOutcome(null);
+    setFollowUp(false);
+  };
+
   const onCall = () => {
     if (!current?.phone) return;
     setChannel("call");
@@ -691,23 +704,6 @@ export function ContactQueue({
                 );
               })()}
 
-              {/* What "a good lead" means for THIS lead — the campaign's
-                  scoring criteria, or the workspace-wide one as fallback. */}
-              {(current.criteria ?? defaultCriteria) && (
-                <div className="rounded-lg border bg-muted/40 p-3">
-                  <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <ListChecks className="h-3.5 w-3.5" />
-                    Evaluation criteria
-                    {current.criteria == null && (
-                      <span className="normal-case font-normal">(workspace default)</span>
-                    )}
-                  </p>
-                  <p className="mt-1 text-sm leading-snug whitespace-pre-wrap text-muted-foreground">
-                    {current.criteria ?? defaultCriteria}
-                  </p>
-                </div>
-              )}
-
               {disqualOutcome ? (
                 /* Terminal outcome logged — capture the RCA reason, then move on. */
                 <QueueDisqualify
@@ -846,18 +842,23 @@ export function ContactQueue({
             {upNext.length ? (
               <ul className="divide-y">
                 {upNext.map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{item.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {item.geo?.leadCity ?? "—"}
-                        {item.aiScore != null ? ` · Score ${item.aiScore}` : ""}
-                      </p>
-                    </div>
-                    <DueBadge due={item.due} />
+                  <li key={item.id}>
+                    {/* Click to jump the queue and work this lead now. */}
+                    <button
+                      type="button"
+                      onClick={() => workNow(item.id)}
+                      title="Work this lead now"
+                      className="flex w-full items-center justify-between gap-2 rounded-md px-1 py-2.5 text-left text-sm hover:bg-muted/60"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{item.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {item.geo?.leadCity ?? "—"}
+                          {item.aiScore != null ? ` · Score ${item.aiScore}` : ""}
+                        </p>
+                      </div>
+                      <DueBadge due={item.due} />
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -912,6 +913,28 @@ export function ContactQueue({
             )}
           </CardContent>
         </Card>
+
+        {/* What "a good lead" means for the CURRENT lead — its campaign's
+            scoring criteria (AI digest), or the workspace-wide fallback. */}
+        {current && (current.criteria ?? defaultCriteria) && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Sparkles className="h-4 w-4 text-primary" />
+                Evaluation criteria
+              </CardTitle>
+              <CardDescription>
+                For {current.name}
+                {current.criteria == null ? " · workspace default" : ""}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm leading-snug whitespace-pre-wrap text-muted-foreground">
+                {current.criteria ?? defaultCriteria}
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

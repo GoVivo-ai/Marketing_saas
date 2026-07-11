@@ -187,10 +187,10 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
         </div>
 
       <div className="lg:col-span-2">
-        <div className="max-h-[420px] overflow-auto rounded-xl border">
+        <div className="overflow-hidden rounded-xl border [&_[data-slot=table-container]]:max-h-[420px]">
           <Table>
             {/* Header and totals stay pinned while the rows scroll. */}
-            <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-card">
+            <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-muted [&_th]:font-semibold">
               <TableRow>
                 <TableHead>City</TableHead>
                 <TableHead className="text-right">Radius</TableHead>
@@ -269,7 +269,7 @@ export function AdSetExplorer({ adsets }: { adsets: AdSetRow[] }) {
             {cityRows.length > 0 && (
               /* Ads Manager-style totals for the current slice: summed spend
                  and leads, CPL recomputed from the totals (not averaged). */
-              <TableFooter className="[&_td]:sticky [&_td]:bottom-0 [&_td]:z-10 [&_td]:bg-card">
+              <TableFooter className="[&_td]:sticky [&_td]:bottom-0 [&_td]:z-10 [&_td]:bg-muted">
                 <TableRow>
                   <TableCell className="font-medium">
                     Totals · {cityRows.length} {cityRows.length === 1 ? "city" : "cities"} ·{" "}

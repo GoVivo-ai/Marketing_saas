@@ -122,7 +122,16 @@ export function ScoreAutomationForm({
           <Label>Send as</Label>
           <Select value={sender} onValueChange={(v) => v && setSender(v)}>
             <SelectTrigger className="w-full max-w-sm" aria-label="Sender">
-              <SelectValue placeholder="Pick a team member…" />
+              {/* Render the label ourselves — the primitive falls back to the
+                  raw value (a UUID) when it can't resolve the item. */}
+              <SelectValue placeholder="Pick a team member…">
+                {sender
+                  ? (() => {
+                      const s = senders.find((x) => x.id === sender);
+                      return s ? `${s.name} (${s.email})` : undefined;
+                    })()
+                  : undefined}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {senders.map((s) => (

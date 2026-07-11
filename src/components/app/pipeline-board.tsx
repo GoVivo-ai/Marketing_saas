@@ -12,8 +12,17 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import Link from "next/link";
 import { toast } from "sonner";
-import { Phone, Sparkles, GripVertical, Loader2, ChevronRight, Download } from "lucide-react";
+import {
+  Phone,
+  Sparkles,
+  GripVertical,
+  Loader2,
+  ChevronRight,
+  Download,
+  ExternalLink,
+} from "lucide-react";
 import { moveLeadToStage } from "@/lib/actions/leads";
 import { Button } from "@/components/ui/button";
 import type { Stage, PipelineCard } from "@/lib/data";
@@ -53,11 +62,12 @@ export function PipelineBoard({
   const [selected, setSelected] = useState<PipelineCard | null>(null);
   const [activeCard, setActiveCard] = useState<PipelineCard | null>(null);
   const [, startTransition] = useTransition();
-  // Near-instant press-and-hold to drag (10ms); a quick click still opens the
-  // lead detail. The tiny delay barely distinguishes a tap from a drag, so
-  // dragging starts almost immediately.
+  // Distance-based activation: a plain click (no movement) opens the lead
+  // detail; dragging starts only after the pointer moves a few pixels. The
+  // old tiny press-delay turned nearly every click into a micro-drag, which
+  // swallowed the click and made the detail sheet unreachable.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { delay: 10, tolerance: 8 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
   function relocate(b: Board, cardId: string, from: string, to: string): Board {
@@ -365,6 +375,15 @@ function CardDetailSheet({
               <SheetDescription>{card.campaign}</SheetDescription>
             </SheetHeader>
             <div className="space-y-6 px-4 pb-6">
+              <Button
+                variant="outline"
+                size="sm"
+                render={<Link href={`/leads?lead=${card.id}`} />}
+              >
+                <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                View full details
+              </Button>
+
               <div className="space-y-2">
                 <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Stage

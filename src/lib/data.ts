@@ -1344,7 +1344,17 @@ export interface PipelineData {
 /** Columns load at most this many cards; the header shows the true total. */
 export const PIPELINE_CARD_CAP = 100;
 
-export async function getPipeline(workspaceId: string): Promise<PipelineData> {
+export async function getPipeline(
+  workspaceId: string,
+  opts: {
+    /** Restrict to leads whose ad set targets one of these states/cities. */
+    regions?: string[] | null;
+    cities?: string[] | null;
+    /** Restrict to leads created inside this window (inclusive). */
+    start?: Date | null;
+    end?: Date | null;
+  } = {},
+): Promise<PipelineData> {
   const stages = await db()
     .select({
       id: schema.stages.id,
@@ -1357,13 +1367,27 @@ export async function getPipeline(workspaceId: string): Promise<PipelineData> {
     .where(eq(schema.stages.workspaceId, workspaceId))
     .orderBy(asc(schema.stages.position));
 
+  // Shared lead slice: location (via the ad set's targeting) + created date.
+  const leadFilters = [
+    eq(schema.leads.workspaceId, workspaceId),
+    opts.regions?.length
+      ? inArray(schema.adsets.cityRegion, opts.regions)
+      : undefined,
+    opts.cities?.length
+      ? inArray(schema.adsets.cityName, opts.cities)
+      : undefined,
+    opts.start ? gte(schema.leads.createdAt, opts.start) : undefined,
+    opts.end ? lte(schema.leads.createdAt, opts.end) : undefined,
+  ];
+
   const countRows = await db()
     .select({
       stageId: schema.leads.stageId,
       count: sql<number>`count(*)::int`,
     })
     .from(schema.leads)
-    .where(eq(schema.leads.workspaceId, workspaceId))
+    .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+    .where(and(...leadFilters))
     .groupBy(schema.leads.stageId);
   const counts: Record<string, number> = {};
   for (const r of countRows) if (r.stageId) counts[r.stageId] = r.count;
@@ -1384,12 +1408,8 @@ export async function getPipeline(workspaceId: string): Promise<PipelineData> {
       })
       .from(schema.leads)
       .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
-      .where(
-        and(
-          eq(schema.leads.workspaceId, workspaceId),
-          eq(schema.leads.stageId, st.id),
-        ),
-      )
+      .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+      .where(and(...leadFilters, eq(schema.leads.stageId, st.id)))
       .orderBy(desc(schema.leads.createdAt))
       .limit(PIPELINE_CARD_CAP);
 

@@ -55,6 +55,28 @@ async function graphGetAll<T>(firstUrl: string, token: string): Promise<T[]> {
   return out;
 }
 
+// By default Meta's /ads edge only returns ACTIVE/PAUSED ads, so leads from
+// archived ads (and their campaigns) were never fetched. Request every
+// status explicitly so those leads can still be pulled and attributed.
+// Note: "DELETED" is rejected by this edge ("cannot request deleted
+// objects"), so we request every non-deleted status — crucially ARCHIVED,
+// which holds the bulk of historical leads.
+const AD_STATUSES = encodeURIComponent(
+  JSON.stringify([
+    "ACTIVE",
+    "PAUSED",
+    "ARCHIVED",
+    "ADSET_PAUSED",
+    "CAMPAIGN_PAUSED",
+    "DISAPPROVED",
+    "PENDING_REVIEW",
+    "PREAPPROVED",
+    "PENDING_BILLING_INFO",
+    "IN_PROCESS",
+    "WITH_ISSUES",
+  ]),
+);
+
 /**
  * Meta (Facebook + Instagram) Marketing API connector.
  *
@@ -153,30 +175,9 @@ export const metaConnector: MarketingConnector = {
       adset_id?: string;
       campaign?: { id: string; name?: string; status?: string; objective?: string };
     };
-    // By default Meta's /ads edge only returns ACTIVE/PAUSED ads, so leads from
-    // archived ads (and their campaigns) were never fetched. Request every
-    // status explicitly so those leads can still be pulled and attributed.
-    // Note: "DELETED" is rejected by this edge ("cannot request deleted
-    // objects"), so we request every non-deleted status — crucially ARCHIVED,
-    // which holds the bulk of historical leads.
-    const adStatuses = encodeURIComponent(
-      JSON.stringify([
-        "ACTIVE",
-        "PAUSED",
-        "ARCHIVED",
-        "ADSET_PAUSED",
-        "CAMPAIGN_PAUSED",
-        "DISAPPROVED",
-        "PENDING_REVIEW",
-        "PREAPPROVED",
-        "PENDING_BILLING_INFO",
-        "IN_PROCESS",
-        "WITH_ISSUES",
-      ]),
-    );
     const ads = await graphGetAll<AdRow>(
       `${GRAPH}/${creds.accountId}/ads?fields=id,campaign_id,adset_id,campaign{id,name,status,objective}` +
-        `&effective_status=${adStatuses}&limit=200`,
+        `&effective_status=${AD_STATUSES}&limit=200`,
       creds.accessToken,
     );
 
@@ -386,6 +387,103 @@ export async function fetchAdSetDailyMetrics(
       extra: { reach: Number(r.reach ?? 0), frequency: Number(r.frequency ?? 0) },
     };
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Lead-gen form questions — the CURRENT form definition, straight from the
+// ads' creatives. Lead formData only reflects past submissions, so when the
+// operator edits the form on Meta this is the only way to surface the new
+// questions (and drop removed ones) before fresh leads arrive.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface LeadFormQuestion {
+  key: string;
+  /** Question text as the lead sees it. */
+  label?: string;
+  type?: string;
+}
+
+/**
+ * Lead-gen form questions per campaign (keyed by campaign external id).
+ * Walks the account's ads, pulls the form id from each creative's
+ * call-to-action, then fetches each unique form's questions once.
+ */
+export async function fetchLeadFormQuestions(
+  creds: ConnectorCredentials,
+): Promise<Map<string, LeadFormQuestion[]>> {
+  type Cta = { value?: { lead_gen_form_id?: string } };
+  type AdRow = {
+    id: string;
+    campaign_id?: string;
+    creative?: {
+      // Classic creatives: one CTA under the story spec's link/video data.
+      object_story_spec?: {
+        link_data?: { call_to_action?: Cta };
+        video_data?: { call_to_action?: Cta };
+      };
+      // Flexible/Advantage+ creatives: CTAs live in the asset feed instead.
+      asset_feed_spec?: { call_to_actions?: Cta[] };
+    };
+  };
+  const ads = await graphGetAll<AdRow>(
+    `${GRAPH}/${creds.accountId}/ads?fields=id,campaign_id,creative{object_story_spec,asset_feed_spec}` +
+      `&effective_status=${AD_STATUSES}&limit=200`,
+    creds.accessToken,
+  );
+
+  const formIdsByCampaign = new Map<string, Set<string>>();
+  for (const ad of ads) {
+    if (!ad.campaign_id) continue;
+    const spec = ad.creative?.object_story_spec;
+    const formIds = [
+      spec?.link_data?.call_to_action?.value?.lead_gen_form_id,
+      spec?.video_data?.call_to_action?.value?.lead_gen_form_id,
+      ...(ad.creative?.asset_feed_spec?.call_to_actions ?? []).map(
+        (c) => c.value?.lead_gen_form_id,
+      ),
+    ].filter((id): id is string => Boolean(id));
+    if (!formIds.length) continue;
+    const set = formIdsByCampaign.get(ad.campaign_id) ?? new Set<string>();
+    for (const id of formIds) set.add(id);
+    formIdsByCampaign.set(ad.campaign_id, set);
+  }
+
+  // Fetch each unique form once (campaigns commonly share a form).
+  type Form = { questions?: { key?: string; label?: string; type?: string }[] };
+  const questionsByForm = new Map<string, LeadFormQuestion[]>();
+  const uniqueFormIds = new Set([...formIdsByCampaign.values()].flatMap((s) => [...s]));
+  for (const formId of uniqueFormIds) {
+    try {
+      const form = (await graphGet<never>(
+        `${GRAPH}/${formId}?fields=questions`,
+        creds.accessToken,
+      )) as unknown as Form;
+      questionsByForm.set(
+        formId,
+        (form.questions ?? [])
+          .filter((q) => q.key)
+          .map((q) => ({ key: q.key!, label: q.label, type: q.type })),
+      );
+    } catch {
+      // A single unreadable form (deleted, permission gap) shouldn't sink
+      // the rest — campaigns using it just keep their previous questions.
+    }
+  }
+
+  const out = new Map<string, LeadFormQuestion[]>();
+  for (const [campaignId, formIds] of formIdsByCampaign) {
+    const seen = new Set<string>();
+    const questions: LeadFormQuestion[] = [];
+    for (const formId of formIds) {
+      for (const q of questionsByForm.get(formId) ?? []) {
+        if (seen.has(q.key)) continue;
+        seen.add(q.key);
+        questions.push(q);
+      }
+    }
+    if (questions.length) out.set(campaignId, questions);
+  }
+  return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

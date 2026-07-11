@@ -217,6 +217,15 @@ export const campaigns = pgTable(
      * (the platform upsert never writes this column).
      */
     scoringCriteria: text("scoring_criteria"),
+    /**
+     * The questions of the campaign's lead-gen form(s), refreshed from the
+     * platform on every sync. Source of truth for the fields shown next to
+     * the scoring-criteria editor — reflects the CURRENT form even before
+     * any lead has answered it (lead formData only shows past submissions).
+     */
+    formQuestions: jsonb("form_questions").$type<
+      { key: string; label?: string; type?: string }[]
+    >(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -454,6 +463,12 @@ export const leads = pgTable(
     assignedToId: text("assigned_to_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    /**
+     * When the score automation auto-contacted this lead (SMS). Doubles as the
+     * idempotency guard: a lead is auto-contacted at most once, even across
+     * re-scores.
+     */
+    autoContactedAt: timestamp("auto_contacted_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -462,6 +477,34 @@ export const leads = pgTable(
     index("lead_workspace_status_idx").on(t.workspaceId, t.status),
   ],
 );
+
+/**
+ * Score-based auto-contact rule, one per workspace. When enabled, every lead
+ * whose fresh AI score lands above/below the threshold is contacted
+ * automatically: either an SMS is sent through the sender's connected
+ * telephony account (RingCentral/Dialpad), or the lead is highlighted in the
+ * Contact Queue with `message` as the agent's script.
+ */
+export const scoreAutomations = pgTable("score_automations", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .unique()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  /** Contact leads scoring "above" (>=) or "below" (<=) the threshold. */
+  direction: text("direction").notNull().default("above"),
+  threshold: integer("threshold").notNull().default(70),
+  /** "sms" = send automatically; "queue" = flag in the Contact Queue. */
+  action: text("action").notNull().default("sms"),
+  /** SMS body or agent script. Supports {name} and {campaign} placeholders. */
+  message: text("message").notNull().default(""),
+  /** Whose telephony account sends the automated SMS. */
+  senderUserId: text("sender_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
 
 /**
  * Geocoding cache — maps a "City, Region, Country" query to coordinates so we

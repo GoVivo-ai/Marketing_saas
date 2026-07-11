@@ -70,7 +70,7 @@ export function CampaignScoringForm({
               >
                 <Plus className="h-3 w-3 opacity-50 group-hover:opacity-100" />
                 <span className="font-medium capitalize">
-                  {f.key.replaceAll("_", " ")}
+                  {f.label ?? f.key.replaceAll("_", " ")}
                 </span>
                 {f.example && (
                   <span className="max-w-[140px] truncate text-muted-foreground">

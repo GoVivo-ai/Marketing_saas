@@ -1,7 +1,11 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { getConnector } from "@/lib/integrations";
-import { listAdSets, fetchAdSetDailyMetrics } from "@/lib/integrations/meta";
+import {
+  listAdSets,
+  fetchAdSetDailyMetrics,
+  fetchLeadFormQuestions,
+} from "@/lib/integrations/meta";
 import { geocodeCity, geocodeCityCached } from "@/lib/integrations/geocode";
 import { decryptSecret } from "@/lib/crypto";
 import { getSecret } from "@/lib/settings";
@@ -12,6 +16,7 @@ import {
   campaignCriteriaByLeadId,
 } from "@/lib/ai/lead-scoring";
 import { isAiConfigured } from "@/lib/ai/provider";
+import { runScoreAutomation } from "@/lib/automations";
 
 export interface SyncStats {
   campaigns: number;
@@ -112,6 +117,27 @@ export async function syncConnection(
     .from(schema.campaigns)
     .where(eq(schema.campaigns.connectionId, conn.id));
   const campaignIdByExternal = new Map(campaignRows.map((r) => [r.externalId, r.id]));
+
+  // 1b) Lead-gen form questions — refresh each campaign's CURRENT form
+  // definition so the scoring-criteria editor shows the fields the form asks
+  // today, not just what past leads answered. Non-fatal: a creative/form
+  // permission gap shouldn't block metrics or leads.
+  if (conn.platform === "meta") {
+    try {
+      const questionsByCampaign = await fetchLeadFormQuestions(creds);
+      for (const [externalId, questions] of questionsByCampaign) {
+        const campaignId = campaignIdByExternal.get(externalId);
+        if (!campaignId) continue;
+        await db()
+          .update(schema.campaigns)
+          .set({ formQuestions: questions })
+          .where(eq(schema.campaigns.id, campaignId));
+      }
+    } catch {
+      // Keep the previously-stored questions; the UI falls back to
+      // lead-derived fields when none were ever stored.
+    }
+  }
 
   // 2) Daily metrics
   const metrics = await connector.fetchDailyMetrics(creds, range);
@@ -386,6 +412,7 @@ export async function syncConnection(
   // Non-fatal and skipped entirely when no Anthropic key is configured; a
   // single lead's failure never aborts the rest of the batch.
   let leadsScored = 0;
+  const scoredLeadIds: string[] = [];
   if (freshLeads.length && workspace && (await isAiConfigured(conn.workspaceId))) {
     // In-radius leads score higher — they live where the service operates.
     const boosts = await radiusBoostByLeadId(freshLeads.map((l) => l.id));
@@ -415,11 +442,20 @@ export async function syncConnection(
           })
           .where(eq(schema.leads.id, lead.id));
         leadsScored++;
+        scoredLeadIds.push(lead.id);
       } catch {
         // Leave aiScore null — the inbox shows "Pending" and a later
         // re-score can fill it in. One bad lead shouldn't block the batch.
       }
     }
+  }
+
+  // 5) Score automation — auto-contact just-scored leads per the workspace
+  // rule (SMS above/below a threshold). Non-fatal like scoring itself.
+  try {
+    await runScoreAutomation(conn.workspaceId, scoredLeadIds);
+  } catch {
+    // Leads stay un-contacted; the next scoring pass retries them.
   }
 
   await db()

@@ -518,41 +518,68 @@ export async function getCampaignById(
 
 export interface CampaignFormField {
   key: string;
+  /** Question text as the lead sees it (from the synced form definition). */
+  label?: string;
   /** A representative answer from a recent lead, shown as context. */
-  example: string;
+  example?: string;
 }
 
 /**
- * The distinct form questions leads answer in a campaign, each with a sample
- * answer. Surfaced next to the AI scoring-criteria editor so the operator can
- * see exactly which fields they can reference when writing the prompt.
- * Samples the most recent leads (fields vary lead to lead).
+ * The form questions of a campaign, surfaced next to the AI scoring-criteria
+ * editor so the operator can see exactly which fields they can reference when
+ * writing the prompt. The synced form definition (campaigns.formQuestions) is
+ * the source of truth — it tracks the CURRENT form on the platform, so edits
+ * to the form show up on the next sync even before new leads arrive. Recent
+ * leads only contribute a sample answer per question; when a campaign has no
+ * synced definition (older platform, pre-sync) they are the fallback source.
  */
 export async function getCampaignFormFields(
   workspaceId: string,
   campaignId: string,
 ): Promise<CampaignFormField[]> {
-  const rows = await db()
-    .select({ formData: schema.leads.formData })
-    .from(schema.leads)
-    .where(
-      and(
-        eq(schema.leads.workspaceId, workspaceId),
-        eq(schema.leads.campaignId, campaignId),
-        isNotNull(schema.leads.formData),
-      ),
-    )
-    .orderBy(desc(schema.leads.createdAt))
-    .limit(50);
+  const [[campaign], rows] = await Promise.all([
+    db()
+      .select({ formQuestions: schema.campaigns.formQuestions })
+      .from(schema.campaigns)
+      .where(
+        and(
+          eq(schema.campaigns.id, campaignId),
+          eq(schema.campaigns.workspaceId, workspaceId),
+        ),
+      )
+      .limit(1),
+    db()
+      .select({ formData: schema.leads.formData })
+      .from(schema.leads)
+      .where(
+        and(
+          eq(schema.leads.workspaceId, workspaceId),
+          eq(schema.leads.campaignId, campaignId),
+          isNotNull(schema.leads.formData),
+        ),
+      )
+      .orderBy(desc(schema.leads.createdAt))
+      .limit(50),
+  ]);
 
-  const fields = new Map<string, string>();
+  // Newest answer per field key, used as the example shown on each chip.
+  const examples = new Map<string, string>();
   for (const r of rows) {
     for (const [key, value] of Object.entries(r.formData ?? {})) {
-      if (fields.has(key)) continue;
-      fields.set(key, typeof value === "string" ? value : JSON.stringify(value));
+      if (examples.has(key)) continue;
+      examples.set(key, typeof value === "string" ? value : JSON.stringify(value));
     }
   }
-  return [...fields].map(([key, example]) => ({ key, example }));
+
+  const questions = campaign?.formQuestions;
+  if (questions?.length) {
+    return questions.map((q) => ({
+      key: q.key,
+      label: q.label,
+      example: examples.get(q.key),
+    }));
+  }
+  return [...examples].map(([key, example]) => ({ key, example }));
 }
 
 /** Ad sets of a campaign with metrics over a range + audience-location geometry. */

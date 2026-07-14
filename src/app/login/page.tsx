@@ -8,30 +8,33 @@ import { Label } from "@/components/ui/label";
 import { VivoLogo } from "@/components/app/vivo-logo";
 
 const highlights = [
-  { icon: BarChart3, text: "Rendimiento de campañas unificado" },
-  { icon: Sparkles, text: "Insights y scoring de leads con IA" },
-  { icon: Users, text: "Multi-cliente para tu agencia" },
+  { icon: BarChart3, text: "Unified campaign performance" },
+  { icon: Sparkles, text: "AI-powered insights & lead scoring" },
+  { icon: Users, text: "Multi-client for your agency" },
 ];
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; email?: string }>;
 }) {
   const session = await auth();
   if (session?.user) redirect("/dashboard");
-  const { error } = await searchParams;
+  const { error, email: prevEmail } = await searchParams;
 
   async function login(formData: FormData) {
     "use server";
+    const email = String(formData.get("email") ?? "");
     try {
       await signIn("credentials", {
-        email: formData.get("email"),
+        email,
         password: formData.get("password"),
         redirectTo: "/dashboard",
       });
     } catch (err) {
-      if (err instanceof AuthError) redirect("/login?error=1");
+      // Keep the typed email so a wrong password doesn't clear the form.
+      if (err instanceof AuthError)
+        redirect(`/login?error=1&email=${encodeURIComponent(email)}`);
       throw err;
     }
   }
@@ -66,12 +69,12 @@ export default async function LoginPage({
         <div className="relative z-10 space-y-7">
           <div className="bg-vivo-gradient h-1.5 w-28 rounded-full" />
           <h1 className="max-w-md text-4xl leading-tight font-extrabold tracking-tight text-white">
-            Inteligencia de marketing,{" "}
-            <span className="text-vivo-gradient">en un solo lugar</span>.
+            Marketing intelligence,{" "}
+            <span className="text-vivo-gradient">all in one place</span>.
           </h1>
           <p className="max-w-sm text-base text-white/65">
-            Rendimiento de anuncios, insights con IA y gestión de leads —
-            unificados para todos tus clientes.
+            Ad performance, AI insights and lead management — unified for
+            every client you serve.
           </p>
           <ul className="space-y-4 pt-2">
             {highlights.map(({ icon: Icon, text }) => (
@@ -105,10 +108,10 @@ export default async function LoginPage({
 
           <div className="space-y-1.5">
             <h2 className="text-2xl font-bold tracking-tight">
-              Bienvenido de nuevo
+              Welcome back
             </h2>
             <p className="text-sm text-muted-foreground">
-              Ingresa a tu workspace de marketing
+              Sign in to your marketing workspace
             </p>
           </div>
 
@@ -121,15 +124,16 @@ export default async function LoginPage({
                   id="email"
                   name="email"
                   type="email"
-                  placeholder="tu@govivo.ai"
+                  placeholder="you@govivo.ai"
                   autoComplete="email"
+                  defaultValue={prevEmail ?? ""}
                   required
                   className="h-11 pl-10"
                 />
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Contraseña</Label>
+              <Label htmlFor="password">Password</Label>
               <div className="relative">
                 <Lock className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -144,19 +148,19 @@ export default async function LoginPage({
             </div>
             {error && (
               <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                Email o contraseña inválidos. Inténtalo de nuevo.
+                Invalid email or password. Please try again.
               </p>
             )}
             <Button
               type="submit"
               className="h-11 w-full text-sm font-semibold shadow-lg shadow-[#04d98b]/20"
             >
-              Iniciar sesión
+              Sign in
             </Button>
           </form>
 
           <p className="text-center text-xs text-muted-foreground">
-            ¿Problemas para entrar? Contacta a tu administrador.
+            Having trouble signing in? Contact your administrator.
           </p>
         </div>
       </section>

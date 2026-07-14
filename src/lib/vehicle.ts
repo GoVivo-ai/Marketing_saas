@@ -7,7 +7,7 @@
  * applicant answers Yes/No, so the ANSWER is the verdict and the year in the
  * question text is just what we show.
  */
-export const MIN_VEHICLE_YEAR = 2015;
+export const MIN_VEHICLE_YEAR = 2012;
 
 export interface VehicleAnswer {
   /** true = Yes (meets), false = No (doesn't), null = question not answered. */

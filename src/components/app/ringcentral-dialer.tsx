@@ -194,8 +194,16 @@ export function RingCentralDialer({
       }
     };
     window.addEventListener("message", onMessage);
+    // Watchdog: the widget can show itself in ways we get no message for
+    // (sign-in prompt on a fresh session, internal re-renders). If the panel
+    // is visible but the user never opened it, close it — otherwise it lingers
+    // with no X, since the pinned close only renders in the opened state.
+    const watchdog = setInterval(() => {
+      if (!wantOpen.current && widgetPanelRect()) adapter()?.setClosed(true);
+    }, 800);
     return () => {
       clearInterval(iv);
+      clearInterval(watchdog);
       window.removeEventListener(OPEN_EVENT, onOpen);
       window.removeEventListener("message", onMessage);
     };

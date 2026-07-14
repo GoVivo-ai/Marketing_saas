@@ -436,7 +436,8 @@ function lastTouchLine(item: QueueItem): string {
   const outcome = item.lastOutcome
     ? OUTCOME_CHIPS.find((c) => c.outcome === item.lastOutcome)?.label ?? item.lastOutcome
     : "outcome not logged";
-  return `${item.touches} ${item.touches === 1 ? "touch" : "touches"} · last ${channel ?? "touch"} ${ago} · ${outcome}`;
+  const by = item.lastBy ? ` by ${item.lastBy}` : "";
+  return `${item.touches} ${item.touches === 1 ? "touch" : "touches"} · last ${channel ?? "touch"}${by} ${ago} · ${outcome}`;
 }
 
 /** Subtle status pill, matching the table's "● New" stage badges. */

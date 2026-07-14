@@ -72,6 +72,7 @@ export function WaitingList({ items }: { items: WaitingItem[] }) {
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {item.lastChannel ? channelLabel[item.lastChannel] ?? item.lastChannel : "—"}
+                  {item.lastBy ? ` by ${item.lastBy}` : ""}
                   {" · "}
                   {formatDistanceToNow(item.lastTouchAt, { addSuffix: true })}
                 </TableCell>

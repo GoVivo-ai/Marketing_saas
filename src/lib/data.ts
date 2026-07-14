@@ -1458,6 +1458,8 @@ export interface QueueItem {
   lastTouchAt: Date | null;
   lastChannel: string | null;
   lastOutcome: string | null;
+  /** Agent who made the last touch — so others see who's been working it. */
+  lastBy: string | null;
   /** Why the lead is queued: never touched vs. follow-up window elapsed. */
   due: "new" | "follow_up";
 }
@@ -1471,6 +1473,8 @@ export interface WaitingItem {
   aiScore: number | null;
   lastTouchAt: Date;
   lastChannel: string | null;
+  /** Agent who made the last touch. */
+  lastBy: string | null;
   /** When it re-enters the queue as a due follow-up (lastTouch + window). */
   dueAt: Date;
 }
@@ -1694,9 +1698,13 @@ export async function getContactQueue(
         leadId: schema.leadEvents.leadId,
         type: schema.leadEvents.type,
         payload: schema.leadEvents.payload,
+        // Which agent made the last touch — shown so another agent picking up
+        // the lead knows who already worked it.
+        actor: schema.users.name,
       })
       .from(schema.leadEvents)
       .innerJoin(schema.leads, eq(schema.leadEvents.leadId, schema.leads.id))
+      .leftJoin(schema.users, eq(schema.leadEvents.userId, schema.users.id))
       .where(
         and(
           eq(schema.leads.workspaceId, workspaceId),
@@ -1742,6 +1750,7 @@ export async function getContactQueue(
           aiScore: r.aiScore,
           lastTouchAt,
           lastChannel: last?.type ?? null,
+          lastBy: last?.actor ?? null,
           dueAt: new Date(lastTouchAt.getTime() + windowMs),
         });
       }
@@ -1766,6 +1775,7 @@ export async function getContactQueue(
       lastTouchAt,
       lastChannel: last?.type ?? null,
       lastOutcome,
+      lastBy: last?.actor ?? null,
       due,
     });
   }

@@ -1636,7 +1636,11 @@ export async function getContactQueue(
       leadLat: schema.leads.geoLat,
       leadLng: schema.leads.geoLng,
       formData: schema.leads.formData,
-      targetCity: schema.adsets.cityName,
+      // Manual/imported leads have no ad set — fall back to the advertisement
+      // area recorded on the lead itself (tracking-sheet import).
+      targetCity: sql<
+        string | null
+      >`coalesce(${schema.adsets.cityName}, ${schema.leads.formData}->>'advertisement_area')`,
       targetLat: schema.adsets.lat,
       targetLng: schema.adsets.lng,
       targetRadius: schema.adsets.radius,

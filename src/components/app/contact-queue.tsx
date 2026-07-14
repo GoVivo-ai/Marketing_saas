@@ -370,11 +370,31 @@ function geoLine(item: QueueItem): {
         off: false,
       };
     case "no_location":
-      return { text: "No location in form", cls: "text-muted-foreground", off: true };
+      return {
+        text: geo.targetCity
+          ? `No location in form — applying to ${geo.targetCity}`
+          : "No location in form",
+        cls: "text-muted-foreground",
+        off: true,
+      };
     default:
-      return geo.leadCity
-        ? { text: geo.leadCity, cls: "text-muted-foreground", off: false }
-        : null;
+      // No ad-set radius to judge against — still show where the driver is
+      // and which area they applied to.
+      if (geo.leadCity && geo.targetCity)
+        return {
+          text: `${geo.leadCity} — applying to ${geo.targetCity}`,
+          cls: "text-muted-foreground",
+          off: false,
+        };
+      if (geo.leadCity)
+        return { text: geo.leadCity, cls: "text-muted-foreground", off: false };
+      if (geo.targetCity)
+        return {
+          text: `Applying to ${geo.targetCity}`,
+          cls: "text-muted-foreground",
+          off: false,
+        };
+      return null;
   }
 }
 
@@ -645,7 +665,7 @@ export function ContactQueue({
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Area</p>
+                  <p className="text-xs text-muted-foreground">Location / Area</p>
                   {geo ? (
                     <p className={cn("mt-0.5 flex items-center gap-1.5 text-sm font-medium", geo.cls)}>
                       {geo.off ? (
@@ -854,6 +874,7 @@ export function ContactQueue({
                         <p className="truncate font-medium">{item.name}</p>
                         <p className="truncate text-xs text-muted-foreground">
                           {item.geo?.leadCity ?? "—"}
+                          {item.geo?.targetCity ? ` → ${item.geo.targetCity}` : ""}
                           {item.aiScore != null ? ` · Score ${item.aiScore}` : ""}
                         </p>
                       </div>

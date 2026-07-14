@@ -6,7 +6,7 @@ import {
   fetchAdSetDailyMetrics,
   fetchLeadFormQuestions,
 } from "@/lib/integrations/meta";
-import { geocodeCity, geocodeCityCached } from "@/lib/integrations/geocode";
+import { geocodeCity, geocodeCityCached, geocodeZipCached } from "@/lib/integrations/geocode";
 import { decryptSecret } from "@/lib/crypto";
 import { getSecret } from "@/lib/settings";
 import {
@@ -41,6 +41,19 @@ function findCity(formData: Record<string, unknown> | null | undefined): string 
     if ((k === "city" || k === "ciudad" || k === "town" || /\bcity\b|ciudad/.test(k)) && value) {
       const v = String(value).trim();
       if (v) return v;
+    }
+  }
+  return null;
+}
+
+/** Pull the lead's ZIP/postal code — newer forms ask it instead of a city. */
+function findZip(formData: Record<string, unknown> | null | undefined): string | null {
+  if (!formData) return null;
+  for (const [key, value] of Object.entries(formData)) {
+    const k = key.toLowerCase();
+    if (/zip|postal/.test(k) && value) {
+      const v = String(value).trim();
+      if (/^\d{4,10}(-\d+)?$/.test(v)) return v;
     }
   }
   return null;
@@ -345,15 +358,27 @@ export async function syncConnection(
       const adsetId = l.adsetExternalId
         ? adsetIdByExternal.get(l.adsetExternalId) ?? null
         : null;
-      const cityRaw = findCity(l.formData);
+      let cityRaw = findCity(l.formData);
       let geoLat: string | null = null;
       let geoLng: string | null = null;
+      const hint = l.adsetExternalId ? adsetGeoByExternal.get(l.adsetExternalId) : undefined;
       if (cityRaw) {
-        const hint = l.adsetExternalId ? adsetGeoByExternal.get(l.adsetExternalId) : undefined;
         const geo = await geocodeCityCached(cityRaw, hint?.region, hint?.country);
         if (geo) {
           geoLat = geo.lat.toFixed(6);
           geoLng = geo.lng.toFixed(6);
+        }
+      } else {
+        // Newer forms ask for a ZIP code instead of a city — resolve it so the
+        // lead still gets a location and a radius verdict.
+        const zip = findZip(l.formData);
+        if (zip) {
+          const geo = await geocodeZipCached(zip, hint?.country);
+          if (geo) {
+            cityRaw = geo.city ?? `ZIP ${zip}`;
+            geoLat = geo.lat.toFixed(6);
+            geoLng = geo.lng.toFixed(6);
+          }
         }
       }
 

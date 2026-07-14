@@ -545,6 +545,8 @@ export const geocache = pgTable("geocache", {
   query: text("query").primaryKey(),
   lat: numeric("lat", { precision: 9, scale: 6 }).notNull(),
   lng: numeric("lng", { precision: 9, scale: 6 }).notNull(),
+  /** Resolved place name (e.g. the city a ZIP code belongs to). */
+  name: text("name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

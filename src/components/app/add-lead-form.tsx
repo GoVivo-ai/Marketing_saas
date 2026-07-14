@@ -60,9 +60,15 @@ export function AddLeadDialog({ workspaceId }: { workspaceId: string }) {
         </DialogHeader>
         <form action={action} className="space-y-4">
           <input type="hidden" name="workspaceId" value={workspaceId} />
-          <div className="space-y-2">
-            <Label htmlFor="ml-name">Full name</Label>
-            <Input id="ml-name" name="name" placeholder="Jane Pérez" required />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="ml-first-name">First name</Label>
+              <Input id="ml-first-name" name="firstName" placeholder="Jane" required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ml-last-name">Last name</Label>
+              <Input id="ml-last-name" name="lastName" placeholder="Pérez" required />
+            </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">

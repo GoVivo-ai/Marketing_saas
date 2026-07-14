@@ -662,13 +662,16 @@ export async function createManualLead(
   if (!isAgency(u.role) && !(await getWorkspaceRole(u.id, workspaceId)))
     return { error: "You don't have access to this workspace." };
 
-  const name = String(formData.get("name") ?? "").trim();
+  const firstName = String(formData.get("firstName") ?? "").trim();
+  const lastName = String(formData.get("lastName") ?? "").trim();
+  const name = [firstName, lastName].filter(Boolean).join(" ");
   const phone = String(formData.get("phone") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const city = String(formData.get("city") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
 
-  if (!name) return { error: "Name is required." };
+  if (!firstName || !lastName)
+    return { error: "First and last name are required." };
   if (!phone && !email)
     return { error: "Add at least one way to contact the lead (phone or email)." };
   if (email && !EMAIL_RE.test(email)) return { error: "Invalid email." };

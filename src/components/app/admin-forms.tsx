@@ -88,7 +88,7 @@ export function CreateUserForm({
             defaultValue="client"
           >
             <option value="client">Client (their workspace only)</option>
-            <option value="agency_member">Agency member (Vivo team)</option>
+            <option value="agency_member">Agency member (Vivo agent — queue only)</option>
             <option value="agency_admin">Agency admin (full control)</option>
           </select>
         </div>

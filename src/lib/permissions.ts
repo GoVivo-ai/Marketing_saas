@@ -39,24 +39,28 @@ export async function getWorkspaceRole(
 
 /**
  * Who may manage a workspace's configuration (connections, AI key, company
- * profile, org users): the Vivo team (any agency role) or the company's
- * supervisors/admins. Agents never manage anything.
+ * profile, org users): Vivo admins or the company's supervisors/admins.
+ * Agents — Vivo's own calling agents (agency_member) included — never manage.
  */
 export async function canManageWorkspace(workspaceId: string): Promise<boolean> {
   const u = await currentUser();
   if (!u) return false;
-  if (isAgency(u.role)) return true;
+  if (u.role === "agency_admin") return true;
+  if (u.role === "agency_member") return false;
   const wsRole = await getWorkspaceRole(u.id, workspaceId);
   return wsRole === "admin" || wsRole === "supervisor";
 }
 
 /**
  * True when the current user is an agent inside the given workspace: they only
- * get Leads, Contact Queue and Pipeline. Agency users are never agents.
+ * get Leads, Contact Queue and Pipeline. Vivo's agency_member accounts ARE the
+ * calling agents, so they're agents everywhere; agency admins never are.
  */
 export async function isWorkspaceAgent(workspaceId: string): Promise<boolean> {
   const u = await currentUser();
-  if (!u || isAgency(u.role)) return false;
+  if (!u) return false;
+  if (u.role === "agency_member") return true;
+  if (u.role === "agency_admin") return false;
   return (await getWorkspaceRole(u.id, workspaceId)) === "agent";
 }
 
@@ -70,12 +74,16 @@ export async function requireFullAccess(workspaceId: string | null | undefined) 
 }
 
 /**
- * True when the user is a client whose every membership is 'agent' — they may
- * only change their own password, never touch telephony tokens/connections.
+ * True when the user is an agent and nothing more — they may only change
+ * their own password, never touch telephony tokens/connections. Vivo's
+ * agency_member accounts are agents; client users qualify when every
+ * workspace membership of theirs is 'agent'.
  */
 export async function isAgentOnly(): Promise<boolean> {
   const u = await currentUser();
-  if (!u || isAgency(u.role)) return false;
+  if (!u) return false;
+  if (u.role === "agency_member") return true;
+  if (u.role === "agency_admin") return false;
   const memberships = await db()
     .select({ role: schema.workspaceMembers.role })
     .from(schema.workspaceMembers)

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState, useTransition } from "react";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -26,15 +25,17 @@ import {
   isDialerConfigured,
 } from "@/components/app/ringcentral-dialer";
 import { LeadActivity } from "@/components/app/lead-activity";
+import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
 import {
   addLeadNote,
+  getLeadDetail,
   logLeadOutreach,
   setLeadDisqual,
   undoLeadOutreach,
 } from "@/lib/actions/leads";
 import { RCA_LEVEL1, rcaLevel2, rcaLevel3, isValidRcaPath } from "@/lib/rca";
 import type { OutreachChannel, OutreachOutcome } from "@/lib/outreach";
-import type { ContactQueueData, QueueItem } from "@/lib/data";
+import type { ContactQueueData, LeadRow, QueueItem } from "@/lib/data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -620,6 +621,16 @@ export function ContactQueue({
     setShowHistory(false);
   };
 
+  // Full lead detail opens in a side panel — the agent stays in the queue.
+  const [detail, setDetail] = useState<LeadRow | null>(null);
+  const [detailLoading, startDetail] = useTransition();
+  const openDetail = (leadId: string) =>
+    startDetail(async () => {
+      const row = await getLeadDetail(leadId);
+      if (row) setDetail(row);
+      else toast.error("Couldn't load the lead's details.");
+    });
+
   const geo = current ? geoLine(current) : null;
   const veh = current ? vehicleLine(current) : null;
 
@@ -633,13 +644,17 @@ export function ContactQueue({
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <CardTitle className="flex flex-wrap items-center gap-2.5">
-                    <Link
-                      href={`/leads?lead=${current.id}`}
-                      className="hover:text-primary hover:underline"
+                    <button
+                      type="button"
+                      onClick={() => openDetail(current.id)}
+                      className="inline-flex items-center gap-1.5 hover:text-primary hover:underline"
                       title="Open lead details"
                     >
                       {current.name}
-                    </Link>
+                      {detailLoading && (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                      )}
+                    </button>
                     <DueBadge due={current.due} />
                   </CardTitle>
                   <CardDescription className="mt-1.5">
@@ -958,6 +973,13 @@ export function ContactQueue({
           </Card>
         )}
       </div>
+
+      {/* Full lead detail as a slide-over — the queue stays behind it. */}
+      <LeadDetailSheet
+        lead={detail}
+        onClose={() => setDetail(null)}
+        onPatch={(patch) => setDetail((d) => (d ? { ...d, ...patch } : d))}
+      />
     </div>
   );
 }

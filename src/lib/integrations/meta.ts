@@ -205,6 +205,15 @@ export const metaConnector: MarketingConnector = {
       for (const r of rows) {
         const field = (key: string) =>
           r.field_data?.find((f) => f.name.toLowerCase().includes(key))?.values?.[0];
+        const exact = (key: string) =>
+          r.field_data?.find((f) => f.name.toLowerCase() === key)?.values?.[0];
+        // Forms split the name (nombre/apellido or first/last) — join them.
+        const firstName = exact("first_name") ?? exact("nombre");
+        const lastName = exact("last_name") ?? exact("apellido");
+        const fullName =
+          exact("full_name") ??
+          ([firstName, lastName].filter(Boolean).join(" ") ||
+            (field("name") ?? field("nombre")));
         all.push({
           externalId: r.id,
           campaignExternalId: ad.campaign_id ?? ad.campaign?.id,
@@ -213,7 +222,7 @@ export const metaConnector: MarketingConnector = {
           campaignStatus: ad.campaign?.status,
           campaignObjective: ad.campaign?.objective,
           createdAt: r.created_time,
-          name: field("name") ?? field("nombre"),
+          name: fullName,
           email: field("email"),
           phone: field("phone") ?? field("tel"),
           formData: Object.fromEntries(

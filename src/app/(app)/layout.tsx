@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 import { getWorkspaceContext } from "@/lib/data";
-import { canManageWorkspace } from "@/lib/permissions";
+import { canManageWorkspace, isWorkspaceAgent } from "@/lib/permissions";
 import { AppSidebar } from "@/components/app/sidebar";
 import { ThemeToggle } from "@/components/app/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const { workspaces, active } = await getWorkspaceContext();
   const role = (session.user as { role?: string }).role;
-  const canManageActive = active ? await canManageWorkspace(active.id) : false;
+  const [canManageActive, isAgent] = active
+    ? await Promise.all([canManageWorkspace(active.id), isWorkspaceAgent(active.id)])
+    : [false, false];
 
   const initials = (session.user.name ?? "U")
     .split(" ")
@@ -32,6 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         activeWorkspaceId={active?.id ?? null}
         role={role}
         canManageActive={canManageActive}
+        isAgent={isAgent}
       />
       {/* min-w-0 lets this flex item shrink to the viewport, so wide content
           (e.g. a pipeline with many stages) scrolls inside instead of

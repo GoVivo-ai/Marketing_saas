@@ -21,6 +21,7 @@ import {
   getWorkspaceContext,
   getWorkspaceGeoOptions,
 } from "@/lib/data";
+import { requireFullAccess } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 import { cn } from "@/lib/utils";
 
@@ -74,6 +75,7 @@ export default async function ReportsPage({
   const cities = sp.city ? sp.city.split(",").filter(Boolean) : [];
 
   const { active } = await getWorkspaceContext();
+  await requireFullAccess(active?.id);
   const [funnel, geo] = active
     ? await Promise.all([
         getFunnelReport(active.id, {

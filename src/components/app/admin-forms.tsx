@@ -109,6 +109,24 @@ export function CreateUserForm({
           </select>
         </div>
       </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="u-ws-role">Company role (for client accounts)</Label>
+          <select
+            id="u-ws-role"
+            name="wsRole"
+            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+            defaultValue="agent"
+          >
+            <option value="agent">Agent (Leads, Contact Queue & Pipeline)</option>
+            <option value="supervisor">Supervisor (full access)</option>
+            <option value="admin">Admin (full access + team management)</option>
+          </select>
+          <p className="text-xs text-muted-foreground">
+            The first user of a workspace always becomes its admin.
+          </p>
+        </div>
+      </div>
       <Feedback state={state} />
       <Button type="submit" disabled={pending}>
         {pending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}

@@ -3,6 +3,7 @@ import {
   getPlannerHistory,
   getWorkspaceContext,
 } from "@/lib/data";
+import { requireFullAccess } from "@/lib/permissions";
 import { PlannerView } from "@/components/app/planner-view";
 import { PlannerHistory } from "@/components/app/planner-history";
 
@@ -26,6 +27,7 @@ export default async function PlannerPage({
   const { month, plan } = await searchParams;
   const monthStart = parseMonth(month);
   const { active } = await getWorkspaceContext();
+  await requireFullAccess(active?.id);
 
   const loaded = active
     ? await Promise.all([

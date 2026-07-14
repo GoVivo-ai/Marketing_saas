@@ -19,6 +19,7 @@ import {
   getPromptTemplates,
   getWorkspaceContext,
 } from "@/lib/data";
+import { requireFullAccess } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,7 @@ export default async function CampaignDetailPage({
   });
 
   const { active } = await getWorkspaceContext();
+  await requireFullAccess(active?.id);
   if (!active) notFound();
 
   // Missing campaign usually means a stale deep link from another client

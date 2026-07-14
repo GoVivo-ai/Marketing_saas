@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { db, schema } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
+import { requireFullAccess } from "@/lib/permissions";
 import { GenerateInsightsButton } from "@/components/app/generate-insights-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +36,7 @@ type Severity = keyof typeof severityRank;
 
 export default async function InsightsPage() {
   const { active } = await getWorkspaceContext();
+  await requireFullAccess(active?.id);
 
   const insights = active
     ? await db()

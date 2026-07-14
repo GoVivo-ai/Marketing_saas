@@ -26,9 +26,9 @@ export const userRoleEnum = pgEnum("user_role", [
 
 /** Role of a user inside a specific workspace (client account). */
 export const workspaceRoleEnum = pgEnum("workspace_role", [
-  "owner",
-  "editor",
-  "viewer",
+  "admin", // full access to their company + team management
+  "supervisor", // full access to their company's platform
+  "agent", // Leads, Contact Queue and Pipeline only
 ]);
 
 export const platformEnum = pgEnum("platform", [
@@ -166,7 +166,7 @@ export const workspaceMembers = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    role: workspaceRoleEnum("role").notNull().default("viewer"),
+    role: workspaceRoleEnum("role").notNull().default("agent"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("workspace_member_unique").on(t.workspaceId, t.userId)],

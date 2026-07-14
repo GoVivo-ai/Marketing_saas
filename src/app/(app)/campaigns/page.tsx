@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { SyncNowButton } from "@/components/app/sync-now-button";
 import { getCampaignRows, getWorkspaceContext } from "@/lib/data";
+import { requireFullAccess } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,7 @@ export default async function CampaignsPage({
     allowAllTime: false,
   });
   const { active } = await getWorkspaceContext();
+  await requireFullAccess(active?.id);
   const rows = active
     ? await getCampaignRows(active.id, { start: resolved.start!, end: resolved.end! })
     : [];

@@ -35,6 +35,31 @@ import {
 
 const initial: OrgActionState = {};
 
+/** Per-company role picker (agent | supervisor | admin). */
+function WsRoleSelect({
+  id,
+  defaultValue = "agent",
+}: {
+  id: string;
+  defaultValue?: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>Role</Label>
+      <select
+        id={id}
+        name="wsRole"
+        className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+        defaultValue={defaultValue}
+      >
+        <option value="agent">Agent (Leads, Contact Queue & Pipeline)</option>
+        <option value="supervisor">Supervisor (full access)</option>
+        <option value="admin">Admin (full access + team management)</option>
+      </select>
+    </div>
+  );
+}
+
 function Feedback({ state }: { state: OrgActionState }) {
   if (state.error) return <p className="text-sm text-destructive">{state.error}</p>;
   if (!state.success) return null;
@@ -64,6 +89,9 @@ export function CreateOrgUserForm({ workspaceId }: { workspaceId: string }) {
           <Input id="ou-email" name="email" type="email" placeholder="jane@company.com" required />
         </div>
       </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <WsRoleSelect id="ou-role" />
+      </div>
       <Feedback state={state} />
       <Button type="submit" disabled={pending}>
         {pending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
@@ -78,11 +106,13 @@ export function EditOrgUserDialog({
   userId,
   name,
   email,
+  wsRole,
 }: {
   workspaceId: string;
   userId: string;
   name: string;
   email: string;
+  wsRole: string;
 }) {
   const [state, action, pending] = useActionState(updateOrgUser, initial);
   return (
@@ -111,6 +141,7 @@ export function EditOrgUserDialog({
             <Label htmlFor={`edit-email-${userId}`}>Email</Label>
             <Input id={`edit-email-${userId}`} name="email" type="email" defaultValue={email} required />
           </div>
+          <WsRoleSelect id={`edit-role-${userId}`} defaultValue={wsRole} />
           <Feedback state={state} />
           <DialogFooter>
             <DialogClose render={<Button variant="ghost" size="sm" type="button">Close</Button>} />

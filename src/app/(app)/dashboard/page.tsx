@@ -12,6 +12,7 @@ import { KpiCard } from "@/components/app/kpi-card";
 import { PerformanceChart } from "@/components/app/performance-chart";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { getEmptyOverview, getOverview, getWorkspaceContext } from "@/lib/data";
+import { requireFullAccess } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,7 @@ export default async function DashboardPage({
     : "previous period";
 
   const { active } = await getWorkspaceContext();
+  await requireFullAccess(active?.id);
   const data = active
     ? await getOverview(active.id, { start, end })
     : getEmptyOverview();

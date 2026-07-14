@@ -17,6 +17,23 @@ export interface OrgActionState {
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
+const WS_ROLES = ["admin", "supervisor", "agent"] as const;
+type WsRole = (typeof WS_ROLES)[number];
+
+/** True when this workspace would be left without any admin. */
+async function isLastAdmin(workspaceId: string, userId: string): Promise<boolean> {
+  const admins = await db()
+    .select({ userId: schema.workspaceMembers.userId })
+    .from(schema.workspaceMembers)
+    .where(
+      and(
+        eq(schema.workspaceMembers.workspaceId, workspaceId),
+        eq(schema.workspaceMembers.role, "admin"),
+      ),
+    );
+  return admins.length === 1 && admins[0].userId === userId;
+}
+
 /** Returns the target user's workspace role IF they are a client member here. */
 async function clientMember(
   workspaceId: string,
@@ -47,8 +64,10 @@ export async function createOrgUser(
 
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const wsRole = String(formData.get("wsRole") ?? "agent") as WsRole;
   if (!name || !email) return { error: "Name and email are required." };
   if (!EMAIL_RE.test(email)) return { error: "Invalid email." };
+  if (!WS_ROLES.includes(wsRole)) return { error: "Invalid role." };
 
   const [existing] = await db()
     .select({ id: schema.users.id })
@@ -65,7 +84,7 @@ export async function createOrgUser(
 
   await db()
     .insert(schema.workspaceMembers)
-    .values({ workspaceId, userId: user.id, role: "viewer" })
+    .values({ workspaceId, userId: user.id, role: wsRole })
     .onConflictDoNothing();
 
   revalidatePath("/settings/team");
@@ -83,13 +102,21 @@ export async function updateOrgUser(
   const userId = String(formData.get("userId") ?? "");
   if (!(await canManageWorkspace(workspaceId)))
     return { error: "You don't have permission to manage this organization." };
-  if (!(await clientMember(workspaceId, userId)))
-    return { error: "That user is not in your organization." };
+  const member = await clientMember(workspaceId, userId);
+  if (!member) return { error: "That user is not in your organization." };
 
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const wsRole = String(formData.get("wsRole") ?? member.role) as WsRole;
   if (!name || !email) return { error: "Name and email are required." };
   if (!EMAIL_RE.test(email)) return { error: "Invalid email." };
+  if (!WS_ROLES.includes(wsRole)) return { error: "Invalid role." };
+  if (
+    member.role === "admin" &&
+    wsRole !== "admin" &&
+    (await isLastAdmin(workspaceId, userId))
+  )
+    return { error: "Your organization needs at least one admin." };
 
   const [clash] = await db()
     .select({ id: schema.users.id })
@@ -103,6 +130,17 @@ export async function updateOrgUser(
     .update(schema.users)
     .set({ name, email })
     .where(eq(schema.users.id, userId));
+  if (wsRole !== member.role) {
+    await db()
+      .update(schema.workspaceMembers)
+      .set({ role: wsRole })
+      .where(
+        and(
+          eq(schema.workspaceMembers.workspaceId, workspaceId),
+          eq(schema.workspaceMembers.userId, userId),
+        ),
+      );
+  }
   revalidatePath("/settings/team");
   return { success: "User updated." };
 }
@@ -118,7 +156,8 @@ export async function deleteOrgUser(formData: FormData) {
 
   const member = await clientMember(workspaceId, userId);
   if (!member) throw new Error("That user is not in your organization.");
-  if (member.role === "owner") throw new Error("The owner can't be deleted.");
+  if (member.role === "admin" && (await isLastAdmin(workspaceId, userId)))
+    throw new Error("Your organization needs at least one admin.");
 
   await db().delete(schema.users).where(eq(schema.users.id, userId));
   revalidatePath("/settings/team");

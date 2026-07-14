@@ -3,7 +3,11 @@ import { and, eq } from "drizzle-orm";
 import { Building2, UserPlus } from "lucide-react";
 import { db, schema } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
-import { currentUser, getWorkspaceRole } from "@/lib/permissions";
+import {
+  canManageWorkspace,
+  currentUser,
+  requireFullAccess,
+} from "@/lib/permissions";
 import { setWorkspaceActive } from "@/lib/actions/admin";
 import {
   CreateUserForm,
@@ -210,7 +214,13 @@ export default async function TeamPage() {
   );
 }
 
-/** Client-facing org view: only this workspace's users; the owner can manage. */
+const wsRoleLabel: Record<string, string> = {
+  admin: "Admin",
+  supervisor: "Supervisor",
+  agent: "Agent",
+};
+
+/** Client-facing org view: only this workspace's users; supervisors/admins manage. */
 async function ClientTeam({ userId }: { userId: string }) {
   const { active } = await getWorkspaceContext();
   if (!active) {
@@ -222,7 +232,8 @@ async function ClientTeam({ userId }: { userId: string }) {
     );
   }
 
-  const isOwner = (await getWorkspaceRole(userId, active.id)) === "owner";
+  await requireFullAccess(active.id);
+  const canManage = await canManageWorkspace(active.id);
   const members = await db()
     .select({
       id: schema.users.id,
@@ -247,9 +258,9 @@ async function ClientTeam({ userId }: { userId: string }) {
           {active.name} — Team
         </h1>
         <p className="text-sm text-muted-foreground">
-          {isOwner
-            ? "Manage the users that can access your organization."
-            : "Users in your organization. Only the owner can manage them."}
+          {canManage
+            ? "Manage the users that can access your organization. Agents only see Leads, Contact Queue and Pipeline."
+            : "Users in your organization. Only supervisors and admins can manage them."}
         </p>
       </div>
 
@@ -277,14 +288,17 @@ async function ClientTeam({ userId }: { userId: string }) {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {u.wsRole === "owner" && <Badge>Owner</Badge>}
-                {isOwner && u.wsRole !== "owner" && (
+                <Badge variant={u.wsRole === "agent" ? "secondary" : "default"}>
+                  {wsRoleLabel[u.wsRole] ?? u.wsRole}
+                </Badge>
+                {canManage && u.id !== userId && (
                   <>
                     <EditOrgUserDialog
                       workspaceId={active.id}
                       userId={u.id}
                       name={u.name}
                       email={u.email}
+                      wsRole={u.wsRole}
                     />
                     <ResetOrgPasswordButton workspaceId={active.id} userId={u.id} />
                     <DeleteOrgUserButton
@@ -298,7 +312,7 @@ async function ClientTeam({ userId }: { userId: string }) {
             </div>
           ))}
 
-          {isOwner && (
+          {canManage && (
             <div className="border-t pt-4">
               <p className="mb-3 text-sm font-medium">New user</p>
               <CreateOrgUserForm workspaceId={active.id} />

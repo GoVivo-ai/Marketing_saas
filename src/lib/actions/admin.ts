@@ -135,15 +135,20 @@ export async function createUser(
     .returning({ id: schema.users.id });
 
   if (role === "client" && workspaceId) {
-    // First client of a workspace becomes its owner (can self-manage the org);
-    // later ones are viewers.
-    const [existingOwner] = await db()
+    // Client users get a per-company role. The first user of a workspace is
+    // always its admin (someone must be able to self-manage the org).
+    const WS_ROLES = ["admin", "supervisor", "agent"] as const;
+    const requested = String(formData.get("wsRole") ?? "agent");
+    const wsRole = (WS_ROLES as readonly string[]).includes(requested)
+      ? (requested as (typeof WS_ROLES)[number])
+      : "agent";
+    const [existingAdmin] = await db()
       .select({ id: schema.workspaceMembers.id })
       .from(schema.workspaceMembers)
       .where(
         and(
           eq(schema.workspaceMembers.workspaceId, workspaceId),
-          eq(schema.workspaceMembers.role, "owner"),
+          eq(schema.workspaceMembers.role, "admin"),
         ),
       )
       .limit(1);
@@ -152,7 +157,7 @@ export async function createUser(
       .values({
         workspaceId,
         userId: user.id,
-        role: existingOwner ? "viewer" : "owner",
+        role: existingAdmin ? wsRole : "admin",
       })
       .onConflictDoNothing();
   }

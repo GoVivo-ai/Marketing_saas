@@ -20,7 +20,7 @@ import { WorkspaceSwitcher } from "./workspace-switcher";
 import { VivoLogo } from "./vivo-logo";
 import type { WorkspaceInfo } from "@/lib/data";
 
-const nav = [
+const fullNav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/planner", label: "Planner", icon: Target },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
@@ -31,34 +31,46 @@ const nav = [
   { href: "/reports", label: "Reports", icon: FileBarChart },
 ];
 
+// Agents only work their leads: Leads, Contact Queue and Pipeline.
+const AGENT_HREFS = new Set(["/leads", "/leads/queue", "/leads/pipeline"]);
+
 export function AppSidebar({
   workspaces,
   activeWorkspaceId,
   role,
   canManageActive,
+  isAgent,
 }: {
   workspaces: WorkspaceInfo[];
   activeWorkspaceId: string | null;
   role?: string;
   canManageActive?: boolean;
+  isAgent?: boolean;
 }) {
   const pathname = usePathname();
   const active =
     workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces[0];
   const clientLogo = active?.logoUrl ?? null;
 
+  const nav = isAgent ? fullNav.filter((n) => AGENT_HREFS.has(n.href)) : fullNav;
+
   // Connections only for those who can manage the active workspace (agency or
-  // the client owner). The team link is the agency roster for agency users and
-  // the client's own org for clients.
+  // the client's supervisors/admins). The team link is the agency roster for
+  // agency users and the client's own org for clients; agents don't get it —
+  // they keep Settings for their own account (password, dialer).
   const bottomNav = [
     ...(canManageActive
       ? [{ href: "/settings", label: "Connections", icon: Plug }]
       : []),
-    {
-      href: "/settings/team",
-      label: role === "client" ? "Team" : "Clients & Team",
-      icon: Users,
-    },
+    ...(isAgent
+      ? []
+      : [
+          {
+            href: "/settings/team",
+            label: role === "client" ? "Team" : "Clients & Team",
+            icon: Users,
+          },
+        ]),
     { href: "/settings/general", label: "Settings", icon: Settings },
   ];
 

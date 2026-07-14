@@ -2,7 +2,7 @@ import { formatDistanceToNow } from "date-fns";
 import { RefreshCw, Unplug, CircleCheck, KeyRound, Sparkles } from "lucide-react";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
-import { canManageWorkspace } from "@/lib/permissions";
+import { canManageWorkspace, requireFullAccess } from "@/lib/permissions";
 import { metaConnector } from "@/lib/integrations/meta";
 import {
   getWorkspaceMetaToken,
@@ -39,6 +39,7 @@ export default async function ConnectionsPage() {
   // Each client has its own credentials; the page works in the context of the
   // selected client (from the workspace switcher).
   const { active } = await getWorkspaceContext();
+  await requireFullAccess(active?.id);
   const canManage = active ? await canManageWorkspace(active.id) : false;
 
   if (!canManage) {

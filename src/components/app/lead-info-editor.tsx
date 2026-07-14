@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import type { LeadRow } from "@/lib/data";
+import { leadNameParts } from "@/lib/lead-name";
 
 /** The list uses "—" as the empty sentinel; strip it for editing. */
 const clean = (v: string) => (v === "—" ? "" : v);
@@ -33,14 +34,21 @@ export function LeadInfoEditor({
   const [editing, setEditing] = useState(false);
   const [saving, startSave] = useTransition();
 
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [fields, setFields] = useState<Field[]>([]);
   const nextId = useRef(0);
 
+  const nameParts = leadNameParts(
+    lead.name === "Unknown" ? "" : clean(lead.name),
+    lead.formData,
+  );
+
   const begin = () => {
-    setName(lead.name === "Unknown" ? "" : clean(lead.name));
+    setFirstName(nameParts.first);
+    setLastName(nameParts.last);
     setEmail(clean(lead.email));
     setPhone(clean(lead.phone));
     setFields(
@@ -64,6 +72,7 @@ export function LeadInfoEditor({
 
   const save = () =>
     startSave(async () => {
+      const name = [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
       const formData: Record<string, string> = {};
       for (const f of fields) {
         const k = f.key.trim();
@@ -81,7 +90,7 @@ export function LeadInfoEditor({
         return;
       }
       onSaved({
-        name: name.trim() || "Unknown",
+        name: name || "Unknown",
         email: email.trim() || "—",
         phone: phone.trim() || "—",
         formData,
@@ -131,11 +140,18 @@ export function LeadInfoEditor({
       {/* Contact */}
       {editing ? (
         <div className="space-y-2">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Full name"
-          />
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="First name"
+            />
+            <Input
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="Last name"
+            />
+          </div>
           <Input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -151,6 +167,16 @@ export function LeadInfoEditor({
         </div>
       ) : (
         <div className="space-y-1.5">
+          <div className="grid grid-cols-2 gap-3 pb-1">
+            <div>
+              <p className="text-xs text-muted-foreground">First name</p>
+              <p className="font-medium">{nameParts.first || "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Last name</p>
+              <p className="font-medium">{nameParts.last || "—"}</p>
+            </div>
+          </div>
           <p className="flex items-center gap-2">
             <Mail className="size-4 shrink-0 text-muted-foreground" />
             {lead.email !== "—" ? (

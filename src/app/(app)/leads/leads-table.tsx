@@ -15,7 +15,6 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
 import type { LeadRow } from "@/lib/data";
-import { leadNameParts } from "@/lib/lead-name";
 
 export function LeadsTable({
   rows,
@@ -47,8 +46,7 @@ export function LeadsTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>First name</TableHead>
-            <TableHead>Last name</TableHead>
+            <TableHead>Lead</TableHead>
             <TableHead>Campaign</TableHead>
             <TableHead>AI Score</TableHead>
             <TableHead>Stage</TableHead>
@@ -63,13 +61,10 @@ export function LeadsTable({
               onClick={() => setSelected(lead)}
             >
               <TableCell>
-                <p className="font-medium">{leadNameParts(lead.name, lead.formData).first || "—"}</p>
+                <p className="font-medium">{lead.name}</p>
                 <p className="text-xs text-muted-foreground">
                   {lead.email} · {lead.phone}
                 </p>
-              </TableCell>
-              <TableCell className="font-medium">
-                {leadNameParts(lead.name, lead.formData).last || "—"}
               </TableCell>
               <TableCell className="max-w-[220px] truncate text-sm">
                 {lead.campaign}

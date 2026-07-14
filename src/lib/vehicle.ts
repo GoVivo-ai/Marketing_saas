@@ -3,11 +3,11 @@
 /**
  * Fallback threshold year, only used for display when the form question does
  * not state its own year. The real rule comes from the Meta lead-ad question
- * itself — e.g. "Do you have a vehicle model year 2012 or newer?" — which the
+ * itself — e.g. "Do you have a vehicle model year 2015 or newer?" — which the
  * applicant answers Yes/No, so the ANSWER is the verdict and the year in the
  * question text is just what we show.
  */
-export const MIN_VEHICLE_YEAR = 2012;
+export const MIN_VEHICLE_YEAR = 2015;
 
 export interface VehicleAnswer {
   /** true = Yes (meets), false = No (doesn't), null = question not answered. */

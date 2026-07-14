@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Phone, X } from "lucide-react";
 
@@ -126,6 +126,9 @@ export function RingCentralDialer({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [dialpadOpen, setDialpadOpen] = useState(false);
+  // Whether the panel is open because the USER wants it open (vs. the widget
+  // showing itself). Read inside the message listener without re-binding it.
+  const wantOpen = useRef(false);
   /** Screen position of the close (X) pinned to the panel's top-right corner. */
   const [framePos, setFramePos] = useState<{ top: number; left: number } | null>(
     null,
@@ -169,24 +172,25 @@ export function RingCentralDialer({
     // Opening from anywhere (hub bubble or a lead's Call button) flips the hub
     // into its close state.
     const onOpen = () => {
+      wantOpen.current = true;
       setDialpadOpen(true);
       setMenuOpen(false);
     };
     window.addEventListener(OPEN_EVENT, onOpen);
-    // The widget can also show itself — an incoming/active call, or the sign-in
-    // prompt after an auth redirect. Mirror that into our state so the hub is
-    // always in its closeable (X) state and the agent can dismiss the panel.
+    // The widget can also show itself. A ringing/active call is worth
+    // surfacing; its sign-in prompt is NOT — on a fresh login it pops up
+    // uninvited and keeps re-showing, so unless the user opened the dialer we
+    // force it back closed. The prompt appears normally when they open it.
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== WIDGET_ORIGIN) return;
       const type =
         (e.data && (e.data as { type?: string }).type) || "";
-      if (
-        type === "rc-call-ring-notify" ||
-        type === "rc-active-call-notify" ||
-        type === "rc-login-popup-notify"
-      ) {
+      if (type === "rc-call-ring-notify" || type === "rc-active-call-notify") {
+        wantOpen.current = true;
         setDialpadOpen(true);
         setMenuOpen(false);
+      } else if (type === "rc-login-popup-notify" && !wantOpen.current) {
+        adapter()?.setClosed(true);
       }
     };
     window.addEventListener("message", onMessage);
@@ -228,6 +232,7 @@ export function RingCentralDialer({
 
   /** Close → collapse the panel back to the floating hub (restore from there). */
   const minimize = () => {
+    wantOpen.current = false;
     hideDialer();
     setDialpadOpen(false);
     setMenuOpen(false);

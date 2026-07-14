@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { isAgentOnly } from "@/lib/permissions";
 import {
   buildAuthorizeUrl,
   generatePkce,
@@ -11,6 +12,9 @@ import {
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.redirect(new URL("/login", req.url));
+  // Agents can't manage telephony tokens.
+  if (await isAgentOnly())
+    return NextResponse.redirect(new URL("/settings/general", req.url));
   if (!isDialpadConfigured()) {
     return NextResponse.redirect(
       new URL("/settings/general?dp=not_configured", req.url),

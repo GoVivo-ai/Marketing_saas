@@ -14,7 +14,7 @@ import {
   getRingCentralEnv,
 } from "@/lib/settings";
 import { isRingCentralConfigured } from "@/lib/integrations/ringcentral";
-import { currentUser } from "@/lib/permissions";
+import { currentUser, isAgentOnly } from "@/lib/permissions";
 import { RingCentralConnectCard } from "@/components/app/ringcentral-connect-card";
 import {
   getScoreAutomation,
@@ -42,6 +42,35 @@ export const dynamic = "force-dynamic";
 export default async function GeneralSettingsPage() {
   const session = await auth();
   const userId = session?.user?.id;
+
+  // Agents only manage their own password — no telephony tokens, no
+  // workspace configuration.
+  if (await isAgentOnly()) {
+    return (
+      <div className="space-y-10">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+          <p className="text-sm text-muted-foreground">Account security</p>
+        </div>
+        <Card className="max-w-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <KeyRound className="h-4 w-4 text-primary" />
+              Change password
+            </CardTitle>
+            <CardDescription>
+              Signed in as {session?.user?.email}. Choose a strong password you
+              don&apos;t use anywhere else.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChangePasswordForm />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const dpConnected = userId ? await isDialpadConnected(userId) : false;
   const dpTokens = userId && dpConnected ? await getDialpadTokens(userId) : null;
 

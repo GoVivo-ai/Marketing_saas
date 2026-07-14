@@ -68,3 +68,17 @@ export async function requireFullAccess(workspaceId: string | null | undefined) 
   if (!workspaceId) return;
   if (await isWorkspaceAgent(workspaceId)) redirect("/leads/queue");
 }
+
+/**
+ * True when the user is a client whose every membership is 'agent' — they may
+ * only change their own password, never touch telephony tokens/connections.
+ */
+export async function isAgentOnly(): Promise<boolean> {
+  const u = await currentUser();
+  if (!u || isAgency(u.role)) return false;
+  const memberships = await db()
+    .select({ role: schema.workspaceMembers.role })
+    .from(schema.workspaceMembers)
+    .where(eq(schema.workspaceMembers.userId, u.id));
+  return memberships.length > 0 && memberships.every((m) => m.role === "agent");
+}

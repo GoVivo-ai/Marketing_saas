@@ -66,8 +66,16 @@ function findZip(formData: Record<string, unknown> | null | undefined): string |
  */
 export async function syncConnection(
   connectionId: string,
-  opts: { days?: number } = {},
+  opts: {
+    days?: number;
+    /**
+     * Skip campaigns/metrics/ad-set refresh and only pull + score leads,
+     * reusing the maps already in the DB — the webhook's fast path.
+     */
+    leadsOnly?: boolean;
+  } = {},
 ): Promise<SyncStats> {
+  const leadsOnly = opts.leadsOnly === true;
   const [conn] = await db()
     .select()
     .from(schema.connections)
@@ -101,7 +109,7 @@ export async function syncConnection(
   const range = { since: dateStr(since), until: dateStr(until) };
 
   // 1) Campaigns
-  const campaigns = await connector.listCampaigns(creds);
+  const campaigns = leadsOnly ? [] : await connector.listCampaigns(creds);
   for (const c of campaigns) {
     await db()
       .insert(schema.campaigns)
@@ -135,7 +143,7 @@ export async function syncConnection(
   // definition so the scoring-criteria editor shows the fields the form asks
   // today, not just what past leads answered. Non-fatal: a creative/form
   // permission gap shouldn't block metrics or leads.
-  if (conn.platform === "meta") {
+  if (conn.platform === "meta" && !leadsOnly) {
     try {
       const questionsByCampaign = await fetchLeadFormQuestions(creds);
       for (const [externalId, questions] of questionsByCampaign) {
@@ -153,7 +161,7 @@ export async function syncConnection(
   }
 
   // 2) Daily metrics
-  const metrics = await connector.fetchDailyMetrics(creds, range);
+  const metrics = leadsOnly ? [] : await connector.fetchDailyMetrics(creds, range);
   let metricRows = 0;
   for (const m of metrics) {
     const campaignId = campaignIdByExternal.get(m.campaignExternalId);
@@ -196,7 +204,26 @@ export async function syncConnection(
   // External ad-set id → its city region/country, used as a hint when
   // geocoding the lead's (often bare) city name.
   const adsetGeoByExternal = new Map<string, { region?: string; country?: string }>();
-  if (conn.platform === "meta") {
+  if (conn.platform === "meta" && leadsOnly) {
+    // Fast path: reuse the stored ad sets for attribution + geocode hints.
+    const adsetRows = await db()
+      .select({
+        id: schema.adsets.id,
+        externalId: schema.adsets.externalId,
+        cityRegion: schema.adsets.cityRegion,
+        cityCountry: schema.adsets.cityCountry,
+      })
+      .from(schema.adsets)
+      .where(eq(schema.adsets.connectionId, conn.id));
+    adsetIdByExternal = new Map(adsetRows.map((r) => [r.externalId, r.id]));
+    for (const r of adsetRows) {
+      if (r.cityRegion || r.cityCountry)
+        adsetGeoByExternal.set(r.externalId, {
+          region: r.cityRegion ?? undefined,
+          country: r.cityCountry ?? undefined,
+        });
+    }
+  } else if (conn.platform === "meta") {
     const prevAdsets = await db()
       .select({
         externalId: schema.adsets.externalId,

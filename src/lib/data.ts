@@ -18,6 +18,7 @@ import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { haversineKm } from "@/lib/geo";
 import { MIN_VEHICLE_YEAR, vehicleAnswer } from "@/lib/vehicle";
+import { scheduleAnswer, type ScheduleAnswer } from "@/lib/schedule";
 
 /**
  * Ad platforms deliver campaign names in snake/underscore case
@@ -1453,6 +1454,8 @@ export interface QueueItem {
   geo: LeadGeo | null;
   /** Whether the lead's vehicle meets the minimum-year eligibility rule. */
   vehicle: VehicleFit;
+  /** Whether the lead can work the required schedule (time blocks). */
+  schedule: ScheduleAnswer;
   /** Outreach touches so far (calls/SMS/emails/WhatsApp, manual or platform). */
   touches: number;
   lastTouchAt: Date | null;
@@ -1771,6 +1774,7 @@ export async function getContactQueue(
       createdAt: r.createdAt,
       geo: leadGeo(r),
       vehicle: vehicleFit(r.formData as Record<string, unknown> | null),
+      schedule: scheduleAnswer(r.formData as Record<string, unknown> | null),
       touches,
       lastTouchAt,
       lastChannel: last?.type ?? null,

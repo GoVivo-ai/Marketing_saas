@@ -10,6 +10,7 @@ import {
   MapPinOff,
   CarFront,
   AlertTriangle,
+  Clock,
   SkipForward,
   History,
   Loader2,
@@ -428,6 +429,41 @@ function vehicleLine(item: QueueItem): {
   }
 }
 
+/** Schedule-availability verdict for the "Schedule" cell, mirroring vehicleLine. */
+function scheduleLine(item: QueueItem): {
+  text: string;
+  cls: string;
+  off: boolean;
+} {
+  const s = item.schedule;
+  switch (s.status) {
+    case "full":
+      return {
+        text: "Yes — available for required blocks",
+        cls: "text-success",
+        off: false,
+      };
+    case "partial":
+      return {
+        text: `Partial — ${s.block ?? "some blocks"} only`,
+        cls: "text-amber-500",
+        off: true,
+      };
+    case "none":
+      return {
+        text: "No — can't work required blocks",
+        cls: "text-destructive",
+        off: true,
+      };
+    default:
+      return {
+        text: "Not asked — confirm availability",
+        cls: "text-muted-foreground",
+        off: true,
+      };
+  }
+}
+
 function lastTouchLine(item: QueueItem): string {
   if (!item.lastTouchAt) return "Never contacted";
   const ago = formatDistanceToNow(new Date(item.lastTouchAt), { addSuffix: true });
@@ -633,6 +669,7 @@ export function ContactQueue({
 
   const geo = current ? geoLine(current) : null;
   const veh = current ? vehicleLine(current) : null;
+  const sched = current ? scheduleLine(current) : null;
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
@@ -705,6 +742,21 @@ export function ContactQueue({
                         <CarFront className="h-3.5 w-3.5 shrink-0" />
                       )}
                       <span className="min-w-0">{veh.text}</span>
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 text-sm font-medium">—</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Schedule</p>
+                  {sched ? (
+                    <p className={cn("mt-0.5 flex items-center gap-1.5 text-sm font-medium", sched.cls)}>
+                      {sched.off ? (
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      ) : (
+                        <Clock className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <span className="min-w-0">{sched.text}</span>
                     </p>
                   ) : (
                     <p className="mt-0.5 text-sm font-medium">—</p>

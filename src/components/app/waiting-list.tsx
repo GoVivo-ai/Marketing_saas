@@ -1,5 +1,9 @@
+"use client";
+
+import { useState, useTransition } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { Clock, Phone } from "lucide-react";
+import { Clock, Loader2, Phone } from "lucide-react";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -9,7 +13,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
-import type { WaitingItem } from "@/lib/data";
+import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
+import { getLeadDetail } from "@/lib/actions/leads";
+import type { LeadRow, WaitingItem } from "@/lib/data";
 
 const channelLabel: Record<string, string> = {
   call: "Call",
@@ -19,11 +25,26 @@ const channelLabel: Record<string, string> = {
 };
 
 /**
- * Read-only list of leads inside the follow-up window ("Waiting"). They were
- * contacted recently and are NOT workable yet — the queue brings them back
- * automatically once the window elapses, so this view only shows when.
+ * Leads inside the follow-up window ("Waiting"). They were contacted recently
+ * and re-enter the queue on their own once the window elapses — but agents can
+ * still open any of them to act right away (log a touch, edit info, move
+ * stage): clicking a row opens the same LeadDetailSheet the queue uses.
  */
 export function WaitingList({ items }: { items: WaitingItem[] }) {
+  const [detail, setDetail] = useState<LeadRow | null>(null);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [, startDetail] = useTransition();
+
+  const openDetail = (leadId: string) => {
+    setLoadingId(leadId);
+    startDetail(async () => {
+      const row = await getLeadDetail(leadId);
+      setLoadingId(null);
+      if (row) setDetail(row);
+      else toast.error("Couldn't load the lead's details.");
+    });
+  };
+
   if (!items.length) {
     return (
       <Card>
@@ -54,9 +75,18 @@ export function WaitingList({ items }: { items: WaitingItem[] }) {
           </TableHeader>
           <TableBody>
             {items.map((item) => (
-              <TableRow key={item.id}>
+              <TableRow
+                key={item.id}
+                className="cursor-pointer"
+                onClick={() => openDetail(item.id)}
+              >
                 <TableCell>
-                  <p className="font-medium">{item.name}</p>
+                  <p className="flex items-center gap-1.5 font-medium hover:text-primary hover:underline">
+                    {item.name}
+                    {loadingId === item.id && (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                    )}
+                  </p>
                   {item.phone && (
                     <p className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Phone className="h-3 w-3" />
@@ -87,6 +117,13 @@ export function WaitingList({ items }: { items: WaitingItem[] }) {
           </TableBody>
         </Table>
       </CardContent>
+
+      {/* Full lead detail as a slide-over — same sheet the queue opens. */}
+      <LeadDetailSheet
+        lead={detail}
+        onClose={() => setDetail(null)}
+        onPatch={(patch) => setDetail((d) => (d ? { ...d, ...patch } : d))}
+      />
     </Card>
   );
 }

@@ -15,6 +15,17 @@ import { leadNameParts } from "@/lib/lead-name";
 /** The list uses "—" as the empty sentinel; strip it for editing. */
 const clean = (v: string) => (v === "—" ? "" : v);
 
+/**
+ * Form keys that duplicate the lead's name. They are edited through the
+ * First/Last inputs (not as free-form field rows) and rewritten on save, so
+ * displays that prefer the form's split fields (leadNameParts) can't keep
+ * showing the pre-edit name.
+ */
+const FIRST_NAME_KEYS = ["first_name", "nombre"];
+const LAST_NAME_KEYS = ["last_name", "apellido"];
+const FULL_NAME_KEYS = ["full_name", "nombre_completo"];
+const NAME_KEYS = [...FIRST_NAME_KEYS, ...LAST_NAME_KEYS, ...FULL_NAME_KEYS];
+
 type Field = { id: number; key: string; value: string };
 
 /**
@@ -52,11 +63,13 @@ export function LeadInfoEditor({
     setEmail(clean(lead.email));
     setPhone(clean(lead.phone));
     setFields(
-      Object.entries(lead.formData ?? {}).map(([key, value]) => ({
-        id: nextId.current++,
-        key,
-        value: typeof value === "string" ? value : JSON.stringify(value),
-      })),
+      Object.entries(lead.formData ?? {})
+        .filter(([key]) => !NAME_KEYS.includes(key))
+        .map(([key, value]) => ({
+          id: nextId.current++,
+          key,
+          value: typeof value === "string" ? value : JSON.stringify(value),
+        })),
     );
     setEditing(true);
   };
@@ -76,8 +89,20 @@ export function LeadInfoEditor({
       const formData: Record<string, string> = {};
       for (const f of fields) {
         const k = f.key.trim();
-        if (k) formData[k] = f.value;
+        if (k && !NAME_KEYS.includes(k)) formData[k] = f.value;
       }
+      // Rewrite the form's own name fields with the edited values so views
+      // that read the name from formData agree with the new name.
+      const syncNameKeys = (keys: string[], value: string) => {
+        for (const k of keys) {
+          if (k in (lead.formData ?? {})) {
+            if (value) formData[k] = value;
+          }
+        }
+      };
+      syncNameKeys(FIRST_NAME_KEYS, firstName.trim());
+      syncNameKeys(LAST_NAME_KEYS, lastName.trim());
+      syncNameKeys(FULL_NAME_KEYS, name);
       const res = await updateLeadInfo({
         leadId: lead.id,
         name: name || null,

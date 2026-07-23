@@ -101,8 +101,8 @@ export function DevMaintenanceForm({
         </p>
         <p className="text-xs text-muted-foreground">
           Maintenance starts and ends automatically — no need to come back and
-          flip the switch. Clear both fields to cancel it. Times are your local
-          timezone.
+          flip the switch. Clear both fields to cancel it. You enter times in
+          your own timezone; users see them announced in Bogotá time.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">

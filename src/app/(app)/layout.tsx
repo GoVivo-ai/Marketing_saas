@@ -5,7 +5,7 @@ import { getWorkspaceContext } from "@/lib/data";
 import { getMaintenance } from "@/lib/settings";
 import { canManageWorkspace, isWorkspaceAgent } from "@/lib/permissions";
 import { VivoLogo } from "@/components/app/vivo-logo";
-import { formatBogota } from "@/lib/timezone";
+import { LocalDateTime } from "@/components/app/local-datetime";
 import { AppSidebar } from "@/components/app/sidebar";
 import { ThemeToggle } from "@/components/app/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -42,7 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <p className="text-sm text-muted-foreground">
             Estimated to be back by{" "}
             <span className="font-medium text-foreground">
-              {formatBogota(maintenance.scheduledEnd)}
+              <LocalDateTime iso={maintenance.scheduledEnd} />
             </span>
             .
           </p>
@@ -93,7 +93,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <span>
               Maintenance mode is ON
               {!maintenance.enabled && maintenance.scheduledEnd && (
-                <> (scheduled window, ends {formatBogota(maintenance.scheduledEnd)})</>
+                <>
+                  {" "}
+                  (scheduled window, ends{" "}
+                  <LocalDateTime iso={maintenance.scheduledEnd} />)
+                </>
               )}{" "}
               — everyone except developers sees the maintenance screen. Manage
               it from the Developer dashboard.
@@ -106,9 +110,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/40 bg-sky-500/10 px-6 py-2 text-sm text-sky-600 dark:text-sky-400">
             <Wrench className="h-4 w-4 shrink-0" />
             <span>
-              Scheduled maintenance: {formatBogota(maintenance.scheduledStart)}
+              Scheduled maintenance:{" "}
+              <LocalDateTime iso={maintenance.scheduledStart} />
               {maintenance.scheduledEnd && (
-                <> → {formatBogota(maintenance.scheduledEnd)}</>
+                <>
+                  {" "}
+                  → <LocalDateTime iso={maintenance.scheduledEnd} />
+                </>
               )}
               . The platform will be unavailable during this window.
               {role === "developer" &&

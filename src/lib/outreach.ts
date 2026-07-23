@@ -26,6 +26,26 @@ export const OUTREACH_OUTCOMES = [
 export type OutreachOutcome = (typeof OUTREACH_OUTCOMES)[number];
 
 /**
+ * One-click outcome chips — the dot carries the sentiment (like the stage
+ * pills) so the buttons stay visually quiet. Shared by the Contact Queue card
+ * and the lead detail's Activity logger so both surfaces offer the same
+ * options.
+ */
+export const OUTCOME_CHIPS: {
+  outcome: OutreachOutcome;
+  label: string;
+  dot: string;
+}[] = [
+  { outcome: "answered", label: "Answered", dot: "bg-success" },
+  { outcome: "replied", label: "Replied", dot: "bg-success" },
+  { outcome: "voicemail", label: "Voicemail", dot: "bg-amber-500" },
+  { outcome: "no_answer", label: "No answer", dot: "bg-amber-500" },
+  { outcome: "sent", label: "Email / SMS sent", dot: "bg-sky-500" },
+  { outcome: "not_interested", label: "Not interested", dot: "bg-destructive" },
+  { outcome: "wrong_number", label: "Wrong number", dot: "bg-destructive" },
+];
+
+/**
  * Terminal outcomes ask for the RCA reason before moving on, pre-filled with
  * the most likely path from the shared taxonomy so it usually stays 1 click.
  * Shared by the Contact Queue card and the lead detail's outreach logger so

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { formatDistanceToNow } from "date-fns";
 import {
   PhoneCall,
@@ -36,7 +36,7 @@ import {
   undoLeadOutreach,
 } from "@/lib/actions/leads";
 import { RCA_LEVEL1, rcaLevel2, rcaLevel3, isValidRcaPath } from "@/lib/rca";
-import { DISQUAL_PREFILL } from "@/lib/outreach";
+import { DISQUAL_PREFILL, OUTCOME_CHIPS } from "@/lib/outreach";
 import type { OutreachChannel, OutreachOutcome } from "@/lib/outreach";
 import type { ContactQueueData, LeadRow, QueueItem } from "@/lib/data";
 import { Badge } from "@/components/ui/badge";
@@ -62,23 +62,49 @@ const NEEDS_DIALER =
   "Open the RingCentral dialer (bottom-right) and sign in first.";
 
 /**
- * One-click outcomes — replaces the two dropdowns of the activity logger.
- * The dot carries the sentiment (like the stage pills) so the buttons stay
- * visually quiet.
+ * The in-progress session is mirrored to localStorage so accidentally leaving
+ * the page (a mis-click on the sidebar, a reload) doesn't wipe the agent's
+ * progress: queue position, the worked-this-session list (undo), and a
+ * half-finished RCA / follow-up sub-flow all come back on return.
  */
-const OUTCOME_CHIPS: {
-  outcome: OutreachOutcome;
-  label: string;
-  dot: string;
-}[] = [
-  { outcome: "answered", label: "Answered", dot: "bg-success" },
-  { outcome: "replied", label: "Replied", dot: "bg-success" },
-  { outcome: "voicemail", label: "Voicemail", dot: "bg-amber-500" },
-  { outcome: "no_answer", label: "No answer", dot: "bg-amber-500" },
-  { outcome: "sent", label: "Email / SMS sent", dot: "bg-sky-500" },
-  { outcome: "not_interested", label: "Not interested", dot: "bg-destructive" },
-  { outcome: "wrong_number", label: "Wrong number", dot: "bg-destructive" },
-];
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+interface StoredSession {
+  at: number;
+  done: number;
+  worked: { item: QueueItem; outcome: OutreachOutcome; eventId: string | null }[];
+  /** Queue order (lead ids) at save time — restores skips and jumps. */
+  order: string[];
+  /** Leads already logged this session, filtered out of fresh server data. */
+  handled: string[];
+  channel: OutreachChannel;
+  /** A sub-flow (RCA / follow-up) left open on the current lead. */
+  pending: {
+    item: QueueItem;
+    disqualOutcome: OutreachOutcome | null;
+    followUp: boolean;
+    eventId: string | null;
+  } | null;
+}
+
+function sessionKey(workspaceId: string | null) {
+  return `contact-queue-session:${workspaceId ?? "default"}`;
+}
+
+function readSession(key: string): StoredSession | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as StoredSession;
+    if (typeof s?.at !== "number" || Date.now() - s.at > SESSION_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return s;
+  } catch {
+    return null;
+  }
+}
 
 const CHANNEL_LABEL: Record<OutreachChannel, string> = {
   call: "Call",
@@ -503,11 +529,14 @@ export function ContactQueue({
   data,
   automation,
   defaultCriteria,
+  workspaceId,
 }: {
   data: ContactQueueData;
   automation?: QueueAutomation | null;
   /** Workspace-wide criteria, shown when the lead's campaign has none. */
   defaultCriteria?: string | null;
+  /** Scopes the persisted session so workspaces don't cross-restore. */
+  workspaceId?: string | null;
 }) {
   const [items, setItems] = useState(data.items);
   const [channel, setChannel] = useState<OutreachChannel>("call");
@@ -530,6 +559,76 @@ export function ContactQueue({
   const [worked, setWorked] = useState<
     { item: QueueItem; outcome: OutreachOutcome; eventId: string | null }[]
   >([]);
+
+  // Restore a persisted session on mount, then mirror every change back so
+  // leaving the page loses nothing. localStorage can't be read in the state
+  // initializers (the SSR pass has no storage, so hydration would mismatch),
+  // hence the one-shot setState-in-effect.
+  const storageKey = sessionKey(workspaceId ?? null);
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    const s = readSession(storageKey);
+    if (!s) return;
+    const handled = new Set(s.handled);
+    const pendingId = s.pending?.item.id ?? null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setItems((list) => {
+      const pos = new Map(s.order.map((id, i) => [id, i]));
+      // Drop leads already logged this session; keep the saved working order,
+      // with leads new since then appended at the end.
+      const next = list
+        .filter((x) => !handled.has(x.id) || x.id === pendingId)
+        .sort(
+          (a, b) =>
+            (pos.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+            (pos.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+        );
+      if (!s.pending) return next;
+      // A sub-flow was open — its lead goes back to the front even if the
+      // fresh server data no longer includes it.
+      const i = next.findIndex((x) => x.id === pendingId);
+      const item = i >= 0 ? next.splice(i, 1)[0] : s.pending.item;
+      return [item, ...next];
+    });
+    setDone(s.done);
+    setWorked(s.worked);
+    setChannel(s.channel);
+    if (s.pending) {
+      setDisqualOutcome(s.pending.disqualOutcome);
+      setFollowUp(s.pending.followUp);
+      setLastEvent({ item: s.pending.item, eventId: s.pending.eventId });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!restored.current) return;
+    const pendingItem =
+      lastEvent && (disqualOutcome || followUp) ? lastEvent.item : null;
+    const session: StoredSession = {
+      at: Date.now(),
+      done,
+      worked,
+      order: items.map((x) => x.id),
+      handled: worked.map((w) => w.item.id),
+      channel,
+      pending: pendingItem
+        ? {
+            item: pendingItem,
+            disqualOutcome,
+            followUp,
+            eventId: lastEvent?.eventId ?? null,
+          }
+        : null,
+    };
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(session));
+    } catch {
+      // Storage full / unavailable — the queue still works, just unpersisted.
+    }
+  }, [items, done, worked, channel, disqualOutcome, followUp, lastEvent, storageKey]);
 
   const current = items[0] ?? null;
   const upNext = items.slice(1, 7);

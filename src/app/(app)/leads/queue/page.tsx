@@ -283,6 +283,7 @@ export default async function ContactQueuePage({
           data={viewData}
           automation={queueAutomation}
           defaultCriteria={workspaceCriteria}
+          workspaceId={active?.id ?? null}
         />
       )}
     </div>

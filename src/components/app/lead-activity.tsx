@@ -23,8 +23,8 @@ import {
 } from "@/lib/actions/leads";
 import {
   DISQUAL_PREFILL,
+  OUTCOME_CHIPS,
   OUTREACH_CHANNELS,
-  OUTREACH_OUTCOMES,
   type LeadActivityItem,
   type OutreachChannel,
   type OutreachOutcome,
@@ -92,7 +92,10 @@ export function LeadActivity({ leadId }: { leadId: string }) {
   const [items, setItems] = useState<LeadActivityItem[] | null>(null);
   const [note, setNote] = useState("");
   const [channel, setChannel] = useState<OutreachChannel>("call");
-  const [outcome, setOutcome] = useState<OutreachOutcome>("no_answer");
+  /** Chip being logged right now — drives its spinner. */
+  const [pendingOutcome, setPendingOutcome] = useState<OutreachOutcome | null>(
+    null,
+  );
   const [outreachNote, setOutreachNote] = useState("");
   const [showLog, setShowLog] = useState(false);
   const [savingNote, startNote] = useTransition();
@@ -128,8 +131,9 @@ export function LeadActivity({ leadId }: { leadId: string }) {
       await load();
     });
 
-  const onLog = () =>
+  const onLog = (outcome: OutreachOutcome) =>
     startLog(async () => {
+      setPendingOutcome(outcome);
       const r = await logLeadOutreach(leadId, {
         channel,
         outcome,
@@ -137,6 +141,7 @@ export function LeadActivity({ leadId }: { leadId: string }) {
       });
       if (!r.ok) {
         toast.error(r.message);
+        setPendingOutcome(null);
         return;
       }
       // Same flow as the Contact Queue: a terminal outcome also records the
@@ -149,6 +154,7 @@ export function LeadActivity({ leadId }: { leadId: string }) {
       }
       setOutreachNote("");
       setShowLog(false);
+      setPendingOutcome(null);
       toast.success(
         prefill
           ? `Outreach logged — marked ${OUTCOME_LABEL[outcome]} (reason editable in Disqualify).`
@@ -174,7 +180,8 @@ export function LeadActivity({ leadId }: { leadId: string }) {
         </Button>
       </div>
 
-      {/* Log a contact attempt — the spreadsheet's outreach columns. */}
+      {/* Log a contact attempt — the spreadsheet's outreach columns. Same
+          one-click outcome chips as the Contact Queue card. */}
       {showLog && (
         <div className="space-y-2 rounded-md border bg-muted/30 p-3">
           <div className="flex flex-wrap gap-2">
@@ -193,36 +200,35 @@ export function LeadActivity({ leadId }: { leadId: string }) {
                 ))}
               </SelectContent>
             </Select>
-            <Select
-              value={outcome}
-              onValueChange={(v) => v && setOutcome(v as OutreachOutcome)}
-            >
-              <SelectTrigger className="h-8 w-36 text-xs" aria-label="Outcome">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {OUTREACH_OUTCOMES.map((o) => (
-                  <SelectItem key={o} value={o}>
-                    {OUTCOME_LABEL[o]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Input
+              value={outreachNote}
+              onChange={(e) => setOutreachNote(e.target.value)}
+              placeholder="Optional comment…"
+              maxLength={2000}
+              className="h-8 min-w-40 flex-1 text-xs"
+            />
           </div>
-          <Input
-            value={outreachNote}
-            onChange={(e) => setOutreachNote(e.target.value)}
-            placeholder="Optional comment…"
-            maxLength={2000}
-            className="h-8 text-xs"
-          />
-          <div className="flex justify-end">
-            <Button size="sm" className="h-8" disabled={logging} onClick={onLog}>
-              {logging ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : null}
-              Log
-            </Button>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            What happened?
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {OUTCOME_CHIPS.map((c) => (
+              <Button
+                key={c.outcome}
+                size="sm"
+                variant="outline"
+                disabled={logging}
+                className="h-8 gap-1.5 font-normal"
+                onClick={() => onLog(c.outcome)}
+              >
+                {logging && pendingOutcome === c.outcome ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <span className={cn("h-1.5 w-1.5 rounded-full", c.dot)} />
+                )}
+                {c.label}
+              </Button>
+            ))}
           </div>
         </div>
       )}

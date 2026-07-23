@@ -103,19 +103,23 @@ export default async function DevDashboardPage() {
         <CardHeader>
           <CardTitle className="text-base">Maintenance</CardTitle>
           <CardDescription>
-            {maintenance.enabled
+            {maintenance.active
               ? `ON since ${
                   maintenance.updatedAt
                     ? format(new Date(maintenance.updatedAt), "PPp")
                     : "unknown"
                 }${maintenance.updatedBy ? ` — by ${maintenance.updatedBy}` : ""}`
-              : "The platform is running normally."}
+              : maintenance.upcoming
+                ? "A maintenance window is scheduled."
+                : "The platform is running normally."}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <DevMaintenanceForm
             enabled={maintenance.enabled}
             message={maintenance.message}
+            scheduledStart={maintenance.scheduledStart}
+            scheduledEnd={maintenance.scheduledEnd}
           />
         </CardContent>
       </Card>

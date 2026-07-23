@@ -31,20 +31,51 @@ export async function setMaintenanceMode(
   const enabled = formData.get("enabled") === "on";
   const message = String(formData.get("message") ?? "").trim().slice(0, 500) || null;
 
+  // Optional scheduled window — the client submits ISO datetimes (UTC).
+  const rawStart = String(formData.get("scheduledStart") ?? "").trim();
+  const rawEnd = String(formData.get("scheduledEnd") ?? "").trim();
+  let scheduledStart: string | null = null;
+  let scheduledEnd: string | null = null;
+  if (rawStart || rawEnd) {
+    if (!rawStart || !rawEnd) {
+      return { error: "A scheduled window needs both a start and an end." };
+    }
+    const start = Date.parse(rawStart);
+    const end = Date.parse(rawEnd);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      return { error: "Invalid scheduled window dates." };
+    }
+    if (end <= start) {
+      return { error: "The window must end after it starts." };
+    }
+    if (end <= Date.now()) {
+      return { error: "The scheduled window is entirely in the past." };
+    }
+    scheduledStart = new Date(start).toISOString();
+    scheduledEnd = new Date(end).toISOString();
+  }
+
   const current = await getMaintenance();
-  if (current.enabled === enabled && current.message === message) {
+  if (
+    current.enabled === enabled &&
+    current.message === message &&
+    current.scheduledStart === scheduledStart &&
+    current.scheduledEnd === scheduledEnd
+  ) {
     return { success: "No changes." };
   }
 
   await setMaintenance({
     enabled,
     message,
+    scheduledStart,
+    scheduledEnd,
     updatedBy: gate.name,
     updatedAt: new Date().toISOString(),
   });
   // The flag gates the whole app shell, so everything revalidates.
   revalidatePath("/", "layout");
-  return {
-    success: enabled ? "Maintenance mode is ON." : "Maintenance mode is off.",
-  };
+  if (enabled) return { success: "Maintenance mode is ON." };
+  if (scheduledStart) return { success: "Maintenance window scheduled." };
+  return { success: "Maintenance mode is off." };
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState, useEffect, useState, useTransition } from "react";
-import { Loader2, TriangleAlert } from "lucide-react";
+import { format } from "date-fns";
+import { CalendarClock, Loader2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { setMaintenanceMode, type DevActionState } from "@/lib/actions/dev";
 import { Button } from "@/components/ui/button";
@@ -9,12 +10,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
+/** ISO → the local-time string a datetime-local input expects. */
+const toLocalInput = (iso: string | null) =>
+  iso ? format(new Date(iso), "yyyy-MM-dd'T'HH:mm") : "";
+
 export function DevMaintenanceForm({
   enabled,
   message,
+  scheduledStart,
+  scheduledEnd,
 }: {
   enabled: boolean;
   message: string | null;
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
 }) {
   const [checked, setChecked] = useState(enabled);
   const [state, action, pending] = useActionState<DevActionState, FormData>(
@@ -35,6 +44,12 @@ export function DevMaintenanceForm({
       onSubmit={(e) => {
         e.preventDefault();
         const data = new FormData(e.currentTarget);
+        // datetime-local values are local wall time — normalize to ISO/UTC so
+        // the server stores an unambiguous instant.
+        for (const field of ["scheduledStart", "scheduledEnd"] as const) {
+          const raw = String(data.get(field) ?? "").trim();
+          data.set(field, raw ? new Date(raw).toISOString() : "");
+        }
         startSubmit(() => action(data));
       }}
       className="space-y-4"
@@ -76,6 +91,45 @@ export function DevMaintenanceForm({
           placeholder="We're doing scheduled maintenance — back shortly."
           maxLength={500}
         />
+      </div>
+
+      {/* Scheduled window — turns itself on at start and back off at end. */}
+      <div className="space-y-2 rounded-lg border p-4">
+        <p className="flex items-center gap-2 text-sm font-medium">
+          <CalendarClock className="h-4 w-4 text-muted-foreground" />
+          Scheduled window (optional)
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Maintenance starts and ends automatically — no need to come back and
+          flip the switch. Clear both fields to cancel it. Times are your local
+          timezone.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="mnt-start" className="text-xs">
+              From
+            </Label>
+            <Input
+              id="mnt-start"
+              name="scheduledStart"
+              type="datetime-local"
+              defaultValue={toLocalInput(scheduledStart)}
+              className="text-sm"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="mnt-end" className="text-xs">
+              Until
+            </Label>
+            <Input
+              id="mnt-end"
+              name="scheduledEnd"
+              type="datetime-local"
+              defaultValue={toLocalInput(scheduledEnd)}
+              className="text-sm"
+            />
+          </div>
+        </div>
       </div>
       <div className="flex justify-end">
         <Button size="sm" type="submit" disabled={pending}>

@@ -95,12 +95,23 @@ export async function setRingCentralEnv(env: RingCentralEnv): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────
 
 export interface MaintenanceState {
+  /** Manual switch — on until a developer turns it off. */
   enabled: boolean;
   /** Optional custom message shown on the maintenance screen. */
   message: string | null;
+  /** Optional scheduled window (ISO datetimes) — activates and ends itself. */
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
   /** Who flipped it and when — shown on the dev dashboard. */
   updatedBy: string | null;
   updatedAt: string | null;
+}
+
+export interface MaintenanceStatus extends MaintenanceState {
+  /** Maintenance is in effect right now (manual switch OR inside the window). */
+  active: boolean;
+  /** A scheduled window exists and hasn't started yet. */
+  upcoming: boolean;
 }
 
 const MAINTENANCE_KEY = "platform_maintenance";
@@ -108,28 +119,43 @@ const MAINTENANCE_KEY = "platform_maintenance";
 const MAINTENANCE_OFF: MaintenanceState = {
   enabled: false,
   message: null,
+  scheduledStart: null,
+  scheduledEnd: null,
   updatedBy: null,
   updatedAt: null,
 };
 
-export async function getMaintenance(): Promise<MaintenanceState> {
-  if (!isDatabaseConfigured()) return MAINTENANCE_OFF;
+/** The window is evaluated per request — no cron needed to start/stop it. */
+function withStatus(state: MaintenanceState): MaintenanceStatus {
+  const now = Date.now();
+  const start = state.scheduledStart ? Date.parse(state.scheduledStart) : NaN;
+  const end = state.scheduledEnd ? Date.parse(state.scheduledEnd) : NaN;
+  const inWindow =
+    Number.isFinite(start) && Number.isFinite(end) && now >= start && now < end;
+  const upcoming = Number.isFinite(start) && Number.isFinite(end) && now < start;
+  return { ...state, active: state.enabled || inWindow, upcoming };
+}
+
+export async function getMaintenance(): Promise<MaintenanceStatus> {
+  if (!isDatabaseConfigured()) return withStatus(MAINTENANCE_OFF);
   const [row] = await db()
     .select({ valueEnc: schema.appSettings.valueEnc })
     .from(schema.appSettings)
     .where(eq(schema.appSettings.key, MAINTENANCE_KEY))
     .limit(1);
-  if (!row) return MAINTENANCE_OFF;
+  if (!row) return withStatus(MAINTENANCE_OFF);
   try {
     const parsed = JSON.parse(decryptSecret(row.valueEnc)) as Partial<MaintenanceState>;
-    return {
+    return withStatus({
       enabled: parsed.enabled === true,
       message: parsed.message ?? null,
+      scheduledStart: parsed.scheduledStart ?? null,
+      scheduledEnd: parsed.scheduledEnd ?? null,
       updatedBy: parsed.updatedBy ?? null,
       updatedAt: parsed.updatedAt ?? null,
-    };
+    });
   } catch {
-    return MAINTENANCE_OFF;
+    return withStatus(MAINTENANCE_OFF);
   }
 }
 

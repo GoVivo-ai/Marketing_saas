@@ -5,6 +5,7 @@ import { getWorkspaceContext } from "@/lib/data";
 import { getMaintenance } from "@/lib/settings";
 import { canManageWorkspace, isWorkspaceAgent } from "@/lib/permissions";
 import { VivoLogo } from "@/components/app/vivo-logo";
+import { LocalDateTime } from "@/components/app/local-datetime";
 import { AppSidebar } from "@/components/app/sidebar";
 import { ThemeToggle } from "@/components/app/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -18,10 +19,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const role = (session.user as { role?: string }).role;
 
-  // Maintenance mode (flipped from /dev): non-developers get a maintenance
-  // screen instead of the app; developers keep working with a banner.
+  // Maintenance mode (flipped from /dev, or a scheduled window): non-developers
+  // get a maintenance screen instead of the app; developers keep working with
+  // a banner. `active` covers both the manual switch and the window.
   const maintenance = await getMaintenance();
-  if (maintenance.enabled && role !== "developer") {
+  if (maintenance.active && role !== "developer") {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
         <div className="dark rounded-xl bg-sidebar p-4">
@@ -35,6 +37,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {maintenance.message ??
             "We're doing scheduled maintenance and will be back shortly. Your data is safe."}
         </p>
+        {/* A window gives users a concrete comeback time. */}
+        {!maintenance.enabled && maintenance.scheduledEnd && (
+          <p className="text-sm text-muted-foreground">
+            Estimated to be back by{" "}
+            <span className="font-medium text-foreground">
+              <LocalDateTime iso={maintenance.scheduledEnd} />
+            </span>
+            .
+          </p>
+        )}
         <form
           action={async () => {
             "use server";
@@ -75,11 +87,41 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           (e.g. a pipeline with many stages) scrolls inside instead of
           stretching the page. */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {maintenance.enabled && (
+        {maintenance.active && (
           <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-6 py-2 text-sm text-amber-600 dark:text-amber-400">
             <Wrench className="h-4 w-4 shrink-0" />
-            Maintenance mode is ON — everyone except developers sees the
-            maintenance screen. Turn it off from the Developer dashboard.
+            <span>
+              Maintenance mode is ON
+              {!maintenance.enabled && maintenance.scheduledEnd && (
+                <>
+                  {" "}
+                  (scheduled window, ends{" "}
+                  <LocalDateTime iso={maintenance.scheduledEnd} />)
+                </>
+              )}{" "}
+              — everyone except developers sees the maintenance screen. Manage
+              it from the Developer dashboard.
+            </span>
+          </div>
+        )}
+        {/* Advance notice for everyone before a scheduled window starts;
+            developers additionally get the pointer to manage it. */}
+        {!maintenance.active && maintenance.upcoming && maintenance.scheduledStart && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/40 bg-sky-500/10 px-6 py-2 text-sm text-sky-600 dark:text-sky-400">
+            <Wrench className="h-4 w-4 shrink-0" />
+            <span>
+              Scheduled maintenance:{" "}
+              <LocalDateTime iso={maintenance.scheduledStart} />
+              {maintenance.scheduledEnd && (
+                <>
+                  {" "}
+                  → <LocalDateTime iso={maintenance.scheduledEnd} />
+                </>
+              )}
+              . The platform will be unavailable during this window.
+              {role === "developer" &&
+                " Cancel or adjust it from the Developer dashboard."}
+            </span>
           </div>
         )}
         <header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b px-6">

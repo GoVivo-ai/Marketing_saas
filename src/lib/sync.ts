@@ -10,9 +10,8 @@ import { geocodeCity, geocodeCityCached, geocodeZipCached } from "@/lib/integrat
 import { decryptSecret } from "@/lib/crypto";
 import { getSecret } from "@/lib/settings";
 import {
-  scoreLead,
+  scoreLeadBatch,
   radiusBoostByLeadId,
-  withRadiusBoost,
   campaignCriteriaByLeadId,
 } from "@/lib/ai/lead-scoring";
 import { isAiConfigured } from "@/lib/ai/provider";
@@ -464,42 +463,24 @@ export async function syncConnection(
   // Non-fatal and skipped entirely when no Anthropic key is configured; a
   // single lead's failure never aborts the rest of the batch.
   let leadsScored = 0;
-  const scoredLeadIds: string[] = [];
+  let scoredLeadIds: string[] = [];
   if (freshLeads.length && workspace && (await isAiConfigured(conn.workspaceId))) {
     // In-radius leads score higher — they live where the service operates.
     const boosts = await radiusBoostByLeadId(freshLeads.map((l) => l.id));
     // Per-campaign criteria overrides the workspace-wide criteria when present.
     const criteria = await campaignCriteriaByLeadId(freshLeads.map((l) => l.id));
-    for (const lead of freshLeads) {
-      try {
-        const result = await scoreLead({
-          workspaceId: conn.workspaceId,
-          workspaceName: workspace.name,
-          industry: workspace.industry ?? undefined,
-          qualificationCriteria:
-            criteria.get(lead.id) ?? workspace.qualificationCriteria ?? undefined,
-          formData: lead.formData,
-        });
-        const { score, applied } = withRadiusBoost(
-          result.score,
-          boosts.get(lead.id) ?? 0,
-        );
-        await db()
-          .update(schema.leads)
-          .set({
-            aiScore: score,
-            radiusBoost: applied,
-            aiScoreReason: result.reason,
-            aiSuggestedAction: result.suggestedAction,
-          })
-          .where(eq(schema.leads.id, lead.id));
-        leadsScored++;
-        scoredLeadIds.push(lead.id);
-      } catch {
-        // Leave aiScore null — the inbox shows "Pending" and a later
-        // re-score can fill it in. One bad lead shouldn't block the batch.
-      }
-    }
+    // A failed lead keeps aiScore null — the inbox shows "Pending" and a
+    // later re-score fills it in. One bad lead never blocks the batch.
+    scoredLeadIds = await scoreLeadBatch({
+      workspaceId: conn.workspaceId,
+      workspaceName: workspace.name,
+      industry: workspace.industry ?? undefined,
+      leads: freshLeads,
+      boosts,
+      criteriaFor: (id) =>
+        criteria.get(id) ?? workspace.qualificationCriteria ?? undefined,
+    });
+    leadsScored = scoredLeadIds.length;
   }
 
   // 5) Score automation — auto-contact just-scored leads per the workspace

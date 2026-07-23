@@ -8,6 +8,16 @@ import { anthropicProvider, isAiConfigured } from "./provider";
 
 const MODEL = "claude-haiku-4-5-20251001"; // high volume, low latency — cheap model
 
+/**
+ * How many leads are scored at once. Scoring used to be one-lead-at-a-time,
+ * which made a 100-lead backlog take minutes; a bounded pool keeps batches
+ * fast without hammering the API's rate limits.
+ */
+const SCORE_CONCURRENCY = 8;
+
+/** Per-lead cap so one slow/rate-limited call can't stall the whole batch. */
+const SCORE_TIMEOUT_MS = 30_000;
+
 const scoreSchema = z.object({
   score: z.number().min(0).max(100),
   reason: z.string().describe("One sentence explaining the score"),
@@ -29,11 +39,14 @@ export async function scoreLead(input: {
   industry?: string;
   qualificationCriteria?: string;
   formData: Record<string, unknown>;
+  /** Pre-resolved provider — batch callers pass it to skip the per-call key lookup. */
+  provider?: Awaited<ReturnType<typeof anthropicProvider>>;
 }): Promise<LeadScore> {
-  const anthropic = await anthropicProvider(input.workspaceId);
+  const anthropic = input.provider ?? (await anthropicProvider(input.workspaceId));
   const { object } = await generateObject({
     model: anthropic(MODEL),
     schema: scoreSchema,
+    abortSignal: AbortSignal.timeout(SCORE_TIMEOUT_MS),
     prompt: [
       `Score this inbound marketing lead from 0 (junk) to 100 (ready to buy).`,
       `Business: ${input.workspaceName}${input.industry ? ` (${input.industry})` : ""}.`,
@@ -137,6 +150,64 @@ export async function radiusBoostByLeadId(
   return new Map(rows.map((r) => [r.id, radiusBoost(r)]));
 }
 
+/**
+ * Scores a batch of leads with a bounded worker pool (SCORE_CONCURRENCY at a
+ * time) and writes each result as it lands. The provider (API key) is resolved
+ * once for the whole batch. A lead that fails or times out is skipped — its
+ * aiScore stays as-is and a later pass retries. Returns the scored lead ids
+ * in the input order.
+ */
+export async function scoreLeadBatch(input: {
+  workspaceId: string;
+  workspaceName: string;
+  industry?: string;
+  leads: { id: string; formData: unknown }[];
+  boosts: Map<string, number>;
+  criteriaFor: (leadId: string) => string | undefined;
+}): Promise<string[]> {
+  if (!input.leads.length) return [];
+  const anthropic = await anthropicProvider(input.workspaceId);
+  const scoredIds: (string | null)[] = new Array(input.leads.length).fill(null);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(SCORE_CONCURRENCY, input.leads.length) },
+    async () => {
+      while (next < input.leads.length) {
+        const i = next++;
+        const lead = input.leads[i];
+        try {
+          const r = await scoreLead({
+            workspaceId: input.workspaceId,
+            workspaceName: input.workspaceName,
+            industry: input.industry,
+            qualificationCriteria: input.criteriaFor(lead.id),
+            formData: (lead.formData ?? {}) as Record<string, unknown>,
+            provider: anthropic,
+          });
+          const { score, applied } = withRadiusBoost(
+            r.score,
+            input.boosts.get(lead.id) ?? 0,
+          );
+          await db()
+            .update(schema.leads)
+            .set({
+              aiScore: score,
+              radiusBoost: applied,
+              aiScoreReason: r.reason,
+              aiSuggestedAction: r.suggestedAction,
+            })
+            .where(eq(schema.leads.id, lead.id));
+          scoredIds[i] = lead.id;
+        } catch {
+          // Transient failure — this lead is retried on a later pass.
+        }
+      }
+    },
+  );
+  await Promise.all(workers);
+  return scoredIds.filter((id): id is string => id !== null);
+}
+
 /** Final score = AI base + radius boost, capped at 100 (with the boost actually applied). */
 export function withRadiusBoost(
   base: number,
@@ -184,35 +255,16 @@ export async function scorePendingLeads(
     campaignCriteriaByLeadId(pending.map((l) => l.id)),
   ]);
 
-  let scored = 0;
-  const scoredIds: string[] = [];
-  for (const lead of pending) {
-    try {
-      const r = await scoreLead({
-        workspaceId,
-        workspaceName: ws.name,
-        industry: ws.industry ?? undefined,
-        // Per-campaign criteria wins; fall back to the workspace-wide criteria.
-        qualificationCriteria:
-          criteria.get(lead.id) ?? ws.qualificationCriteria ?? undefined,
-        formData: (lead.formData ?? {}) as Record<string, unknown>,
-      });
-      const { score, applied } = withRadiusBoost(r.score, boosts.get(lead.id) ?? 0);
-      await db()
-        .update(schema.leads)
-        .set({
-          aiScore: score,
-          radiusBoost: applied,
-          aiScoreReason: r.reason,
-          aiSuggestedAction: r.suggestedAction,
-        })
-        .where(eq(schema.leads.id, lead.id));
-      scored++;
-      scoredIds.push(lead.id);
-    } catch {
-      // Transient failure — left pending, retried on the next run.
-    }
-  }
+  const scoredIds = await scoreLeadBatch({
+    workspaceId,
+    workspaceName: ws.name,
+    industry: ws.industry ?? undefined,
+    leads: pending,
+    boosts,
+    // Per-campaign criteria wins; fall back to the workspace-wide criteria.
+    criteriaFor: (id) => criteria.get(id) ?? ws.qualificationCriteria ?? undefined,
+  });
+  const scored = scoredIds.length;
 
   // Auto-contact freshly scored leads per the workspace's score automation.
   try {
@@ -284,33 +336,15 @@ export async function rescoreCampaignLeads(
 
   const boosts = await radiusBoostByLeadId(leads.map((l) => l.id));
 
-  let scored = 0;
-  const scoredIds: string[] = [];
-  for (const lead of leads) {
-    try {
-      const r = await scoreLead({
-        workspaceId,
-        workspaceName: ws.name,
-        industry: ws.industry ?? undefined,
-        qualificationCriteria: criteria,
-        formData: (lead.formData ?? {}) as Record<string, unknown>,
-      });
-      const { score, applied } = withRadiusBoost(r.score, boosts.get(lead.id) ?? 0);
-      await db()
-        .update(schema.leads)
-        .set({
-          aiScore: score,
-          radiusBoost: applied,
-          aiScoreReason: r.reason,
-          aiSuggestedAction: r.suggestedAction,
-        })
-        .where(eq(schema.leads.id, lead.id));
-      scored++;
-      scoredIds.push(lead.id);
-    } catch {
-      // Transient failure — the old score is kept; the operator can retry.
-    }
-  }
+  const scoredIds = await scoreLeadBatch({
+    workspaceId,
+    workspaceName: ws.name,
+    industry: ws.industry ?? undefined,
+    leads,
+    boosts,
+    criteriaFor: () => criteria,
+  });
+  const scored = scoredIds.length;
 
   // Auto-contact per the score automation. The once-per-lead guard inside
   // means a re-score never texts leads the automation (or a human) already

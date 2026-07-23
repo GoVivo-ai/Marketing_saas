@@ -37,10 +37,26 @@ const securityHeaders = [
   },
 ];
 
+// The embeddable public lead form must be frameable by client sites, so its
+// route swaps frame-ancestors 'none' for * and drops X-Frame-Options. Only
+// the form lives there — no session UI to clickjack.
+const embedCsp = csp.replace("frame-ancestors 'none'", "frame-ancestors *");
+const embedHeaders = securityHeaders.map((h) => {
+  if (h.key === "Content-Security-Policy") return { ...h, value: embedCsp };
+  // Later rules only override same-key headers, so DENY must be replaced,
+  // not removed. ALLOWALL is a no-op token; CSP frame-ancestors governs.
+  if (h.key === "X-Frame-Options") return { ...h, value: "ALLOWALL" };
+  return h;
+});
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // Later rules win on key collisions for matching paths.
+      { source: "/join/:slug/embed", headers: embedHeaders },
+    ];
   },
 };
 

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
-import { db, schema, isDatabaseConfigured } from "@/lib/db";
+import { accentForeground } from "@/lib/color";
+import { getPublicWorkspace } from "@/lib/public-workspace";
 import { PublicLeadForm } from "@/components/app/public-lead-form";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,8 @@ export const dynamic = "force-dynamic";
  * Public, shareable lead-capture page (no session): /join/<workspace-slug>.
  * The team drops this link when answering ad comments so applicants land in
  * MarTech directly — instead of the client's own site taking the credit for
- * leads our comment management produced.
+ * leads our comment management produced. An iframe-friendly variant lives at
+ * /join/<slug>/embed.
  */
 export default async function PublicJoinPage({
   params,
@@ -17,28 +18,18 @@ export default async function PublicJoinPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  if (!isDatabaseConfigured()) notFound();
-
-  const [ws] = await db()
-    .select({
-      name: schema.workspaces.name,
-      slug: schema.workspaces.slug,
-      logoUrl: schema.workspaces.logoUrl,
-      accentColor: schema.workspaces.accentColor,
-    })
-    .from(schema.workspaces)
-    .where(eq(schema.workspaces.slug, slug))
-    .limit(1);
+  const ws = await getPublicWorkspace(slug);
   if (!ws) notFound();
 
   const accent = ws.accentColor ?? "#0f172a";
+  const fg = accentForeground(accent);
 
   return (
     <main className="flex min-h-svh items-center justify-center bg-muted/40 p-4">
       <div className="w-full max-w-md">
         <div
-          className="rounded-t-xl px-6 py-5 text-white"
-          style={{ backgroundColor: accent }}
+          className="rounded-t-xl px-6 py-5"
+          style={{ backgroundColor: accent, color: fg }}
         >
           <div className="flex items-center gap-3">
             {ws.logoUrl && (
@@ -47,7 +38,7 @@ export default async function PublicJoinPage({
             )}
             <div>
               <h1 className="text-lg font-semibold leading-tight">{ws.name}</h1>
-              <p className="text-sm opacity-80">Apply in less than a minute</p>
+              <p className="text-sm opacity-75">Apply in less than a minute</p>
             </div>
           </div>
         </div>

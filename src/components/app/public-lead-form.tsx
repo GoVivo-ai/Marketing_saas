@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { CircleCheck, Loader2 } from "lucide-react";
 import { createPublicLead, type ManualLeadState } from "@/lib/actions/leads";
+import { accentForeground } from "@/lib/color";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,8 +79,8 @@ export function PublicLeadForm({
       {state.error && <p className="text-sm text-destructive">{state.error}</p>}
       <Button
         type="submit"
-        className="w-full text-white"
-        style={{ backgroundColor: accent }}
+        className="w-full"
+        style={{ backgroundColor: accent, color: accentForeground(accent) }}
         disabled={pending}
       >
         {pending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}

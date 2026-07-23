@@ -89,6 +89,62 @@ export async function setRingCentralEnv(env: RingCentralEnv): Promise<void> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Maintenance mode — a platform-wide switch flipped from the /dev dashboard.
+// While on, non-developer users get a maintenance screen instead of the app;
+// developers keep working and see a warning banner.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface MaintenanceState {
+  enabled: boolean;
+  /** Optional custom message shown on the maintenance screen. */
+  message: string | null;
+  /** Who flipped it and when — shown on the dev dashboard. */
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+const MAINTENANCE_KEY = "platform_maintenance";
+
+const MAINTENANCE_OFF: MaintenanceState = {
+  enabled: false,
+  message: null,
+  updatedBy: null,
+  updatedAt: null,
+};
+
+export async function getMaintenance(): Promise<MaintenanceState> {
+  if (!isDatabaseConfigured()) return MAINTENANCE_OFF;
+  const [row] = await db()
+    .select({ valueEnc: schema.appSettings.valueEnc })
+    .from(schema.appSettings)
+    .where(eq(schema.appSettings.key, MAINTENANCE_KEY))
+    .limit(1);
+  if (!row) return MAINTENANCE_OFF;
+  try {
+    const parsed = JSON.parse(decryptSecret(row.valueEnc)) as Partial<MaintenanceState>;
+    return {
+      enabled: parsed.enabled === true,
+      message: parsed.message ?? null,
+      updatedBy: parsed.updatedBy ?? null,
+      updatedAt: parsed.updatedAt ?? null,
+    };
+  } catch {
+    return MAINTENANCE_OFF;
+  }
+}
+
+export async function setMaintenance(state: MaintenanceState): Promise<void> {
+  const valueEnc = encryptSecret(JSON.stringify(state));
+  await db()
+    .insert(schema.appSettings)
+    .values({ key: MAINTENANCE_KEY, valueEnc, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: schema.appSettings.key,
+      set: { valueEnc, updatedAt: new Date() },
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Per-client Meta token — each workspace (client) has its own system-user
 // token, used to list and sync only that client's ad accounts.
 // ─────────────────────────────────────────────────────────────────────────

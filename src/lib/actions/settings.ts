@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
+import { isPlatformAdmin } from "@/lib/permissions";
 import { setSecret, type SecretKey } from "@/lib/settings";
 
 const ALLOWED_KEYS: SecretKey[] = ["meta_access_token", "anthropic_api_key"];
@@ -10,7 +11,7 @@ const ALLOWED_KEYS: SecretKey[] = ["meta_access_token", "anthropic_api_key"];
 export async function savePlatformSecret(formData: FormData) {
   const session = await auth();
   const role = (session?.user as { role?: string } | undefined)?.role;
-  if (role !== "agency_admin") {
+  if (!isPlatformAdmin(role)) {
     throw new Error("Only agency admins can manage platform credentials");
   }
 

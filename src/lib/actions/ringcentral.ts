@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
+import { isPlatformAdmin } from "@/lib/permissions";
 import {
   clearRingCentralTokens,
   setRingCentralEnv,
@@ -25,7 +26,7 @@ export async function disconnectRingCentral() {
 export async function setRingCentralEnvironment(formData: FormData) {
   const session = await auth();
   const role = (session?.user as { role?: string } | undefined)?.role;
-  if (role !== "agency_admin") throw new Error("Only agency admins can do this.");
+  if (!isPlatformAdmin(role)) throw new Error("Only agency admins can do this.");
 
   const env = formData.get("env");
   if (env !== "production" && env !== "sandbox") {

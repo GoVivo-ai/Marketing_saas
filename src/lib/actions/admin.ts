@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
+import { isPlatformAdmin } from "@/lib/permissions";
 
 export interface AdminActionState {
   error?: string;
@@ -17,7 +18,7 @@ export interface AdminActionState {
 async function requireAdmin(): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = await auth();
   const role = (session?.user as { role?: string } | undefined)?.role;
-  if (role !== "agency_admin") {
+  if (!isPlatformAdmin(role)) {
     return { ok: false, error: "Only agency admins can do this." };
   }
   return { ok: true };
@@ -99,7 +100,7 @@ export async function deleteWorkspace(formData: FormData) {
 // Users
 // ─────────────────────────────────────────────────────────────────────────
 
-const USER_ROLES = ["client", "agency_member", "agency_admin"] as const;
+const USER_ROLES = ["client", "agency_member", "agency_admin", "developer"] as const;
 type UserRole = (typeof USER_ROLES)[number];
 
 export async function createUser(

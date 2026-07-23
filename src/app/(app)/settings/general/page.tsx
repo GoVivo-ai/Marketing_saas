@@ -306,7 +306,7 @@ export default async function GeneralSettingsPage() {
             <RingCentralConnectCard
               connected={rcConnected}
               fromNumber={rcTokens?.fromNumber ?? null}
-              isAdmin={me?.role === "agency_admin"}
+              isAdmin={me?.role === "agency_admin" || me?.role === "developer"}
               env={rcEnv}
               envConfigured={rcEnvConfigured}
             />

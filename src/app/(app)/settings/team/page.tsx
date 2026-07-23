@@ -6,6 +6,7 @@ import { getWorkspaceContext } from "@/lib/data";
 import {
   canManageWorkspace,
   currentUser,
+  isPlatformAdmin,
   requireFullAccess,
 } from "@/lib/permissions";
 import { setWorkspaceActive } from "@/lib/actions/admin";
@@ -38,6 +39,7 @@ const roleLabel: Record<string, string> = {
   agency_admin: "Admin",
   agency_member: "Agency",
   client: "Client",
+  developer: "Developer",
 };
 
 export default async function TeamPage() {
@@ -47,7 +49,7 @@ export default async function TeamPage() {
   // Clients manage only their own organization's users.
   if (role === "client") return <ClientTeam userId={me!.id} />;
 
-  if (role !== "agency_admin") {
+  if (!isPlatformAdmin(role)) {
     return (
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Clients & Team</h1>

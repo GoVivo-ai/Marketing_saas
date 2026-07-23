@@ -3,10 +3,18 @@ import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 
-export type Role = "agency_admin" | "agency_member" | "client";
+export type Role = "developer" | "agency_admin" | "agency_member" | "client";
 
 /** Per-company role of a client user (stored on workspace_members). */
 export type WorkspaceRole = "admin" | "supervisor" | "agent";
+
+/**
+ * Platform admins: agency admins plus developers. A developer is a platform
+ * engineer — everywhere an agency admin is allowed, a developer is too, and
+ * only developers get the /dev dashboard (maintenance mode, system status).
+ */
+export const isPlatformAdmin = (role: Role | string | undefined) =>
+  role === "agency_admin" || role === "developer";
 
 export async function currentUser(): Promise<{ id: string; role: Role } | null> {
   const session = await auth();
@@ -17,7 +25,7 @@ export async function currentUser(): Promise<{ id: string; role: Role } | null> 
 }
 
 export const isAgency = (role: Role | undefined) =>
-  role === "agency_admin" || role === "agency_member";
+  role === "agency_admin" || role === "agency_member" || role === "developer";
 
 /** The user's role inside a specific workspace (admin | supervisor | agent), or null. */
 export async function getWorkspaceRole(
@@ -45,7 +53,7 @@ export async function getWorkspaceRole(
 export async function canManageWorkspace(workspaceId: string): Promise<boolean> {
   const u = await currentUser();
   if (!u) return false;
-  if (u.role === "agency_admin") return true;
+  if (isPlatformAdmin(u.role)) return true;
   if (u.role === "agency_member") return false;
   const wsRole = await getWorkspaceRole(u.id, workspaceId);
   return wsRole === "admin" || wsRole === "supervisor";
@@ -60,7 +68,7 @@ export async function isWorkspaceAgent(workspaceId: string): Promise<boolean> {
   const u = await currentUser();
   if (!u) return false;
   if (u.role === "agency_member") return true;
-  if (u.role === "agency_admin") return false;
+  if (isPlatformAdmin(u.role)) return false;
   return (await getWorkspaceRole(u.id, workspaceId)) === "agent";
 }
 
@@ -83,7 +91,7 @@ export async function isAgentOnly(): Promise<boolean> {
   const u = await currentUser();
   if (!u) return false;
   if (u.role === "agency_member") return true;
-  if (u.role === "agency_admin") return false;
+  if (isPlatformAdmin(u.role)) return false;
   const memberships = await db()
     .select({ role: schema.workspaceMembers.role })
     .from(schema.workspaceMembers)

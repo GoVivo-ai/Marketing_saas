@@ -13,6 +13,7 @@ import {
   FileBarChart,
   Plug,
   Settings,
+  TerminalSquare,
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -73,11 +74,16 @@ export function AppSidebar({
           },
         ]),
     { href: "/settings/general", label: "Settings", icon: Settings },
+    // Developers get their own dashboard: maintenance mode + system status.
+    ...(role === "developer"
+      ? [{ href: "/dev", label: "Developer", icon: TerminalSquare }]
+      : []),
   ];
 
   // Support = open a ticket with the Vivo Assistant (Slack follow-up). Agency
   // users file from here; clients keep their own channels.
-  const showSupport = role === "agency_admin" || role === "agency_member";
+  const showSupport =
+    role === "agency_admin" || role === "agency_member" || role === "developer";
 
   const item = (href: string, label: string, Icon: typeof LayoutDashboard) => (
     <Link

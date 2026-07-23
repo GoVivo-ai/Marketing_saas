@@ -52,7 +52,8 @@ async function requireLeadAccess(leadId: string) {
     .limit(1);
   if (!lead) throw new Error("Lead not found");
 
-  const isAgency = role === "agency_admin" || role === "agency_member";
+  const isAgency =
+    role === "agency_admin" || role === "agency_member" || role === "developer";
   if (!isAgency) {
     const [member] = await db()
       .select({ id: schema.workspaceMembers.id })

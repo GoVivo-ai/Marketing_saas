@@ -14,9 +14,9 @@ import {
   Plug,
   Settings,
   Users,
-  LifeBuoy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SupportDialog } from "./support-dialog";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { VivoLogo } from "./vivo-logo";
 import type { WorkspaceInfo } from "@/lib/data";
@@ -72,52 +72,28 @@ export function AppSidebar({
             icon: Users,
           },
         ]),
-    // Support / ticket dashboard (the Vivo Assistant admin) — admins only.
-    ...(role === "agency_admin"
-      ? [
-          {
-            href: "https://vivo-assistant.vercel.app/admin/tickets",
-            label: "Support",
-            icon: LifeBuoy,
-            external: true,
-          },
-        ]
-      : []),
     { href: "/settings/general", label: "Settings", icon: Settings },
   ];
 
-  const item = (
-    href: string,
-    label: string,
-    Icon: typeof LayoutDashboard,
-    external?: boolean,
-  ) => {
-    const className = cn(
-      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-      pathname === href
-        ? "bg-primary/10 text-primary"
-        : "text-muted-foreground hover:bg-muted hover:text-foreground",
-    );
-    if (external)
-      return (
-        <a
-          key={href}
-          href={href}
-          target="_blank"
-          rel="noreferrer"
-          className={className}
-        >
-          <Icon className="h-4 w-4" />
-          {label}
-        </a>
-      );
-    return (
-      <Link key={href} href={href} className={className}>
-        <Icon className="h-4 w-4" />
-        {label}
-      </Link>
-    );
-  };
+  // Support = open a ticket with the Vivo Assistant (Slack follow-up). Agency
+  // users file from here; clients keep their own channels.
+  const showSupport = role === "agency_admin" || role === "agency_member";
+
+  const item = (href: string, label: string, Icon: typeof LayoutDashboard) => (
+    <Link
+      key={href}
+      href={href}
+      className={cn(
+        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+        pathname === href
+          ? "bg-primary/10 text-primary"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+    </Link>
+  );
 
   return (
     // The `dark` class scopes the navy brand look to the rail: the sidebar
@@ -153,7 +129,8 @@ export function AppSidebar({
       </nav>
 
       <nav className="space-y-1 border-t px-3 py-3">
-        {bottomNav.map((n) => item(n.href, n.label, n.icon, "external" in n && n.external))}
+        {showSupport && <SupportDialog />}
+        {bottomNav.map((n) => item(n.href, n.label, n.icon))}
       </nav>
     </aside>
   );

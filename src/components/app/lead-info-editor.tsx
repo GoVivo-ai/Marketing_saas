@@ -92,17 +92,23 @@ export function LeadInfoEditor({
         if (k && !NAME_KEYS.includes(k)) formData[k] = f.value;
       }
       // Rewrite the form's own name fields with the edited values so views
-      // that read the name from formData agree with the new name.
-      const syncNameKeys = (keys: string[], value: string) => {
-        for (const k of keys) {
-          if (k in (lead.formData ?? {})) {
-            if (value) formData[k] = value;
-          }
-        }
+      // that read the name from formData agree with the new name. First/last
+      // are always written (adding the key if the form never had one): the
+      // stored full name can't round-trip a compound first name ("Juan
+      // Pablo"), so the explicit split is the only durable record of it.
+      const syncNameKeys = (
+        keys: string[],
+        value: string,
+        addIfMissing: boolean,
+      ) => {
+        const existing = keys.filter((k) => k in (lead.formData ?? {}));
+        if (!value) return;
+        if (existing.length) for (const k of existing) formData[k] = value;
+        else if (addIfMissing) formData[keys[0]] = value;
       };
-      syncNameKeys(FIRST_NAME_KEYS, firstName.trim());
-      syncNameKeys(LAST_NAME_KEYS, lastName.trim());
-      syncNameKeys(FULL_NAME_KEYS, name);
+      syncNameKeys(FIRST_NAME_KEYS, firstName.trim(), true);
+      syncNameKeys(LAST_NAME_KEYS, lastName.trim(), true);
+      syncNameKeys(FULL_NAME_KEYS, name, false);
       const res = await updateLeadInfo({
         leadId: lead.id,
         name: name || null,

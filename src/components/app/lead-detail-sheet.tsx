@@ -142,7 +142,7 @@ export function LeadDetailSheet({
                   )}
                 </div>
 
-                {lead.geo && lead.geo.status !== "no_target" && (
+                {lead.geo && (lead.geo.status !== "no_target" || lead.geo.leadCity) && (
                   <>
                     <Separator />
                     <LeadArea geo={lead.geo} />
@@ -184,6 +184,21 @@ export function LeadDetailSheet({
 
 /** Lead's position relative to its ad set's audience radius. */
 function LeadArea({ geo }: { geo: LeadGeo }) {
+  // A lead with a city but no ad-set target (e.g. added manually) still gets
+  // its location shown — there's just no audience radius to compare against.
+  if (geo.status === "no_target") {
+    return (
+      <div className="space-y-2 text-sm">
+        <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Location
+        </h4>
+        <p className="flex items-center gap-1.5 font-medium">
+          <MapPin className="h-4 w-4 text-muted-foreground" /> {geo.leadCity}
+        </p>
+      </div>
+    );
+  }
+
   const cfg = {
     within: { label: "Within radius", cls: "text-success", Icon: MapPin },
     near: { label: "Near the edge", cls: "text-amber-500", Icon: MapPin },

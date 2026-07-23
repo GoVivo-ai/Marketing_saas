@@ -698,6 +698,9 @@ export async function createManualLead(
         workspaceId,
         platform: "manual",
         name,
+        // Keep the explicit split: "Juan Pablo" + "Rivas" can't be recovered
+        // from the joined name, and leadNameParts prefers these fields.
+        formData: { first_name: firstName, last_name: lastName },
         phone: phone || null,
         email: email || null,
         geoCity: city || null,

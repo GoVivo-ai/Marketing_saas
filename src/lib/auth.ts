@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import Google from "next-auth/providers/google";
 import { compare } from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
@@ -13,11 +14,34 @@ const DUMMY_HASH = "$2b$12$k73nAN.OKqyxVf4H6Czj0uOLQaiWYxuRZ3mki/uyScS5kOTrmkpEa
 // How often a live session re-checks its user against the DB (see jwt below).
 const REVALIDATE_MS = 60_000;
 
+/**
+ * Google SSO switches on when its OAuth credentials are configured
+ * (AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET — Auth.js reads them by convention).
+ * It's sign-IN only: the Google email must already exist in `users`, so SSO
+ * never creates accounts and the roster stays admin-managed.
+ */
+export const googleSsoEnabled = Boolean(
+  process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET,
+);
+
+/** DB user matching an OAuth profile's email, or null. */
+async function userByEmail(email: string | null | undefined) {
+  const normalized = (email ?? "").toLowerCase().trim();
+  if (!normalized || !isDatabaseConfigured()) return null;
+  const [user] = await db()
+    .select({ id: schema.users.id, role: schema.users.role })
+    .from(schema.users)
+    .where(eq(schema.users.email, normalized))
+    .limit(1);
+  return user ?? null;
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt", maxAge: 60 * 60 * 24 },
   trustHost: true,
   pages: { signIn: "/login" },
   providers: [
+    ...(googleSsoEnabled ? [Google] : []),
     Credentials({
       name: "Email & Password",
       credentials: {
@@ -50,10 +74,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    // Google sign-in is allowed only for emails already on the roster —
+    // unknown accounts bounce back to /login with error=AccessDenied.
+    async signIn({ user, account }) {
+      if (account?.provider !== "google") return true;
+      return (await userByEmail(user.email)) !== null;
+    },
+    async jwt({ token, user, account }) {
       if (user) {
-        token.role = (user as { role?: string }).role ?? "client";
-        token.id = user.id;
+        if (account?.provider === "google") {
+          // The OAuth profile carries Google's ids — swap in ours.
+          const dbUser = await userByEmail(user.email);
+          if (!dbUser) return null;
+          token.id = dbUser.id;
+          token.role = dbUser.role;
+        } else {
+          token.role = (user as { role?: string }).role ?? "client";
+          token.id = user.id;
+        }
         token.chk = Date.now();
         return token;
       }

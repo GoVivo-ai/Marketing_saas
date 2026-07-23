@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import { Loader2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { setMaintenanceMode, type DevActionState } from "@/lib/actions/dev";
@@ -21,6 +21,7 @@ export function DevMaintenanceForm({
     setMaintenanceMode,
     {},
   );
+  const [, startSubmit] = useTransition();
 
   useEffect(() => {
     if (state.error) toast.error(state.error);
@@ -28,7 +29,16 @@ export function DevMaintenanceForm({
   }, [state]);
 
   return (
-    <form action={action} className="space-y-4">
+    // The action is dispatched manually so React 19's automatic form reset
+    // doesn't blank the controlled checkbox after a save.
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const data = new FormData(e.currentTarget);
+        startSubmit(() => action(data));
+      }}
+      className="space-y-4"
+    >
       <label
         className={cn(
           "flex cursor-pointer items-center justify-between rounded-lg border p-4 transition-colors",
@@ -68,7 +78,7 @@ export function DevMaintenanceForm({
         />
       </div>
       <div className="flex justify-end">
-        <Button size="sm" disabled={pending}>
+        <Button size="sm" type="submit" disabled={pending}>
           {pending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
           Save
         </Button>

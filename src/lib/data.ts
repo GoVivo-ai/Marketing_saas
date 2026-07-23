@@ -142,6 +142,8 @@ export interface LeadGeo {
   status: "within" | "near" | "outside" | "no_location" | "no_target";
   /** City the lead reported in the form. */
   leadCity: string | null;
+  /** State/region the lead reported (manual/public leads). */
+  leadRegion: string | null;
   /** City the ad set targeted. */
   targetCity: string | null;
   /** Effective radius used for the verdict (includes the default fallback). */
@@ -1183,6 +1185,7 @@ function leadRowQuery() {
       stageName: schema.stages.name,
       stageColor: schema.stages.color,
       leadCity: schema.leads.geoCity,
+      leadRegion: schema.leads.geoRegion,
       leadLat: schema.leads.geoLat,
       leadLng: schema.leads.geoLng,
       targetCity: schema.adsets.cityName,
@@ -1258,6 +1261,7 @@ function leadGeo(r: {
   targetLng: string | null;
   targetRadius: string | null;
   targetUnit: string | null;
+  leadRegion: string | null;
 }): LeadGeo | null {
   const hasLead = r.leadLat != null && r.leadLng != null;
   const hasTarget = r.targetLat != null && r.targetLng != null;
@@ -1267,6 +1271,7 @@ function leadGeo(r: {
     return {
       status: "no_target",
       leadCity: r.leadCity,
+      leadRegion: r.leadRegion,
       targetCity: r.targetCity,
       radius: null,
       radiusKnown: false,
@@ -1278,6 +1283,7 @@ function leadGeo(r: {
     return {
       status: "no_location",
       leadCity: r.leadCity,
+      leadRegion: r.leadRegion,
       targetCity: r.targetCity,
       radius: r.targetRadius != null ? Number(r.targetRadius) : null,
       radiusKnown: r.targetRadius != null,
@@ -1303,6 +1309,7 @@ function leadGeo(r: {
   return {
     status,
     leadCity: r.leadCity,
+    leadRegion: r.leadRegion,
     targetCity: r.targetCity,
     radius,
     radiusKnown,
@@ -1640,6 +1647,7 @@ export async function getContactQueue(
       stageName: schema.stages.name,
       stageColor: schema.stages.color,
       leadCity: schema.leads.geoCity,
+      leadRegion: schema.leads.geoRegion,
       leadLat: schema.leads.geoLat,
       leadLng: schema.leads.geoLng,
       formData: schema.leads.formData,

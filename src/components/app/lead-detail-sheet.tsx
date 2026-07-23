@@ -194,6 +194,7 @@ function LeadArea({ geo }: { geo: LeadGeo }) {
         </h4>
         <p className="flex items-center gap-1.5 font-medium">
           <MapPin className="h-4 w-4 text-muted-foreground" /> {geo.leadCity}
+          {geo.leadRegion ? `, ${geo.leadRegion}` : ""}
         </p>
       </div>
     );
@@ -221,7 +222,10 @@ function LeadArea({ geo }: { geo: LeadGeo }) {
       {located && (
         <div className="space-y-0.5 text-muted-foreground">
           <p>
-            <span className="font-medium text-foreground">{geo.leadCity ?? "Lead"}</span>
+            <span className="font-medium text-foreground">
+              {geo.leadCity ?? "Lead"}
+              {geo.leadRegion ? `, ${geo.leadRegion}` : ""}
+            </span>
             {" → "}
             <span className="font-medium text-foreground">{geo.targetCity}</span> (target)
           </p>

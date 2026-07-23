@@ -444,6 +444,8 @@ export const leads = pgTable(
     }),
     /** City the lead reported in the form (raw), and its geocoded position. */
     geoCity: text("geo_city"),
+    /** State/region the lead reported (e.g. "Florida") — manual/public leads. */
+    geoRegion: text("geo_region"),
     geoLat: numeric("geo_lat", { precision: 9, scale: 6 }),
     geoLng: numeric("geo_lng", { precision: 9, scale: 6 }),
     /** Raw form answers exactly as the platform delivered them. */

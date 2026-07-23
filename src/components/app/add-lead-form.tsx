@@ -80,9 +80,15 @@ export function AddLeadDialog({ workspaceId }: { workspaceId: string }) {
               <Input id="ml-email" name="email" type="email" placeholder="jane@example.com" />
             </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="ml-city">City</Label>
-            <Input id="ml-city" name="city" placeholder="Miami, FL" />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="ml-city">City</Label>
+              <Input id="ml-city" name="city" placeholder="Miami" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ml-state">State</Label>
+              <Input id="ml-state" name="state" placeholder="Florida" />
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="ml-note">Note</Label>

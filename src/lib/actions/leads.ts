@@ -662,54 +662,12 @@ export async function createManualLead(
   if (!isAgency(u.role) && !(await getWorkspaceRole(u.id, workspaceId)))
     return { error: "You don't have access to this workspace." };
 
-  const firstName = String(formData.get("firstName") ?? "").trim();
-  const lastName = String(formData.get("lastName") ?? "").trim();
-  const name = [firstName, lastName].filter(Boolean).join(" ");
-  const phone = String(formData.get("phone") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const city = String(formData.get("city") ?? "").trim();
-  const note = String(formData.get("note") ?? "").trim();
-
-  if (!firstName || !lastName)
-    return { error: "First and last name are required." };
-  if (!phone && !email)
-    return { error: "Add at least one way to contact the lead (phone or email)." };
-  if (email && !EMAIL_RE.test(email)) return { error: "Invalid email." };
+  const parsed = parseLeadForm(formData);
+  if ("error" in parsed) return { error: parsed.error };
 
   try {
-    // Same landing spot as synced leads: the first open pipeline stage.
-    const [defaultStage] = await db()
-      .select({ id: schema.stages.id })
-      .from(schema.stages)
-      .where(
-        and(
-          eq(schema.stages.workspaceId, workspaceId),
-          eq(schema.stages.kind, "open"),
-        ),
-      )
-      .orderBy(asc(schema.stages.position))
-      .limit(1);
-
-    const geo = city ? await geocodeCityCached(city) : null;
-
-    const [lead] = await db()
-      .insert(schema.leads)
-      .values({
-        workspaceId,
-        platform: "manual",
-        name,
-        // Keep the explicit split: "Juan Pablo" + "Rivas" can't be recovered
-        // from the joined name, and leadNameParts prefers these fields.
-        formData: { first_name: firstName, last_name: lastName },
-        phone: phone || null,
-        email: email || null,
-        geoCity: city || null,
-        geoLat: geo ? geo.lat.toFixed(6) : null,
-        geoLng: geo ? geo.lng.toFixed(6) : null,
-        stageId: defaultStage?.id ?? null,
-      })
-      .returning({ id: schema.leads.id });
-
+    const lead = await insertManualLead(workspaceId, parsed, null);
+    const note = String(formData.get("note") ?? "").trim();
     if (note) {
       await db().insert(schema.leadEvents).values({
         leadId: lead.id,
@@ -718,13 +676,126 @@ export async function createManualLead(
         payload: { text: note },
       });
     }
-
-    revalidatePath("/leads");
-    revalidatePath("/leads/pipeline");
-    revalidatePath("/leads/queue");
-    return { success: `${name} added to the pipeline.` };
+    return { success: `${parsed.name} added to the pipeline.` };
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+type ParsedLeadForm = {
+  firstName: string;
+  lastName: string;
+  name: string;
+  phone: string;
+  email: string;
+  city: string;
+  state: string;
+};
+
+/** Shared validation for the internal Add-lead dialog and the public form. */
+function parseLeadForm(
+  formData: FormData,
+): ParsedLeadForm | { error: string } {
+  const firstName = String(formData.get("firstName") ?? "").trim();
+  const lastName = String(formData.get("lastName") ?? "").trim();
+  const name = [firstName, lastName].filter(Boolean).join(" ");
+  const phone = String(formData.get("phone") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const city = String(formData.get("city") ?? "").trim();
+  const state = String(formData.get("state") ?? "").trim();
+
+  if (!firstName || !lastName)
+    return { error: "First and last name are required." };
+  if (!phone && !email)
+    return { error: "Add at least one way to contact the lead (phone or email)." };
+  if (email && !EMAIL_RE.test(email)) return { error: "Invalid email." };
+  return { firstName, lastName, name, phone, email, city, state };
+}
+
+/**
+ * Inserts a hand-entered lead into the workspace's first open stage. `source`
+ * tags where it came from (e.g. "public_form") inside formData.
+ */
+async function insertManualLead(
+  workspaceId: string,
+  p: ParsedLeadForm,
+  source: string | null,
+) {
+  // Same landing spot as synced leads: the first open pipeline stage.
+  const [defaultStage] = await db()
+    .select({ id: schema.stages.id })
+    .from(schema.stages)
+    .where(
+      and(
+        eq(schema.stages.workspaceId, workspaceId),
+        eq(schema.stages.kind, "open"),
+      ),
+    )
+    .orderBy(asc(schema.stages.position))
+    .limit(1);
+
+  const geo = p.city ? await geocodeCityCached(p.city, p.state || null) : null;
+
+  const [lead] = await db()
+    .insert(schema.leads)
+    .values({
+      workspaceId,
+      platform: "manual",
+      name: p.name,
+      // Keep the explicit split: "Juan Pablo" + "Rivas" can't be recovered
+      // from the joined name, and leadNameParts prefers these fields.
+      formData: {
+        first_name: p.firstName,
+        last_name: p.lastName,
+        ...(source ? { source } : {}),
+      },
+      phone: p.phone || null,
+      email: p.email || null,
+      geoCity: p.city || null,
+      geoRegion: p.state || null,
+      geoLat: geo ? geo.lat.toFixed(6) : null,
+      geoLng: geo ? geo.lng.toFixed(6) : null,
+      stageId: defaultStage?.id ?? null,
+    })
+    .returning({ id: schema.leads.id });
+
+  revalidatePath("/leads");
+  revalidatePath("/leads/pipeline");
+  revalidatePath("/leads/queue");
+  return lead;
+}
+
+/**
+ * Public counterpart of createManualLead, behind no session: powers the
+ * shareable /join/<workspace> form so leads the team captures from ad
+ * comments land in MarTech directly. The workspace is resolved by slug, and a
+ * honeypot field ("website") quietly drops naive bots.
+ */
+export async function createPublicLead(
+  _prev: ManualLeadState,
+  formData: FormData,
+): Promise<ManualLeadState> {
+  const slug = String(formData.get("workspaceSlug") ?? "").trim();
+  // Honeypot: humans never see this field; bots fill it. Pretend success.
+  if (String(formData.get("website") ?? "").trim())
+    return { success: "Thanks! We'll be in touch shortly." };
+
+  const [ws] = await db()
+    .select({ id: schema.workspaces.id })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.slug, slug))
+    .limit(1);
+  if (!ws) return { error: "This form is no longer available." };
+
+  const parsed = parseLeadForm(formData);
+  if ("error" in parsed) return { error: parsed.error };
+
+  try {
+    await insertManualLead(ws.id, parsed, "public_form");
+    return { success: "Thanks! We received your information and will contact you shortly." };
+  } catch (err) {
+    console.error("[public-lead] insert failed:", err);
+    return { error: "Something went wrong — please try again." };
   }
 }
 

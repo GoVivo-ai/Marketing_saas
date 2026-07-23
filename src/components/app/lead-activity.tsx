@@ -19,8 +19,10 @@ import {
   getLeadActivity,
   addLeadNote,
   logLeadOutreach,
+  setLeadDisqual,
 } from "@/lib/actions/leads";
 import {
+  DISQUAL_PREFILL,
   OUTREACH_CHANNELS,
   OUTREACH_OUTCOMES,
   type LeadActivityItem,
@@ -50,6 +52,7 @@ const OUTCOME_LABEL: Record<OutreachOutcome, string> = {
   no_answer: "No answer",
   voicemail: "Voicemail",
   replied: "Replied",
+  sent: "Email / SMS sent",
   not_interested: "Not interested",
   wrong_number: "Wrong number",
 };
@@ -60,6 +63,7 @@ const OUTCOME_TONE: Record<OutreachOutcome, string> = {
   replied: "text-success",
   voicemail: "text-amber-500",
   no_answer: "text-amber-500",
+  sent: "text-sky-500",
   not_interested: "text-destructive",
   wrong_number: "text-destructive",
 };
@@ -135,9 +139,21 @@ export function LeadActivity({ leadId }: { leadId: string }) {
         toast.error(r.message);
         return;
       }
+      // Same flow as the Contact Queue: a terminal outcome also records the
+      // most likely RCA reason and moves the lead to Lost (editable later
+      // from the Disqualify tab).
+      const prefill = DISQUAL_PREFILL[outcome];
+      if (prefill) {
+        const d = await setLeadDisqual(leadId, prefill);
+        if (!d.ok) toast.error(d.message);
+      }
       setOutreachNote("");
       setShowLog(false);
-      toast.success("Outreach logged.");
+      toast.success(
+        prefill
+          ? `Outreach logged — marked ${OUTCOME_LABEL[outcome]} (reason editable in Disqualify).`
+          : "Outreach logged.",
+      );
       await load();
     });
 

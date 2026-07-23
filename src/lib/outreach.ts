@@ -17,10 +17,34 @@ export const OUTREACH_OUTCOMES = [
   "no_answer",
   "voicemail",
   "replied",
+  // Outbound-only touch: the agent sent an email/SMS and is waiting — the
+  // contact happened but there's no response to grade yet.
+  "sent",
   "not_interested",
   "wrong_number",
 ] as const;
 export type OutreachOutcome = (typeof OUTREACH_OUTCOMES)[number];
+
+/**
+ * Terminal outcomes ask for the RCA reason before moving on, pre-filled with
+ * the most likely path from the shared taxonomy so it usually stays 1 click.
+ * Shared by the Contact Queue card and the lead detail's outreach logger so
+ * both surfaces run the same disqualification flow.
+ */
+export const DISQUAL_PREFILL: Partial<
+  Record<OutreachOutcome, { l1: string; l2: string; l3: string }>
+> = {
+  not_interested: {
+    l1: "Candidate Driven",
+    l2: "Interest / Decision",
+    l3: "Contacted - No Interested",
+  },
+  wrong_number: {
+    l1: "Agent Driven",
+    l2: "Contactability",
+    l3: "Wrong number - email sent to confirm",
+  },
+};
 
 export interface LeadActivityItem {
   id: string;

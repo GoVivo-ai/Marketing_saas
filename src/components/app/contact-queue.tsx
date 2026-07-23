@@ -11,6 +11,7 @@ import {
   CarFront,
   AlertTriangle,
   Clock,
+  Undo2,
   SkipForward,
   History,
   Loader2,
@@ -35,6 +36,7 @@ import {
   undoLeadOutreach,
 } from "@/lib/actions/leads";
 import { RCA_LEVEL1, rcaLevel2, rcaLevel3, isValidRcaPath } from "@/lib/rca";
+import { DISQUAL_PREFILL } from "@/lib/outreach";
 import type { OutreachChannel, OutreachOutcome } from "@/lib/outreach";
 import type { ContactQueueData, LeadRow, QueueItem } from "@/lib/data";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +75,7 @@ const OUTCOME_CHIPS: {
   { outcome: "replied", label: "Replied", dot: "bg-success" },
   { outcome: "voicemail", label: "Voicemail", dot: "bg-amber-500" },
   { outcome: "no_answer", label: "No answer", dot: "bg-amber-500" },
+  { outcome: "sent", label: "Email / SMS sent", dot: "bg-sky-500" },
   { outcome: "not_interested", label: "Not interested", dot: "bg-destructive" },
   { outcome: "wrong_number", label: "Wrong number", dot: "bg-destructive" },
 ];
@@ -82,25 +85,6 @@ const CHANNEL_LABEL: Record<OutreachChannel, string> = {
   sms: "SMS",
   email: "Email",
   whatsapp: "WhatsApp",
-};
-
-/**
- * Terminal outcomes ask for the RCA reason before moving on, pre-filled with
- * the most likely path from the shared taxonomy so it usually stays 1 click.
- */
-const DISQUAL_PREFILL: Partial<
-  Record<OutreachOutcome, { l1: string; l2: string; l3: string }>
-> = {
-  not_interested: {
-    l1: "Candidate Driven",
-    l2: "Interest / Decision",
-    l3: "Contacted - No Interested",
-  },
-  wrong_number: {
-    l1: "Agent Driven",
-    l2: "Contactability",
-    l3: "Wrong number - email sent to confirm",
-  },
 };
 
 /**
@@ -534,6 +518,14 @@ export function ContactQueue({
   const [disqualOutcome, setDisqualOutcome] = useState<OutreachOutcome | null>(null);
   /** Set after a connected call — the card offers a follow-up disposition. */
   const [followUp, setFollowUp] = useState(false);
+  /**
+   * The touch that opened the current sub-flow (RCA / follow-up), so its
+   * "Back — wrong option" button can undo it and return to the outcome chips.
+   */
+  const [lastEvent, setLastEvent] = useState<{
+    item: QueueItem;
+    eventId: string | null;
+  } | null>(null);
   /** Leads worked this session (newest first) — the way back after a mis-click. */
   const [worked, setWorked] = useState<
     { item: QueueItem; outcome: OutreachOutcome; eventId: string | null }[]
@@ -548,6 +540,7 @@ export function ContactQueue({
     setChannel("call");
     setDisqualOutcome(null);
     setFollowUp(false);
+    setLastEvent(null);
   };
 
   /** Jump the queue: bring an Up-next lead to the front to work it now. */
@@ -561,6 +554,7 @@ export function ContactQueue({
     setChannel("call");
     setDisqualOutcome(null);
     setFollowUp(false);
+    setLastEvent(null);
   };
 
   const onCall = () => {
@@ -601,6 +595,7 @@ export function ContactQueue({
         );
         setDisqualOutcome(null);
         setFollowUp(false);
+        setLastEvent(null);
         toast.success(`Undone — ${item.name} is back at the front of the queue.`);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Couldn't undo. Try again.");
@@ -629,6 +624,7 @@ export function ContactQueue({
           `Logged: ${CHANNEL_LABEL[channel]} · ${OUTCOME_CHIPS.find((c) => c.outcome === outcome)?.label}.`,
           undoAction,
         );
+        setLastEvent({ item, eventId });
         setDisqualOutcome(outcome);
         return;
       }
@@ -639,6 +635,7 @@ export function ContactQueue({
           `${item.name} connected — add a follow-up if info was requested.`,
           undoAction,
         );
+        setLastEvent({ item, eventId });
         setFollowUp(true);
         return;
       }
@@ -792,17 +789,34 @@ export function ContactQueue({
                 );
               })()}
 
-              {disqualOutcome ? (
-                /* Terminal outcome logged — capture the RCA reason, then move on. */
-                <QueueDisqualify
-                  key={current.id}
-                  leadId={current.id}
-                  prefill={DISQUAL_PREFILL[disqualOutcome]}
-                  onDone={advance}
-                />
-              ) : followUp ? (
-                /* Connected — offer a follow-up disposition before moving on. */
-                <AnswerFollowUp key={current.id} leadId={current.id} onDone={advance} />
+              {disqualOutcome || followUp ? (
+                <div className="space-y-2">
+                  {/* Wrong option? Undo the touch and return to the chips. */}
+                  {lastEvent && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs text-muted-foreground"
+                      disabled={logging}
+                      onClick={() => undo(lastEvent.item, lastEvent.eventId)}
+                    >
+                      <Undo2 className="mr-1 h-3.5 w-3.5" />
+                      Back — wrong option
+                    </Button>
+                  )}
+                  {disqualOutcome ? (
+                    /* Terminal outcome logged — capture the RCA reason, then move on. */
+                    <QueueDisqualify
+                      key={current.id}
+                      leadId={current.id}
+                      prefill={DISQUAL_PREFILL[disqualOutcome]}
+                      onDone={advance}
+                    />
+                  ) : (
+                    /* Connected — offer a follow-up disposition before moving on. */
+                    <AnswerFollowUp key={current.id} leadId={current.id} onDone={advance} />
+                  )}
+                </div>
               ) : (
                 <>
                   {/* Reach out … */}

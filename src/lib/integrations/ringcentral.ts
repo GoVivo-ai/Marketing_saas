@@ -288,6 +288,7 @@ export interface RcCallLogRecord {
 interface RcCallLogPage {
   records?: {
     id?: string;
+    telephonySessionId?: string;
     direction?: string;
     from?: { phoneNumber?: string; extensionNumber?: string };
     to?: { phoneNumber?: string; extensionNumber?: string };
@@ -334,7 +335,9 @@ export async function fetchCallLog(
     for (const r of data.records ?? []) {
       if (!r.id || !r.startTime) continue;
       out.push({
-        id: r.id,
+        // Prefer the telephony session id: the widget's client-side capture
+        // reports the same value, so both sources dedupe onto one row.
+        id: r.telephonySessionId ?? r.id,
         direction: r.direction ?? null,
         from: r.from?.phoneNumber ?? r.from?.extensionNumber ?? null,
         to: r.to?.phoneNumber ?? r.to?.extensionNumber ?? null,

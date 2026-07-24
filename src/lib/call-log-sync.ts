@@ -1,4 +1,4 @@
-import { desc, eq, isNotNull } from "drizzle-orm";
+import { desc, eq, isNotNull, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import {
   fetchCallLog,
@@ -25,10 +25,27 @@ const OVERLAP_MS = 48 * 60 * 60 * 1000;
 
 /** Last 10 digits — tolerant of +1/formatting differences between the ad
  *  platform's lead phone and RingCentral's E.164. */
-const phoneKey = (raw: string | null | undefined): string | null => {
+export const phoneKey = (raw: string | null | undefined): string | null => {
   const digits = (raw ?? "").replace(/\D/g, "");
   return digits.length >= 7 ? digits.slice(-10) : null;
 };
+
+/** Newest lead whose phone ends in the same 10 digits, or null. */
+export async function matchLeadByPhone(
+  phone: string | null | undefined,
+): Promise<{ leadId: string; workspaceId: string } | null> {
+  const key = phoneKey(phone);
+  if (!key) return null;
+  const [lead] = await db()
+    .select({ leadId: schema.leads.id, workspaceId: schema.leads.workspaceId })
+    .from(schema.leads)
+    .where(
+      sql`right(regexp_replace(${schema.leads.phone}, '\\D', '', 'g'), 10) = ${key}`,
+    )
+    .orderBy(desc(schema.leads.createdAt))
+    .limit(1);
+  return lead ?? null;
+}
 
 /** phone → { leadId, workspaceId }, newest lead wins per number. */
 async function buildLeadPhoneIndex(): Promise<

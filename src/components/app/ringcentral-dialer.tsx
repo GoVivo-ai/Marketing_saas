@@ -110,6 +110,61 @@ export function dialerSms(phoneNumber: string, text = ""): boolean {
   return true;
 }
 
+// ── Call capture ─────────────────────────────────────────────────────────
+// Agents sign in inside the iframe, so the server has no OAuth tokens for
+// them. The widget announces every finished call via rc-call-end-notify;
+// we forward it to the API, which stores it in call_logs for the Agent
+// Activity report (talk time, answer rate) and matches it to a lead by phone.
+
+type WidgetCall = {
+  id?: string;
+  sessionId?: string;
+  telephonySessionId?: string;
+  direction?: string;
+  from?: string | { phoneNumber?: string };
+  to?: string | { phoneNumber?: string };
+  startTime?: number | string;
+  duration?: number;
+  result?: string;
+};
+
+const phoneOf = (v: WidgetCall["from"]): string | null =>
+  typeof v === "string" ? v : v?.phoneNumber ?? null;
+
+function reportWidgetCall(call: WidgetCall | undefined) {
+  if (!call) return;
+  const externalId = call.telephonySessionId ?? call.sessionId ?? call.id;
+  const startTime =
+    typeof call.startTime === "number"
+      ? call.startTime
+      : Date.parse(call.startTime ?? "");
+  if (!externalId || !Number.isFinite(startTime)) return;
+  const durationSec =
+    typeof call.duration === "number" && call.duration >= 0
+      ? Math.round(call.duration)
+      : Math.max(0, Math.round((Date.now() - startTime) / 1000));
+  void fetch("/api/ringcentral/widget-call", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // keepalive: still delivers if the agent closes the tab right after.
+    keepalive: true,
+    body: JSON.stringify({
+      externalId,
+      direction:
+        call.direction === "Inbound" || call.direction === "Outbound"
+          ? call.direction
+          : null,
+      from: phoneOf(call.from),
+      to: phoneOf(call.to),
+      startTime,
+      durationSec,
+      result: call.result ?? null,
+    }),
+  }).catch(() => {
+    // Never let telemetry break the dialer.
+  });
+}
+
 /**
  * Loads the RingCentral Embeddable widget once, app-wide, and keeps it HIDDEN
  * by default. A floating "hub" sits bottom-right; tapping it makes a bubble
@@ -185,7 +240,9 @@ export function RingCentralDialer({
       if (e.origin !== WIDGET_ORIGIN) return;
       const type =
         (e.data && (e.data as { type?: string }).type) || "";
-      if (type === "rc-call-ring-notify" || type === "rc-active-call-notify") {
+      if (type === "rc-call-end-notify") {
+        reportWidgetCall((e.data as { call?: WidgetCall }).call);
+      } else if (type === "rc-call-ring-notify" || type === "rc-active-call-notify") {
         wantOpen.current = true;
         setDialpadOpen(true);
         setMenuOpen(false);

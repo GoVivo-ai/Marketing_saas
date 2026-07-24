@@ -1,4 +1,5 @@
-import { Headset, PhoneCall, Timer, Users } from "lucide-react";
+import { FileDown, Headset, PhoneCall, Timer, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -15,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DateRangePicker } from "@/components/app/date-range-picker";
+import { LeadsMultiFilter } from "@/components/app/leads-filter";
 import { ReportsNav } from "@/components/app/reports-nav";
 import { SyncCallsButton } from "@/components/app/sync-calls-button";
 import { getWorkspaceContext } from "@/lib/data";
@@ -48,7 +50,12 @@ const fmtLatency = (min: number | null): string => {
 export default async function AgentActivityPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
+  searchParams: Promise<{
+    range?: string;
+    from?: string;
+    to?: string;
+    agent?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const resolved = resolveDateRange(sp, {
@@ -56,6 +63,8 @@ export default async function AgentActivityPage({
     defaultPreset: DEFAULT_RANGE,
     allowAllTime: false,
   });
+  // Narrow the report (and its PDF) to specific agents — comma-separated ids.
+  const agentIds = sp.agent ? sp.agent.split(",").filter(Boolean) : [];
 
   const { active } = await getWorkspaceContext();
   await requireFullAccess(active?.id);
@@ -65,6 +74,24 @@ export default async function AgentActivityPage({
         end: resolved.end,
       })
     : null;
+
+  const agentOptions = (report?.rows ?? []).map((r) => ({
+    value: r.userId,
+    label: r.name || "Unknown user",
+  }));
+  const rows = (report?.rows ?? []).filter(
+    (r) => agentIds.length === 0 || agentIds.includes(r.userId),
+  );
+  const totals = {
+    rcCalls: rows.reduce((n, r) => n + r.rcCalls, 0),
+    rcTalkTimeSec: rows.reduce((n, r) => n + r.rcTalkTimeSec, 0),
+    leadsWorked: rows.reduce((n, r) => n + r.leadsWorked, 0),
+  };
+
+  // The PDF endpoint takes the exact same filters this view is showing.
+  const pdfParams = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) if (v) pdfParams.set(k, v);
+  const pdfHref = `/api/reports/agent-activity?${pdfParams.toString()}`;
 
   const answerRate = (r: { rcCalls: number; rcConnected: number }) =>
     r.rcCalls > 0 ? `${Math.round((r.rcConnected / r.rcCalls) * 100)}%` : "—";
@@ -86,6 +113,19 @@ export default async function AgentActivityPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SyncCallsButton />
+          <LeadsMultiFilter
+            param="agent"
+            icon="agent"
+            title="Agent"
+            allLabel="All agents"
+            activeValues={agentIds}
+            options={agentOptions}
+          />
+          {/* Base UI button — render an anchor so the PDF streams as a file. */}
+          <Button variant="outline" render={<a href={pdfHref} download />}>
+            <FileDown className="mr-1 h-4 w-4" />
+            Download PDF
+          </Button>
           <label className="flex items-center gap-1.5">
             <span className="text-xs font-medium text-muted-foreground">
               Period
@@ -105,22 +145,22 @@ export default async function AgentActivityPage({
           {
             icon: Users,
             label: "Active agents",
-            value: report?.rows.length ?? 0,
+            value: rows.length,
           },
           {
             icon: PhoneCall,
             label: "RingCentral calls",
-            value: report?.totals.rcCalls ?? 0,
+            value: totals.rcCalls,
           },
           {
             icon: Timer,
             label: "Talk time",
-            value: fmtTalkTime(report?.totals.rcTalkTimeSec ?? 0),
+            value: fmtTalkTime(totals.rcTalkTimeSec),
           },
           {
             icon: Headset,
             label: "Leads worked",
-            value: report?.totals.leadsWorked ?? 0,
+            value: totals.leadsWorked,
           },
         ].map((k) => (
           <Card key={k.label}>
@@ -150,7 +190,7 @@ export default async function AgentActivityPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {!report || report.rows.length === 0 ? (
+          {rows.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               No agent activity in {resolved.label.toLowerCase()}. Log touches
               from the Contact Queue or press &quot;Sync calls&quot; to pull the
@@ -173,7 +213,7 @@ export default async function AgentActivityPage({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {report.rows.map((r) => {
+                  {rows.map((r) => {
                     const touches =
                       r.touches.call +
                       r.touches.sms +

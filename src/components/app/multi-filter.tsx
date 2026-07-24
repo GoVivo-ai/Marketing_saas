@@ -3,6 +3,7 @@
 import {
   ChevronsUpDown,
   Crosshair,
+  Headset,
   Layers,
   Loader2,
   Map,
@@ -19,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 /** Icons resolved by key — components can't cross the RSC boundary as props. */
-const ICONS = { stage: Layers, city: MapPin, adset: Crosshair, state: Map } as const;
+const ICONS = { stage: Layers, city: MapPin, adset: Crosshair, state: Map, agent: Headset } as const;
 export type MultiFilterIcon = keyof typeof ICONS;
 
 /**

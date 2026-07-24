@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DateRangePicker } from "@/components/app/date-range-picker";
+import { ReportsNav } from "@/components/app/reports-nav";
 import { SyncCallsButton } from "@/components/app/sync-calls-button";
 import { getWorkspaceContext } from "@/lib/data";
 import { getAgentPerformance } from "@/lib/agent-report";
@@ -71,14 +72,17 @@ export default async function AgentActivityPage({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {active ? `${active.name} — Agent Activity` : "Agent Activity"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Who is calling, how much, and how their leads move — app activity
-            plus the real RingCentral call log
-          </p>
+        <div className="space-y-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {active ? `${active.name} — Agent Activity` : "Agent Activity"}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Who is calling, how much, and how their leads move — app activity
+              plus the real RingCentral call log
+            </p>
+          </div>
+          <ReportsNav />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SyncCallsButton />

@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { LeadsMultiFilter } from "@/components/app/leads-filter";
+import { ReportsNav } from "@/components/app/reports-nav";
 import {
   getFunnelReport,
   getWorkspaceContext,
@@ -105,14 +106,17 @@ export default async function ReportsPage({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {active ? `${active.name} — Reports` : "Reports"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Every lead counts from the moment it enters — not only once it
-            completes the process
-          </p>
+        <div className="space-y-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {active ? `${active.name} — Reports` : "Reports"}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Every lead counts from the moment it enters — not only once it
+              completes the process
+            </p>
+          </div>
+          <ReportsNav />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <LeadsMultiFilter

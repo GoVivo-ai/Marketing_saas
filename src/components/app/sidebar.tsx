@@ -11,7 +11,6 @@ import {
   PhoneOutgoing,
   Sparkles,
   FileBarChart,
-  Headset,
   Plug,
   Settings,
   TerminalSquare,
@@ -32,7 +31,6 @@ const fullNav = [
   { href: "/leads/pipeline", label: "Pipeline", icon: Columns3 },
   { href: "/insights", label: "AI Insights", icon: Sparkles },
   { href: "/reports", label: "Reports", icon: FileBarChart },
-  { href: "/reports/agents", label: "Agent Activity", icon: Headset },
 ];
 
 // Agents only work their leads: Leads, Contact Queue and Pipeline.
@@ -93,7 +91,8 @@ export function AppSidebar({
       href={href}
       className={cn(
         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-        pathname === href
+        // Reports hosts sub-pages (/reports/agents) — keep it lit inside them.
+        pathname === href || (href === "/reports" && pathname.startsWith("/reports/"))
           ? "bg-primary/10 text-primary"
           : "text-muted-foreground hover:bg-muted hover:text-foreground",
       )}

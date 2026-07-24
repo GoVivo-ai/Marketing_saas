@@ -16,10 +16,14 @@ export interface AgentPerformanceRow {
   outcomes: Partial<Record<OutreachOutcome, number>>;
   /** Distinct leads of this workspace the agent touched in the period. */
   leadsWorked: number;
-  /** Leads currently assigned to the agent (created in the period). */
-  assigned: number;
-  assignedWon: number;
-  assignedLost: number;
+  /**
+   * Wins/losses attributed to the agent. Nothing in the product assigns
+   * leads yet (assignedToId is never written), so attribution is last-touch:
+   * a closed lead belongs to the last agent who logged a touch on it —
+   * unless it IS assigned, in which case the assignee wins.
+   */
+  won: number;
+  lost: number;
   /** Median minutes from lead creation to the agent's first touch. */
   medianFirstTouchMin: number | null;
   /** RingCentral calls matched to this workspace's leads. */
@@ -63,15 +67,11 @@ export async function getAgentPerformance(
   if (opts.start) eventFilters.push(gte(schema.leadEvents.createdAt, opts.start));
   if (opts.end) eventFilters.push(lte(schema.leadEvents.createdAt, opts.end));
 
-  const leadFilters = [eq(schema.leads.workspaceId, workspaceId)];
-  if (opts.start) leadFilters.push(gte(schema.leads.createdAt, opts.start));
-  if (opts.end) leadFilters.push(lte(schema.leads.createdAt, opts.end));
-
   const callFilters = [];
   if (opts.start) callFilters.push(gte(schema.callLogs.startTime, opts.start));
   if (opts.end) callFilters.push(lte(schema.callLogs.startTime, opts.end));
 
-  const [events, assignedLeads, calls] = await Promise.all([
+  const [events, calls] = await Promise.all([
     db()
       .select({
         userId: schema.leadEvents.userId,
@@ -80,17 +80,12 @@ export async function getAgentPerformance(
         payload: schema.leadEvents.payload,
         createdAt: schema.leadEvents.createdAt,
         leadCreatedAt: schema.leads.createdAt,
+        leadStatus: schema.leads.status,
+        leadAssignedTo: schema.leads.assignedToId,
       })
       .from(schema.leadEvents)
       .innerJoin(schema.leads, eq(schema.leadEvents.leadId, schema.leads.id))
       .where(and(...eventFilters)),
-    db()
-      .select({
-        assignedToId: schema.leads.assignedToId,
-        status: schema.leads.status,
-      })
-      .from(schema.leads)
-      .where(and(...leadFilters)),
     db()
       .select({
         userId: schema.callLogs.userId,
@@ -112,9 +107,8 @@ export async function getAgentPerformance(
         touches: { call: 0, sms: 0, whatsapp: 0, email: 0 },
         outcomes: {},
         leadsWorked: 0,
-        assigned: 0,
-        assignedWon: 0,
-        assignedLost: 0,
+        won: 0,
+        lost: 0,
         medianFirstTouchMin: null,
         rcCalls: 0,
         rcConnected: 0,
@@ -128,6 +122,12 @@ export async function getAgentPerformance(
 
   // ── App touches, worked leads and first-touch latency ──────────────────
   const workedLeads = new Map<string, Set<string>>(); // userId → leadIds
+  // leadId → closed-lead attribution candidate: assignee if set, else the
+  // agent whose touch is the most recent (last-touch attribution).
+  const closedOwner = new Map<
+    string,
+    { status: string; assignedTo: string | null; lastUserId: string; lastAt: number }
+  >();
   // leadId → per-agent first touch; latency is measured against the lead's
   // own creation, so it's only meaningful for the first agent to reach out.
   const firstTouch = new Map<string, { userId: string; deltaMin: number }>();
@@ -141,6 +141,18 @@ export async function getAgentPerformance(
     let set = workedLeads.get(e.userId);
     if (!set) workedLeads.set(e.userId, (set = new Set()));
     set.add(e.leadId);
+
+    if (e.leadStatus === "won" || e.leadStatus === "lost") {
+      const at = e.createdAt.getTime();
+      const prev = closedOwner.get(e.leadId);
+      if (!prev || at > prev.lastAt)
+        closedOwner.set(e.leadId, {
+          status: e.leadStatus,
+          assignedTo: e.leadAssignedTo,
+          lastUserId: e.userId,
+          lastAt: at,
+        });
+    }
 
     const deltaMin =
       (e.createdAt.getTime() - e.leadCreatedAt.getTime()) / 60_000;
@@ -158,13 +170,11 @@ export async function getAgentPerformance(
   for (const [userId, xs] of latencies)
     row(userId).medianFirstTouchMin = median(xs);
 
-  // ── Assignment outcomes ────────────────────────────────────────────────
-  for (const l of assignedLeads) {
-    if (!l.assignedToId) continue;
-    const r = row(l.assignedToId);
-    r.assigned++;
-    if (l.status === "won") r.assignedWon++;
-    if (l.status === "lost") r.assignedLost++;
+  // ── Win/loss attribution ───────────────────────────────────────────────
+  for (const c of closedOwner.values()) {
+    const r = row(c.assignedTo ?? c.lastUserId);
+    if (c.status === "won") r.won++;
+    else r.lost++;
   }
 
   // ── RingCentral call volume ────────────────────────────────────────────

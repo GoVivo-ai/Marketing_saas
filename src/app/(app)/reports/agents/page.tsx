@@ -145,7 +145,8 @@ export default async function AgentActivityPage({
           <CardDescription>
             {resolved.label} · RC calls are matched to this client&apos;s leads
             by phone number; &quot;other&quot; counts the agent&apos;s remaining
-            calls in the period
+            calls in the period. Won/Lost credits the last agent who touched
+            the lead
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -167,7 +168,6 @@ export default async function AgentActivityPage({
                     <TableHead className="text-right">Other calls</TableHead>
                     <TableHead className="text-right">Touches</TableHead>
                     <TableHead className="text-right">Leads worked</TableHead>
-                    <TableHead className="text-right">Assigned</TableHead>
                     <TableHead className="text-right">Won / Lost</TableHead>
                     <TableHead className="text-right">First touch</TableHead>
                   </TableRow>
@@ -205,14 +205,9 @@ export default async function AgentActivityPage({
                           {r.leadsWorked}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {r.assigned}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          <span className="text-success">{r.assignedWon}</span>
+                          <span className="text-success">{r.won}</span>
                           {" / "}
-                          <span className="text-destructive">
-                            {r.assignedLost}
-                          </span>
+                          <span className="text-destructive">{r.lost}</span>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {fmtLatency(r.medianFirstTouchMin)}

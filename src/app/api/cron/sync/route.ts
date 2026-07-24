@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { syncConnection } from "@/lib/sync";
 import { scorePendingLeads } from "@/lib/ai/lead-scoring";
+import { syncAllCallLogs } from "@/lib/call-log-sync";
 
 export const maxDuration = 300;
 
@@ -74,7 +75,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ synced: results.length, results, scored });
+  // Mirror the RingCentral call log for every connected user so agent talk
+  // time on the Agent Activity report stays a day fresh at most.
+  let callLog: unknown = null;
+  try {
+    callLog = await syncAllCallLogs();
+  } catch (err) {
+    callLog = { error: err instanceof Error ? err.message : String(err) };
+  }
+
+  return NextResponse.json({ synced: results.length, results, scored, callLog });
 }
 
 export const POST = GET;

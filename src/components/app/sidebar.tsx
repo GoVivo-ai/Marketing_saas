@@ -11,6 +11,7 @@ import {
   PhoneOutgoing,
   Sparkles,
   FileBarChart,
+  Headset,
   Plug,
   Settings,
   TerminalSquare,
@@ -31,6 +32,7 @@ const fullNav = [
   { href: "/leads/pipeline", label: "Pipeline", icon: Columns3 },
   { href: "/insights", label: "AI Insights", icon: Sparkles },
   { href: "/reports", label: "Reports", icon: FileBarChart },
+  { href: "/reports/agents", label: "Agent Activity", icon: Headset },
 ];
 
 // Agents only work their leads: Leads, Contact Queue and Pipeline.

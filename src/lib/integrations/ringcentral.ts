@@ -274,6 +274,80 @@ export async function ringOut(
   return res;
 }
 
+/** One voice call from the user's RingCentral extension call log. */
+export interface RcCallLogRecord {
+  id: string;
+  direction: string | null; // "Inbound" | "Outbound"
+  from: string | null;
+  to: string | null;
+  startTime: Date;
+  durationSec: number;
+  result: string | null; // "Call connected" | "Missed" | "Voicemail" | …
+}
+
+interface RcCallLogPage {
+  records?: {
+    id?: string;
+    direction?: string;
+    from?: { phoneNumber?: string; extensionNumber?: string };
+    to?: { phoneNumber?: string; extensionNumber?: string };
+    startTime?: string;
+    duration?: number;
+    result?: string;
+  }[];
+  navigation?: { nextPage?: { uri?: string } };
+}
+
+/**
+ * Fetches the user's voice call log since `dateFrom`, following pagination.
+ * Uses view=Simple (no recordings/legs) — enough for duration + result.
+ */
+export async function fetchCallLog(
+  userId: string,
+  opts: { dateFrom: Date; dateTo?: Date },
+): Promise<RcCallLogRecord[]> {
+  const { accessToken } = await getValidAccessToken(userId);
+  const cfg = await rcConfig();
+  const params = new URLSearchParams({
+    view: "Simple",
+    type: "Voice",
+    perPage: "250",
+    dateFrom: opts.dateFrom.toISOString(),
+  });
+  if (opts.dateTo) params.set("dateTo", opts.dateTo.toISOString());
+
+  const out: RcCallLogRecord[] = [];
+  let url: string | null =
+    `${cfg.server}/restapi/v1.0/account/~/extension/~/call-log?${params.toString()}`;
+  // Hard page cap so a pathological navigation loop can't hang the sync.
+  for (let page = 0; url && page < 20; page++) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new RingCentralError(
+        `Call log ${res.status}: ${text.slice(0, 300)}`,
+      );
+    }
+    const data = (await res.json()) as RcCallLogPage;
+    for (const r of data.records ?? []) {
+      if (!r.id || !r.startTime) continue;
+      out.push({
+        id: r.id,
+        direction: r.direction ?? null,
+        from: r.from?.phoneNumber ?? r.from?.extensionNumber ?? null,
+        to: r.to?.phoneNumber ?? r.to?.extensionNumber ?? null,
+        startTime: new Date(r.startTime),
+        durationSec: r.duration ?? 0,
+        result: r.result ?? null,
+      });
+    }
+    url = data.navigation?.nextPage?.uri ?? null;
+  }
+  return out;
+}
+
 export async function sendSms(
   userId: string,
   to: string,

@@ -614,6 +614,43 @@ export const syncRuns = pgTable("sync_runs", {
   error: text("error"),
 });
 
+/**
+ * Provider call log mirrored from RingCentral, one row per call leg per user.
+ * This is the source of truth for agent talk time: RingOut events in
+ * lead_events only prove a call was placed — duration/result live here.
+ * Calls are matched to leads by E.164 phone; unmatched rows keep leadId null
+ * so off-platform calls still count toward the agent's activity.
+ */
+export const callLogs = pgTable(
+  "call_logs",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("ringcentral"),
+    /** The provider's own record id — dedupe key together with userId. */
+    externalId: text("external_id").notNull(),
+    direction: text("direction"), // Inbound | Outbound
+    fromNumber: text("from_number"),
+    toNumber: text("to_number"),
+    startTime: timestamp("start_time").notNull(),
+    durationSec: integer("duration_sec").notNull().default(0),
+    /** Provider result, e.g. "Call connected", "Missed", "Voicemail". */
+    result: text("result"),
+    leadId: text("lead_id").references(() => leads.id, { onDelete: "set null" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("call_log_external_unique").on(t.userId, t.externalId),
+    index("call_log_user_start_idx").on(t.userId, t.startTime),
+    index("call_log_workspace_start_idx").on(t.workspaceId, t.startTime),
+  ],
+);
+
 // ─────────────────────────────────────────────────────────────────────────
 // Relations
 // ─────────────────────────────────────────────────────────────────────────

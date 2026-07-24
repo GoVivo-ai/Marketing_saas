@@ -83,7 +83,8 @@ export async function requireFullAccess(workspaceId: string | null | undefined) 
 
 /**
  * True when the user is an agent and nothing more — they may only change
- * their own password, never touch telephony tokens/connections. Vivo's
+ * their own password and connect their own RingCentral (personal, needed to
+ * mirror their call log), never workspace connections. Vivo's
  * agency_member accounts are agents; client users qualify when every
  * workspace membership of theirs is 'agent'.
  */

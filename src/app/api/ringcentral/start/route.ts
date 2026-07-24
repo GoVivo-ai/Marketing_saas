@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { isAgentOnly } from "@/lib/permissions";
 import {
   buildAuthorizeUrl,
   generatePkce,
@@ -12,9 +11,8 @@ import {
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.redirect(new URL("/login", req.url));
-  // Agents can't manage telephony tokens.
-  if (await isAgentOnly())
-    return NextResponse.redirect(new URL("/settings/general", req.url));
+  // Agents connect their OWN RingCentral too: the connection is personal and
+  // it's what lets the platform mirror their call log for the activity report.
   if (!(await isRingCentralConfigured())) {
     return NextResponse.redirect(
       new URL("/settings/general?rc=not_configured", req.url),

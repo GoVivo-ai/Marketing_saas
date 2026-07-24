@@ -43,30 +43,52 @@ export default async function GeneralSettingsPage() {
   const session = await auth();
   const userId = session?.user?.id;
 
-  // Agents only manage their own password — no telephony tokens, no
-  // workspace configuration.
+  // Agents manage their own password and their own RingCentral connection —
+  // never workspace configuration. The personal RC link is what lets the
+  // platform mirror their call log into the Agent Activity report.
   if (await isAgentOnly()) {
+    const agentRcConnected = userId
+      ? await isRingCentralConnected(userId)
+      : false;
+    const agentRcTokens =
+      userId && agentRcConnected ? await getRingCentralTokens(userId) : null;
+    const [agentRcEnv, agentRcEnvConfigured] = await Promise.all([
+      getRingCentralEnv(),
+      isRingCentralConfigured(),
+    ]);
     return (
       <div className="space-y-10">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="text-sm text-muted-foreground">Account security</p>
+          <p className="text-sm text-muted-foreground">
+            Account security & calling
+          </p>
         </div>
-        <Card className="max-w-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <KeyRound className="h-4 w-4 text-primary" />
-              Change password
-            </CardTitle>
-            <CardDescription>
-              Signed in as {session?.user?.email}. Choose a strong password you
-              don&apos;t use anywhere else.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChangePasswordForm />
-          </CardContent>
-        </Card>
+        <div className="grid max-w-4xl gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <KeyRound className="h-4 w-4 text-primary" />
+                Change password
+              </CardTitle>
+              <CardDescription>
+                Signed in as {session?.user?.email}. Choose a strong password
+                you don&apos;t use anywhere else.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChangePasswordForm />
+            </CardContent>
+          </Card>
+          <Suspense>
+            <RingCentralConnectCard
+              connected={agentRcConnected}
+              fromNumber={agentRcTokens?.fromNumber ?? null}
+              env={agentRcEnv}
+              envConfigured={agentRcEnvConfigured}
+            />
+          </Suspense>
+        </div>
       </div>
     );
   }

@@ -19,8 +19,9 @@ import { DateRangePicker } from "@/components/app/date-range-picker";
 import { LeadsMultiFilter } from "@/components/app/leads-filter";
 import { ReportsNav } from "@/components/app/reports-nav";
 import { SyncCallsButton } from "@/components/app/sync-calls-button";
+import { AgentActivityCharts } from "@/components/app/agent-activity-charts";
 import { getWorkspaceContext } from "@/lib/data";
-import { getAgentPerformance } from "@/lib/agent-report";
+import { buildDailySeries, getAgentPerformance } from "@/lib/agent-report";
 import { requireFullAccess } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 
@@ -87,6 +88,10 @@ export default async function AgentActivityPage({
     rcTalkTimeSec: rows.reduce((n, r) => n + r.rcTalkTimeSec, 0),
     leadsWorked: rows.reduce((n, r) => n + r.leadsWorked, 0),
   };
+  const daily = buildDailySeries(rows, {
+    start: resolved.start,
+    end: resolved.end,
+  });
 
   // The PDF endpoint takes the exact same filters this view is showing.
   const pdfParams = new URLSearchParams();
@@ -174,6 +179,18 @@ export default async function AgentActivityPage({
           </Card>
         ))}
       </div>
+
+      {/* ── Charts ───────────────────────────────────────────────────── */}
+      <AgentActivityCharts
+        rows={rows.map((r) => ({
+          name: r.name,
+          touches: r.touches,
+          outcomes: r.outcomes,
+          won: r.won,
+          lost: r.lost,
+        }))}
+        daily={daily}
+      />
 
       {/* ── Per-agent breakdown ─────────────────────────────────────── */}
       <Card>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWorkspaceContext } from "@/lib/data";
-import { getAgentPerformance } from "@/lib/agent-report";
+import { buildDailySeries, getAgentPerformance } from "@/lib/agent-report";
 import { currentUser, isWorkspaceAgent } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 import { renderAgentActivityPdf } from "@/lib/pdf/agent-activity-pdf";
@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
     periodLabel: resolved.label,
     generatedAt: new Date(),
     rows,
+    daily: buildDailySeries(rows, { start: resolved.start, end: resolved.end }),
   });
 
   const slug = active.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");

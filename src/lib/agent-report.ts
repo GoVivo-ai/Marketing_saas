@@ -32,6 +32,8 @@ export interface AgentPerformanceRow {
   rcTalkTimeSec: number;
   /** RingCentral calls in the period not matched to this client's leads. */
   rcOtherCalls: number;
+  /** Per-day activity (touches logged + workspace-matched RC calls). */
+  byDay: Record<string, { touches: number; calls: number }>;
 }
 
 export interface AgentPerformanceReport {
@@ -42,6 +44,45 @@ export interface AgentPerformanceReport {
     rcTalkTimeSec: number;
     leadsWorked: number;
   };
+}
+
+/**
+ * Merges the per-agent daily activity of `rows` into one gap-filled series —
+ * pure, so the page and the PDF route can both build it AFTER applying the
+ * agent filter and the chart always matches the visible selection.
+ */
+export function buildDailySeries(
+  rows: AgentPerformanceRow[],
+  opts: { start?: Date | null; end?: Date | null } = {},
+): { day: string; touches: number; calls: number }[] {
+  const byDay = new Map<string, { touches: number; calls: number }>();
+  for (const r of rows) {
+    for (const [day, v] of Object.entries(r.byDay)) {
+      const cur = byDay.get(day) ?? { touches: 0, calls: 0 };
+      cur.touches += v.touches;
+      cur.calls += v.calls;
+      byDay.set(day, cur);
+    }
+  }
+  if (byDay.size === 0) return [];
+  const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+  const days = [...byDay.keys()].sort();
+  const first = opts.start ? dayKey(opts.start) : days[0];
+  const last =
+    opts.end && opts.end.getTime() <= Date.now()
+      ? dayKey(opts.end)
+      : dayKey(new Date());
+  const out: { day: string; touches: number; calls: number }[] = [];
+  // Fill gaps so quiet days render as real zeros, not missing columns.
+  for (
+    let d = new Date(`${first}T00:00:00Z`);
+    dayKey(d) <= last && out.length < 366;
+    d.setUTCDate(d.getUTCDate() + 1)
+  ) {
+    const key = dayKey(d);
+    out.push({ day: key, ...(byDay.get(key) ?? { touches: 0, calls: 0 }) });
+  }
+  return out;
 }
 
 const TOUCH_TYPES = ["call", "sms", "whatsapp", "email"] as const;
@@ -92,6 +133,7 @@ export async function getAgentPerformance(
         workspaceId: schema.callLogs.workspaceId,
         durationSec: schema.callLogs.durationSec,
         result: schema.callLogs.result,
+        startTime: schema.callLogs.startTime,
       })
       .from(schema.callLogs)
       .where(callFilters.length ? and(...callFilters) : undefined),
@@ -114,6 +156,7 @@ export async function getAgentPerformance(
         rcConnected: 0,
         rcTalkTimeSec: 0,
         rcOtherCalls: 0,
+        byDay: {},
       };
       rowsById.set(userId, r);
     }
@@ -190,6 +233,22 @@ export async function getAgentPerformance(
       row(c.userId).rcOtherCalls++;
     }
   }
+
+  // ── Per-agent daily activity ───────────────────────────────────────────
+  const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+  const bumpDay = (
+    userId: string,
+    day: string,
+    field: "touches" | "calls",
+  ) => {
+    const r = row(userId);
+    const cur = (r.byDay[day] ??= { touches: 0, calls: 0 });
+    cur[field]++;
+  };
+  for (const e of events) if (e.userId) bumpDay(e.userId, dayKey(e.createdAt), "touches");
+  for (const c of calls)
+    if (c.workspaceId === workspaceId)
+      bumpDay(c.userId, dayKey(c.startTime), "calls");
 
   // ── Names ──────────────────────────────────────────────────────────────
   const ids = [...rowsById.keys()];

@@ -248,7 +248,11 @@ export async function syncConnection(
       // otherwise geocode the (new) city. Numeric columns come back as strings.
       let lat: string | null = null;
       let lng: string | null = null;
-      if (a.city) {
+      if (a.city?.lat != null && a.city.lng != null) {
+        // Custom-location targeting carries the exact pin — no geocoding.
+        lat = a.city.lat.toFixed(6);
+        lng = a.city.lng.toFixed(6);
+      } else if (a.city) {
         const prev = prevByExternal.get(a.externalId);
         if (prev?.lat != null && prev.lng != null && prev.cityName === a.city.name) {
           lat = prev.lat;

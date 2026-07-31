@@ -8,6 +8,7 @@ import {
   NormalizedDailyMetrics,
   NormalizedLead,
 } from "./types";
+import { US_STATES } from "@/lib/us-states";
 
 const GRAPH = "https://graph.facebook.com/v23.0";
 
@@ -253,6 +254,9 @@ export interface NormalizedAdSet {
     country?: string;
     radius?: number;
     distanceUnit?: string;
+    /** Exact pin for custom-location targeting — skips geocoding when set. */
+    lat?: number;
+    lng?: number;
   };
 }
 
@@ -285,7 +289,37 @@ type AdSetCity = {
   country?: string;
   radius?: number;
   distance_unit?: string;
+  /** Present on candidates built from custom-location pins. */
+  lat?: number;
+  lng?: number;
 };
+
+// Custom-location pins and zip codes don't carry a city name — only a
+// `primary_city_id` key into Meta's geo database. This resolves those keys
+// to their city name + region in one batched call.
+async function resolveCityKeys(
+  creds: ConnectorCredentials,
+  keys: number[],
+): Promise<Map<number, { name: string; region?: string }>> {
+  const out = new Map<number, { name: string; region?: string }>();
+  type Meta = { data?: { cities?: Record<string, { name: string; region?: string }> } };
+  for (let i = 0; i < keys.length; i += 50) {
+    const chunk = keys.slice(i, i + 50);
+    const res = await graphGet<never>(
+      `${GRAPH}/search?type=adgeolocationmeta&cities=${encodeURIComponent(JSON.stringify(chunk))}`,
+      creds.accessToken,
+    ) as unknown as Meta;
+    for (const [key, c] of Object.entries(res.data?.cities ?? {})) {
+      // Meta disambiguates duplicates as "Thousand Oaks (California)" —
+      // strip the parenthetical so names match the plain city-targeting form.
+      out.set(Number(key), {
+        name: c.name.replace(/\s*\([^)]*\)\s*$/, ""),
+        region: c.region,
+      });
+    }
+  }
+  return out;
+}
 
 // Strip accents/punctuation and lowercase so "Redondo Beach" matches a city
 // named "redondo beach" regardless of how either side is cased or spelled.
@@ -298,6 +332,12 @@ function normalizeCity(s: string): string {
     .trim();
 }
 
+function cityMatchesAdSetName(adSetName: string, cityName: string): boolean {
+  const name = normalizeCity(adSetName);
+  const city = normalizeCity(cityName);
+  return city.length > 0 && (name.includes(city) || city.includes(name));
+}
+
 // Geo-per-city accounts name each ad set after its city. Pick the targeted city
 // whose name the ad set name contains (or vice-versa); fall back to the first
 // targeted city when nothing matches.
@@ -307,24 +347,48 @@ function pickCityForAdSet(
 ): AdSetCity | undefined {
   if (!cities || cities.length === 0) return undefined;
   if (cities.length === 1) return cities[0];
-  const name = normalizeCity(adSetName);
-  const match = cities.find((c) => {
-    const city = normalizeCity(c.name);
-    return city.length > 0 && (name.includes(city) || city.includes(name));
-  });
-  return match ?? cities[0];
+  return cities.find((c) => cityMatchesAdSetName(adSetName, c.name)) ?? cities[0];
+}
+
+const STATE_NAME_BY_CODE = new Map(US_STATES.map((s) => [s.code, s.name]));
+
+// These accounts name ad sets "<City>, <ST>_<suffix>" ("Las Vegas, NV_Jul").
+// Used when pin/zip targeting resolves to a neighbouring primary city (a
+// Las Vegas pin can land in "Sunrise Manor") — the name states the intent.
+function parseCityFromAdSetName(
+  adSetName: string,
+): { name: string; region: string } | null {
+  const m = adSetName.match(/^(.+?),\s*([A-Z]{2})(?:[_\s]|$)/);
+  if (!m) return null;
+  const region = STATE_NAME_BY_CODE.get(m[2]);
+  return region ? { name: m[1].trim(), region } : null;
 }
 
 export async function listAdSets(
   creds: ConnectorCredentials,
 ): Promise<NormalizedAdSet[]> {
   type City = AdSetCity;
+  type CustomLocation = {
+    latitude?: number;
+    longitude?: number;
+    radius?: number;
+    distance_unit?: string;
+    primary_city_id?: number;
+    country?: string;
+  };
+  type Zip = { key: string; primary_city_id?: number; country?: string };
   type Row = {
     id: string;
     name: string;
     status: string;
     campaign_id: string;
-    targeting?: { geo_locations?: { cities?: City[] } };
+    targeting?: {
+      geo_locations?: {
+        cities?: City[];
+        custom_locations?: CustomLocation[];
+        zips?: Zip[];
+      };
+    };
   };
   const rows = await graphGetAll<Row>(
     `${GRAPH}/${creds.accountId}/adsets` +
@@ -332,14 +396,66 @@ export async function listAdSets(
       `&effective_status=${ADSET_STATUSES}&limit=200`,
     creds.accessToken,
   );
+
+  // Custom-location pins and zips reference cities by key only — resolve every
+  // key that ad sets without city targeting need, in one batched lookup.
+  const cityKeys = new Set<number>();
+  for (const r of rows) {
+    const g = r.targeting?.geo_locations;
+    if (!g || g.cities?.length) continue;
+    for (const l of g.custom_locations ?? [])
+      if (l.primary_city_id) cityKeys.add(l.primary_city_id);
+    for (const z of g.zips ?? [])
+      if (z.primary_city_id) cityKeys.add(z.primary_city_id);
+  }
+  const cityByKey = cityKeys.size
+    ? await resolveCityKeys(creds, [...cityKeys])
+    : new Map<number, { name: string; region?: string }>();
+
   return rows.map((r) => {
     // These are geo-per-city accounts: each ad set ("conjunto") is named after
     // the one city it's meant to represent. Meta returns the targeted cities in
     // an arbitrary order, so cities[0] can be a neighbouring city (e.g. "Carson"
     // for a "Redondo Beach" ad set). Prefer the targeted city whose name the ad
     // set is named after; only fall back to the first city when none matches.
-    const cities = r.targeting?.geo_locations?.cities;
-    const c = pickCityForAdSet(r.name, cities);
+    const g = r.targeting?.geo_locations;
+    let c = pickCityForAdSet(r.name, g?.cities);
+    if (!c && g) {
+      // No city targeting — build candidates from custom-location pins (exact
+      // lat/lng, radius) and zip codes, both resolved via their primary city.
+      const seen = new Set<number>();
+      const candidates: AdSetCity[] = [];
+      for (const l of g.custom_locations ?? []) {
+        const meta = l.primary_city_id ? cityByKey.get(l.primary_city_id) : undefined;
+        if (!meta || seen.has(l.primary_city_id!)) continue;
+        seen.add(l.primary_city_id!);
+        candidates.push({
+          name: meta.name,
+          region: meta.region,
+          country: l.country,
+          radius: l.radius,
+          distance_unit: l.distance_unit,
+          lat: l.latitude,
+          lng: l.longitude,
+        });
+      }
+      for (const z of g.zips ?? []) {
+        const meta = z.primary_city_id ? cityByKey.get(z.primary_city_id) : undefined;
+        if (!meta || seen.has(z.primary_city_id!)) continue;
+        seen.add(z.primary_city_id!);
+        candidates.push({ name: meta.name, region: meta.region, country: z.country });
+      }
+      c = candidates.find((cand) => cityMatchesAdSetName(r.name, cand.name));
+      if (!c) {
+        // Pins resolve to whichever city the pin lands in ("Sunrise Manor"
+        // for a Las Vegas pin) — the ad set's own name states the intended
+        // city, so prefer it and keep the pin's geometry.
+        const parsed = parseCityFromAdSetName(r.name);
+        c = parsed && candidates[0]
+          ? { ...candidates[0], name: parsed.name, region: parsed.region }
+          : (parsed ?? candidates[0]);
+      }
+    }
     return {
       externalId: r.id,
       campaignExternalId: r.campaign_id,
@@ -352,6 +468,8 @@ export async function listAdSets(
             country: c.country,
             radius: c.radius,
             distanceUnit: c.distance_unit,
+            lat: c.lat,
+            lng: c.lng,
           }
         : undefined,
     };

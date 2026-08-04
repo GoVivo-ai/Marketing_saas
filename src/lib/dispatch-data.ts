@@ -351,12 +351,35 @@ export async function getDispatchSchedule(
     .where(eq(schema.dispatchDrivers.workspaceId, workspaceId));
   const byName = new Map(drivers.map((d) => [d.normName, d]));
 
+  // Exact normalized match first; else the driver sharing the most name
+  // tokens (≥2, unique winner) — EverDriven types names by hand, so
+  // "Katerine"/"Katerina" style drift is routine.
+  const resolve = (name: string) => {
+    const norm = normalizeName(name);
+    const exact = byName.get(norm);
+    if (exact) return exact;
+    const tokens = new Set(norm.split(" "));
+    let best: (typeof drivers)[number] | null = null;
+    let bestScore = 1;
+    let tied = false;
+    for (const d of drivers) {
+      let score = 0;
+      for (const t of d.normName.split(" ")) if (tokens.has(t)) score++;
+      if (score > bestScore) {
+        best = d;
+        bestScore = score;
+        tied = false;
+      } else if (score === bestScore && best) tied = true;
+    }
+    return tied ? null : best;
+  };
+
   const trips: ScheduleTrip[] = [];
   let unresolved = 0;
   for (const r of rows.slice(1)) {
     const name = (r[c.driver] ?? "").trim();
     if (!name) continue;
-    const match = byName.get(normalizeName(name)) ?? null;
+    const match = resolve(name);
     if (!match) unresolved++;
     trips.push({
       date: (r[c.date] ?? "").trim(),

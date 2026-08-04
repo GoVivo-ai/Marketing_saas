@@ -18,6 +18,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { LeadsSearch } from "@/components/app/leads-search";
 import { LeadsFilter } from "@/components/app/leads-filter";
+import { Pagination } from "@/components/app/pagination";
 import { format } from "date-fns";
 import { getWorkspaceContext } from "@/lib/data";
 import { getDispatchDirectory } from "@/lib/dispatch-data";
@@ -27,7 +28,12 @@ export const dynamic = "force-dynamic";
 export default async function DispatchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; area?: string; status?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    area?: string;
+    status?: string;
+    page?: string;
+  }>;
 }) {
   const { active } = await getWorkspaceContext();
   if (!active) {
@@ -41,11 +47,15 @@ export default async function DispatchPage({
 
   const sp = await searchParams;
   const q = sp.q?.trim() || null;
-  const { drivers, total, areas } = await getDispatchDirectory(active.id, {
-    q,
-    area: sp.area ?? null,
-    status: sp.status ?? null,
-  });
+  const { drivers, total, page, totalPages, areas } = await getDispatchDirectory(
+    active.id,
+    {
+      q,
+      area: sp.area ?? null,
+      status: sp.status ?? null,
+      page: Math.max(1, Number(sp.page) || 1),
+    },
+  );
 
   return (
     <div className="space-y-6">
@@ -203,6 +213,7 @@ export default async function DispatchPage({
               )}
             </TableBody>
           </Table>
+          <Pagination page={page} totalPages={totalPages} />
         </CardContent>
       </Card>
     </div>

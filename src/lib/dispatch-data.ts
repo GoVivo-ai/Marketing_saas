@@ -30,13 +30,22 @@ export interface DispatchDriverRow {
 export interface DispatchDirectory {
   drivers: DispatchDriverRow[];
   total: number;
+  page: number;
+  totalPages: number;
   areas: string[];
 }
+
+export const DISPATCH_PAGE_SIZE = 25;
 
 /** Driver directory with search + filters and per-driver activity counts. */
 export async function getDispatchDirectory(
   workspaceId: string,
-  opts: { q?: string | null; area?: string | null; status?: string | null } = {},
+  opts: {
+    q?: string | null;
+    area?: string | null;
+    status?: string | null;
+    page?: number;
+  } = {},
 ): Promise<DispatchDirectory> {
   const filters = [
     eq(schema.dispatchDrivers.workspaceId, workspaceId),
@@ -52,7 +61,11 @@ export async function getDispatchDirectory(
     opts.status ? eq(schema.dispatchDrivers.status, opts.status) : undefined,
   ];
 
-  const [drivers, areaRows] = await Promise.all([
+  const [[{ total }], drivers, areaRows] = await Promise.all([
+    db()
+      .select({ total: sql<number>`count(*)::int` })
+      .from(schema.dispatchDrivers)
+      .where(and(...filters)),
     db()
       .select({
         id: schema.dispatchDrivers.id,
@@ -86,16 +99,27 @@ export async function getDispatchDirectory(
       })
       .from(schema.dispatchDrivers)
       .where(and(...filters))
-      .orderBy(schema.dispatchDrivers.name),
+      .orderBy(schema.dispatchDrivers.name)
+      .limit(DISPATCH_PAGE_SIZE)
+      .offset((Math.max(1, opts.page ?? 1) - 1) * DISPATCH_PAGE_SIZE),
     db()
       .selectDistinct({ area: schema.dispatchDrivers.area })
       .from(schema.dispatchDrivers)
       .where(eq(schema.dispatchDrivers.workspaceId, workspaceId)),
   ]);
 
+  const totalPages = Math.max(1, Math.ceil(total / DISPATCH_PAGE_SIZE));
+  const page = Math.min(Math.max(1, opts.page ?? 1), totalPages);
+  // Out-of-range ?page= (stale link, shrunk filter) → serve the last page
+  // instead of an empty table.
+  if (drivers.length === 0 && total > 0 && page !== opts.page) {
+    return getDispatchDirectory(workspaceId, { ...opts, page });
+  }
   return {
     drivers,
-    total: drivers.length,
+    total,
+    page,
+    totalPages,
     areas: areaRows
       .map((r) => r.area)
       .filter((a): a is string => Boolean(a))

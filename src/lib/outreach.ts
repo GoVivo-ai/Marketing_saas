@@ -7,6 +7,13 @@
  * out) × outcome (what happened).
  */
 
+/**
+ * How long a lead's "being worked right now" claim holds before it expires on
+ * its own — long enough for a call + notes, short enough that an abandoned
+ * lead frees itself.
+ */
+export const LEAD_CLAIM_TTL_MS = 15 * 60_000;
+
 /** Channels an agent can log a touch on, mapped 1:1 to leadEvents.type. */
 export const OUTREACH_CHANNELS = ["call", "sms", "email", "whatsapp"] as const;
 export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number];

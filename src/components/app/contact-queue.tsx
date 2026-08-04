@@ -19,6 +19,7 @@ import {
   Sparkles,
   Ban,
   ListChecks,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -31,7 +32,10 @@ import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
 import {
   addLeadNote,
   getLeadDetail,
+  claimLead,
   logLeadOutreach,
+  markLeadCcActivated,
+  releaseLead,
   setLeadDisqual,
   undoLeadOutreach,
 } from "@/lib/actions/leads";
@@ -633,7 +637,32 @@ export function ContactQueue({
   const current = items[0] ?? null;
   const upNext = items.slice(1, 7);
 
+  // Soft-claim the lead on deck so two agents don't call it at once. If
+  // someone beat us to it (their queue already had it up), show who — the
+  // agent can Skip. The claim self-expires server-side (no unlock to forget).
+  // Keyed by lead id so a stale warning never shows on the next lead.
+  const [claim, setClaim] = useState<{ id: string; by: string } | null>(null);
+  const currentId = current?.id ?? null;
+  useEffect(() => {
+    let active = true;
+    if (!currentId) return;
+    claimLead(currentId)
+      .then((r) => {
+        if (active) setClaim(r.ok ? null : { id: currentId, by: r.by });
+      })
+      .catch(() => {
+        // Claiming is best-effort — the queue keeps working without it.
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentId]);
+  const claimedBy = claim && claim.id === currentId ? claim.by : null;
+
   const advance = () => {
+    // Logged and moving on — free the claim right away (it would otherwise
+    // linger for the TTL; the follow-up window already keeps the lead out).
+    if (current) releaseLead(current.id).catch(() => {});
     setItems((list) => list.slice(1));
     setShowHistory(false);
     setChannel("call");
@@ -747,8 +776,24 @@ export function ContactQueue({
       advance();
     });
 
+  /** The lead's CC profile got activated — move stages and leave the queue. */
+  const onCcActivated = () =>
+    startLog(async () => {
+      if (!current) return;
+      const item = current;
+      const r = await markLeadCcActivated(item.id);
+      if (!r.ok) {
+        toast.error(r.message);
+        return;
+      }
+      setDone((n) => n + 1);
+      toast.success(`${item.name} moved to ${r.stageName} — out of the queue.`);
+      advance();
+    });
+
   const onSkip = () => {
     // Send the current lead to the back of the queue without logging anything.
+    if (current) releaseLead(current.id).catch(() => {});
     setItems((list) => (list.length > 1 ? [...list.slice(1), list[0]] : list));
     setShowHistory(false);
   };
@@ -805,6 +850,15 @@ export function ContactQueue({
               </div>
             </CardHeader>
             <CardContent className="space-y-5">
+              {claimedBy && (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+                  <span>
+                    <span className="font-medium">{claimedBy}</span> is working
+                    this lead right now — skip it to avoid a double contact.
+                  </span>
+                </div>
+              )}
               {/* Context the agent checks before dialing. */}
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
@@ -991,6 +1045,25 @@ export function ContactQueue({
                         </Button>
                       ))}
                     </div>
+                  </div>
+
+                  {/* The lead got activated in Contractor Compliance — record
+                      it here (not on the Kanban) and let it leave the queue. */}
+                  <div className="border-t pt-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={logging}
+                      className="h-8 gap-1.5 border-success/40 font-normal text-success hover:text-success"
+                      onClick={onCcActivated}
+                    >
+                      {logging ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                      )}
+                      Activated in Contractor Compliance
+                    </Button>
                   </div>
                 </>
               )}

@@ -414,6 +414,13 @@ export const stages = pgTable(
     color: text("color"),
     /** Funnel semantics so reporting/AI can tell outcomes apart. */
     kind: text("kind").notNull().default("open"), // open | won | lost
+    /**
+     * Whether leads in this stage still need outreach. Open stages that are
+     * handled elsewhere (e.g. "In Contractor Compliance" — the lead is being
+     * onboarded in an external system) opt out so their leads leave the
+     * contact queue instead of resurfacing as follow-ups.
+     */
+    workable: boolean("workable").notNull().default(true),
     position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -474,6 +481,16 @@ export const leads = pgTable(
     assignedToId: text("assigned_to_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    /**
+     * Soft "being worked right now" claim: set when an agent pulls the lead
+     * up in the queue or opens its detail, honored for a short TTL so two
+     * agents don't contact the same lead at once. Expires on its own — never
+     * a hard lock.
+     */
+    workingById: text("working_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    workingAt: timestamp("working_at"),
     /**
      * When the score automation auto-contacted this lead (SMS). Doubles as the
      * idempotency guard: a lead is auto-contacted at most once, even across

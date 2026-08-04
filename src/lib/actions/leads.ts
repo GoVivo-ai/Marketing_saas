@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { currentUser, isAgency, getWorkspaceRole } from "@/lib/permissions";
@@ -15,6 +15,7 @@ import {
 import { isValidRcaPath } from "@/lib/rca";
 import { getLeadRowById, type LeadRow } from "@/lib/data";
 import {
+  LEAD_CLAIM_TTL_MS,
   OUTREACH_CHANNELS,
   OUTREACH_OUTCOMES,
   type OutreachChannel,
@@ -162,6 +163,124 @@ export async function moveLeadToStage(
     return {
       ok: false,
       reason: "error",
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export type LeadClaimResult =
+  | { ok: true }
+  /** Someone else holds a live claim — show who, don't steal it. */
+  | { ok: false; by: string };
+
+/**
+ * Soft-claims a lead for the current agent so no one else contacts it at the
+ * same time. Free, expired or own claims are (re)taken atomically; a live
+ * claim by someone else is reported back, never overridden. Expires via
+ * {@link LEAD_CLAIM_TTL_MS} — abandoning a lead frees it on its own.
+ */
+export async function claimLead(leadId: string): Promise<LeadClaimResult> {
+  const { userId } = await requireLeadAccess(leadId);
+  const cutoff = new Date(Date.now() - LEAD_CLAIM_TTL_MS);
+  const taken = await db()
+    .update(schema.leads)
+    .set({ workingById: userId, workingAt: new Date() })
+    .where(
+      and(
+        eq(schema.leads.id, leadId),
+        or(
+          isNull(schema.leads.workingById),
+          eq(schema.leads.workingById, userId),
+          isNull(schema.leads.workingAt),
+          lt(schema.leads.workingAt, cutoff),
+        ),
+      ),
+    )
+    .returning({ id: schema.leads.id });
+  if (taken.length > 0) return { ok: true };
+
+  const [holder] = await db()
+    .select({ name: schema.users.name })
+    .from(schema.leads)
+    .leftJoin(schema.users, eq(schema.leads.workingById, schema.users.id))
+    .where(eq(schema.leads.id, leadId))
+    .limit(1);
+  return { ok: false, by: holder?.name ?? "Another agent" };
+}
+
+/** Releases the current agent's claim (skip/moved on). Others' claims stay. */
+export async function releaseLead(leadId: string): Promise<void> {
+  const { userId } = await requireLeadAccess(leadId);
+  await db()
+    .update(schema.leads)
+    .set({ workingById: null, workingAt: null })
+    .where(
+      and(eq(schema.leads.id, leadId), eq(schema.leads.workingById, userId)),
+    );
+}
+
+export type LeadCcResult =
+  | { ok: true; stageName: string }
+  | { ok: false; message: string };
+
+/**
+ * Marks a lead as activated in Contractor Compliance: moves it to the
+ * workspace's compliance stage (the stage opted out of the contact queue via
+ * `workable = false`, else the first won stage). One click from the queue or
+ * the lead detail — the counterpart of a disqualification, so agents never
+ * need to visit the Kanban to record it.
+ */
+export async function markLeadCcActivated(
+  leadId: string,
+): Promise<LeadCcResult> {
+  const { userId, lead } = await requireLeadAccess(leadId);
+  const stages = await db()
+    .select({
+      id: schema.stages.id,
+      name: schema.stages.name,
+      kind: schema.stages.kind,
+      workable: schema.stages.workable,
+      position: schema.stages.position,
+    })
+    .from(schema.stages)
+    .where(eq(schema.stages.workspaceId, lead.workspaceId))
+    .orderBy(asc(schema.stages.position));
+  const target =
+    stages.find((s) => !s.workable && s.kind !== "lost") ??
+    stages.find((s) => s.kind === "won");
+  if (!target)
+    return {
+      ok: false,
+      message:
+        "No compliance stage configured — uncheck “Queue” on that stage in Edit stages first.",
+    };
+  if (lead.stageId === target.id) return { ok: true, stageName: target.name };
+
+  try {
+    await db()
+      .update(schema.leads)
+      .set({
+        stageId: target.id,
+        status: deriveStatus(target.kind, target.position),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.leads.id, leadId));
+    await db().insert(schema.leadEvents).values({
+      leadId,
+      userId,
+      type: "status_change",
+      payload: {
+        fromStageId: lead.stageId,
+        toStageId: target.id,
+        reason: "cc_activated",
+      },
+    });
+    revalidatePath("/leads");
+    revalidatePath("/leads/pipeline");
+    return { ok: true, stageName: target.name };
+  } catch (err) {
+    return {
+      ok: false,
       message: err instanceof Error ? err.message : String(err),
     };
   }

@@ -115,6 +115,18 @@ export function StageManager({
                   </option>
                 ))}
               </select>
+              <label
+                className="flex shrink-0 cursor-pointer items-center gap-1 text-xs text-muted-foreground"
+                title="Checked: leads in this stage show up in the contact queue. Uncheck for stages handled elsewhere (e.g. compliance onboarding) so their leads stop resurfacing as follow-ups."
+              >
+                <input
+                  type="checkbox"
+                  name={`workable:${s.id}`}
+                  defaultChecked={s.workable}
+                  className="h-3.5 w-3.5 accent-primary"
+                />
+                Queue
+              </label>
 
               <div className="ml-auto flex items-center gap-0.5">
                 <Button

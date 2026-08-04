@@ -1,7 +1,17 @@
 "use client";
 
+import { useEffect, useState, useTransition } from "react";
 import { format, formatDistanceToNow } from "date-fns";
-import { Loader2, MapPin, MapPinOff } from "lucide-react";
+import {
+  AlertTriangle,
+  Loader2,
+  MapPin,
+  MapPinOff,
+  ShieldCheck,
+} from "lucide-react";
+import { toast } from "sonner";
+import { claimLead, markLeadCcActivated } from "@/lib/actions/leads";
+import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
@@ -49,6 +59,28 @@ export function LeadDetailSheet({
   /** Reflect inline edits (LeadInfoEditor) back into the caller's state. */
   onPatch?: (patch: Partial<LeadRow>) => void;
 }) {
+  // Opening a lead soft-claims it (viewing = working) so teammates get a
+  // heads-up instead of contacting it too; if someone already holds a live
+  // claim, warn — never steal it. Keyed by lead id so a stale warning never
+  // carries over to the next lead opened.
+  const [claim, setClaim] = useState<{ id: string; by: string } | null>(null);
+  const leadId = lead?.id ?? null;
+  useEffect(() => {
+    let active = true;
+    if (!leadId) return;
+    claimLead(leadId)
+      .then((r) => {
+        if (active) setClaim(r.ok ? null : { id: leadId, by: r.by });
+      })
+      .catch(() => {
+        // Best-effort — the detail still opens without the claim.
+      });
+    return () => {
+      active = false;
+    };
+  }, [leadId]);
+  const claimedBy = claim && claim.id === leadId ? claim.by : null;
+
   return (
     <Sheet open={lead !== null} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
@@ -72,6 +104,15 @@ export function LeadDetailSheet({
                 Received {formatDistanceToNow(lead.createdAt, { addSuffix: true })} via{" "}
                 {platformLabel[lead.platform] ?? lead.platform}
               </SheetDescription>
+              {claimedBy && (
+                <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-sm">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+                  <span>
+                    <span className="font-medium">{claimedBy}</span> is working
+                    this lead right now.
+                  </span>
+                </div>
+              )}
             </SheetHeader>
 
             <Tabs
@@ -89,6 +130,8 @@ export function LeadDetailSheet({
                 className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 pt-4 pb-6"
               >
                 <LeadActivity key={lead.id} leadId={lead.id} />
+                <Separator />
+                <CcActivated key={`cc-${lead.id}`} leadId={lead.id} />
                 <Separator />
                 <LeadDisqualify
                   key={`dq-${lead.id}`}
@@ -179,6 +222,42 @@ export function LeadDetailSheet({
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+/**
+ * One-click "the lead got activated in Contractor Compliance" — moves it to
+ * the compliance stage (and out of the contact queue) without visiting the
+ * Kanban board.
+ */
+function CcActivated({ leadId }: { leadId: string }) {
+  const [saving, start] = useTransition();
+  const onClick = () =>
+    start(async () => {
+      const r = await markLeadCcActivated(leadId);
+      if (r.ok) toast.success(`Moved to ${r.stageName}.`);
+      else toast.error(r.message);
+    });
+  return (
+    <div className="space-y-2">
+      <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Contractor Compliance
+      </h4>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={saving}
+        className="h-8 gap-1.5 border-success/40 font-normal text-success hover:text-success"
+        onClick={onClick}
+      >
+        {saving ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <ShieldCheck className="h-3.5 w-3.5" />
+        )}
+        Activated in Contractor Compliance
+      </Button>
+    </div>
   );
 }
 

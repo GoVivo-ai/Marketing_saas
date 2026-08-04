@@ -19,6 +19,7 @@ import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { haversineKm } from "@/lib/geo";
 import { MIN_VEHICLE_YEAR, vehicleAnswer } from "@/lib/vehicle";
 import { scheduleAnswer, type ScheduleAnswer } from "@/lib/schedule";
+import { LEAD_CLAIM_TTL_MS } from "@/lib/outreach";
 
 /**
  * Ad platforms deliver campaign names in snake/underscore case
@@ -1327,6 +1328,8 @@ export interface Stage {
   name: string;
   color: string | null;
   kind: string;
+  /** Whether leads here still need outreach (false → out of the queue). */
+  workable: boolean;
   position: number;
 }
 
@@ -1352,6 +1355,15 @@ export interface PipelineData {
 /** Columns load at most this many cards; the header shows the true total. */
 export const PIPELINE_CARD_CAP = 100;
 
+/**
+ * A lead's effective targeted city: its ad set's audience city when it came
+ * from an ad, else the advertisement area recorded on manual leads — so city
+ * filters don't silently drop leads that have no ad set.
+ */
+function effectiveCitySql() {
+  return sql<string>`coalesce(${schema.adsets.cityName}, ${schema.leads.formData} ->> 'advertisement_area')`;
+}
+
 export async function getPipeline(
   workspaceId: string,
   opts: {
@@ -1369,6 +1381,7 @@ export async function getPipeline(
       name: schema.stages.name,
       color: schema.stages.color,
       kind: schema.stages.kind,
+      workable: schema.stages.workable,
       position: schema.stages.position,
     })
     .from(schema.stages)
@@ -1382,7 +1395,7 @@ export async function getPipeline(
       ? inArray(schema.adsets.cityRegion, opts.regions)
       : undefined,
     opts.cities?.length
-      ? inArray(schema.adsets.cityName, opts.cities)
+      ? inArray(effectiveCitySql(), opts.cities)
       : undefined,
     opts.start ? gte(schema.leads.createdAt, opts.start) : undefined,
     opts.end ? lte(schema.leads.createdAt, opts.end) : undefined,
@@ -1518,7 +1531,12 @@ function queueCandidateWhere(workspaceId: string) {
   return and(
     eq(schema.leads.workspaceId, workspaceId),
     isNull(schema.leads.disqualL1),
-    or(isNull(schema.leads.stageId), eq(schema.stages.kind, "open")),
+    // Workable open stages only — a non-workable stage (e.g. "In Contractor
+    // Compliance") means the lead is being handled outside the outreach loop.
+    or(
+      isNull(schema.leads.stageId),
+      and(eq(schema.stages.kind, "open"), eq(schema.stages.workable, true)),
+    ),
   );
 }
 
@@ -1629,6 +1647,18 @@ export async function getContactQueue(
     end?: Date | null;
   } = {},
 ): Promise<ContactQueueData> {
+  // Someone else's live claim keeps the lead out of THIS agent's queue — the
+  // holder still sees it in their own. Expired claims don't hide anything.
+  const session = await auth();
+  const me = session?.user?.id ?? "";
+  const claimCutoff = new Date(Date.now() - LEAD_CLAIM_TTL_MS);
+  const notClaimedByOther = or(
+    isNull(schema.leads.workingById),
+    eq(schema.leads.workingById, me),
+    isNull(schema.leads.workingAt),
+    lt(schema.leads.workingAt, claimCutoff),
+  );
+
   // Candidates: open-stage (or unstaged) leads that aren't disqualified.
   const leadRows = await db()
     .select({
@@ -1668,12 +1698,13 @@ export async function getContactQueue(
     .where(
       and(
         queueCandidateWhere(workspaceId),
+        notClaimedByOther,
         opts.adsetId ? eq(schema.leads.adsetId, opts.adsetId) : undefined,
         opts.regions?.length
           ? inArray(schema.adsets.cityRegion, opts.regions)
           : undefined,
         opts.cities?.length
-          ? inArray(schema.adsets.cityName, opts.cities)
+          ? inArray(effectiveCitySql(), opts.cities)
           : undefined,
         opts.q
           ? or(
@@ -1853,13 +1884,34 @@ export interface FunnelReport {
 export async function getWorkspaceGeoOptions(
   workspaceId: string,
 ): Promise<{ region: string | null; city: string | null }[]> {
-  return db()
-    .selectDistinct({
-      region: schema.adsets.cityRegion,
-      city: schema.adsets.cityName,
-    })
-    .from(schema.adsets)
-    .where(eq(schema.adsets.workspaceId, workspaceId));
+  const [fromAdsets, fromManual] = await Promise.all([
+    db()
+      .selectDistinct({
+        region: schema.adsets.cityRegion,
+        city: schema.adsets.cityName,
+      })
+      .from(schema.adsets)
+      .where(eq(schema.adsets.workspaceId, workspaceId)),
+    // Manual leads carry their targeted area in formData, not an ad set.
+    db()
+      .selectDistinct({
+        city: sql<string>`${schema.leads.formData} ->> 'advertisement_area'`,
+      })
+      .from(schema.leads)
+      .where(
+        and(
+          eq(schema.leads.workspaceId, workspaceId),
+          sql`${schema.leads.formData} ->> 'advertisement_area' is not null`,
+        ),
+      ),
+  ]);
+  const seen = new Set(fromAdsets.map((r) => r.city).filter(Boolean));
+  return [
+    ...fromAdsets,
+    ...fromManual
+      .filter((r) => r.city && !seen.has(r.city))
+      .map((r) => ({ region: null, city: r.city })),
+  ];
 }
 
 export async function getFunnelReport(
@@ -1897,7 +1949,7 @@ export async function getFunnelReport(
   if (opts.regions?.length)
     leadFilters.push(inArray(schema.adsets.cityRegion, opts.regions));
   if (opts.cities?.length)
-    leadFilters.push(inArray(schema.adsets.cityName, opts.cities));
+    leadFilters.push(inArray(effectiveCitySql(), opts.cities));
 
   const [leadRows, moveRows] = await Promise.all([
     db()

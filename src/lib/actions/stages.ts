@@ -60,11 +60,18 @@ export async function saveStages(formData: FormData) {
     const color = String(formData.get(`color:${s.id}`) ?? "").trim() || null;
     const rawKind = String(formData.get(`kind:${s.id}`) ?? "").trim();
     const kind = ["open", "won", "lost"].includes(rawKind) ? rawKind : s.kind;
+    // Checkbox: present = agents keep working leads here (contact queue).
+    const workable = formData.has(`workable:${s.id}`);
     if (!name) continue; // never blank out a stage name
-    if (name !== s.name || color !== s.color || kind !== s.kind) {
+    if (
+      name !== s.name ||
+      color !== s.color ||
+      kind !== s.kind ||
+      workable !== s.workable
+    ) {
       await db()
         .update(schema.stages)
-        .set({ name, color, kind })
+        .set({ name, color, kind, workable })
         .where(eq(schema.stages.id, s.id));
     }
   }

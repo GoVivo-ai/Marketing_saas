@@ -50,7 +50,7 @@ function findZip(formData: Record<string, unknown> | null | undefined): string |
   if (!formData) return null;
   for (const [key, value] of Object.entries(formData)) {
     const k = key.toLowerCase();
-    if (/zip|postal/.test(k) && value) {
+    if (/zip|postal|post.?code/.test(k) && value) {
       const v = String(value).trim();
       if (/^\d{4,10}(-\d+)?$/.test(v)) return v;
     }

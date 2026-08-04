@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { MapPin, Video, Armchair, ShieldAlert } from "lucide-react";
+import {
+  MapPin,
+  Video,
+  Armchair,
+  ShieldAlert,
+  CalendarClock,
+} from "lucide-react";
 import {
   Card,
   CardContent,
@@ -70,6 +76,13 @@ export default async function DispatchPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/dispatch/schedule"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-accent"
+          >
+            <CalendarClock className="h-3.5 w-3.5" />
+            Today&apos;s schedule
+          </Link>
           <LeadsFilter
             param="status"
             icon="stage"

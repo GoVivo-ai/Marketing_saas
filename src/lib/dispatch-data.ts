@@ -7,6 +7,7 @@
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db, schema } from "@/lib/db";
+import { isSheetsConfigured, readSheetRange } from "@/lib/integrations/google-sheets";
 
 export interface DispatchDriverRow {
   id: string;
@@ -262,5 +263,118 @@ export async function getDriver360(
         ? (i.subCategories as string[])
         : null,
     })),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Today's schedule — read live from the dispatch bot's Google Sheet (the bot
+// downloads EverDriven's "all runs" CSV every 10 minutes and replaces the
+// Schedule tab). EverDriven identifies drivers by name only, so each row is
+// resolved against the driver master by normalized name.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ScheduleTrip {
+  date: string;
+  start: string;
+  end: string;
+  driverName: string;
+  /** Resolved driver (null when the name didn't match the master). */
+  driverId: string | null;
+  driverMdd: string | null;
+  driverArea: string | null;
+  status: string;
+  run: string;
+  uploadedAt: string;
+}
+
+export interface DispatchSchedule {
+  configured: boolean;
+  trips: ScheduleTrip[];
+  /** When the bot last replaced the tab (from the Uploaded At column). */
+  uploadedAt: string | null;
+  /** Count of rows whose driver name didn't resolve to the master. */
+  unresolved: number;
+  error?: string;
+}
+
+/** Uppercase, accent- and whitespace-normalized — mirrors the import script. */
+function normalizeName(s: string): string {
+  return s
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+export async function getDispatchSchedule(
+  workspaceId: string,
+): Promise<DispatchSchedule> {
+  if (!isSheetsConfigured())
+    return { configured: false, trips: [], uploadedAt: null, unresolved: 0 };
+
+  let rows: string[][];
+  try {
+    rows = await readSheetRange("Schedule");
+  } catch (err) {
+    return {
+      configured: true,
+      trips: [],
+      uploadedAt: null,
+      unresolved: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+  if (rows.length < 2)
+    return { configured: true, trips: [], uploadedAt: null, unresolved: 0 };
+
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const col = (name: string) => header.indexOf(name);
+  const c = {
+    date: col("date"),
+    start: col("start"),
+    end: col("end"),
+    driver: col("driver name"),
+    status: col("status"),
+    uploaded: col("uploaded at"),
+    run: col("run"),
+  };
+
+  const drivers = await db()
+    .select({
+      id: schema.dispatchDrivers.id,
+      mdd: schema.dispatchDrivers.mdd,
+      area: schema.dispatchDrivers.area,
+      normName: schema.dispatchDrivers.normName,
+    })
+    .from(schema.dispatchDrivers)
+    .where(eq(schema.dispatchDrivers.workspaceId, workspaceId));
+  const byName = new Map(drivers.map((d) => [d.normName, d]));
+
+  const trips: ScheduleTrip[] = [];
+  let unresolved = 0;
+  for (const r of rows.slice(1)) {
+    const name = (r[c.driver] ?? "").trim();
+    if (!name) continue;
+    const match = byName.get(normalizeName(name)) ?? null;
+    if (!match) unresolved++;
+    trips.push({
+      date: (r[c.date] ?? "").trim(),
+      start: (r[c.start] ?? "").trim(),
+      end: (r[c.end] ?? "").trim(),
+      driverName: name,
+      driverId: match?.id ?? null,
+      driverMdd: match?.mdd ?? null,
+      driverArea: match?.area ?? null,
+      status: (r[c.status] ?? "").trim(),
+      run: (r[c.run] ?? "").trim(),
+      uploadedAt: (r[c.uploaded] ?? "").trim(),
+    });
+  }
+  return {
+    configured: true,
+    trips,
+    uploadedAt: trips[0]?.uploadedAt ?? null,
+    unresolved,
   };
 }

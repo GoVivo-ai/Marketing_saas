@@ -1,13 +1,16 @@
 /**
- * Minimal Google Sheets reader authenticated with a service account — no SDK,
- * just an RS256-signed JWT exchanged for an access token (cached until near
- * expiry). Used by the dispatch module to read the bot's "Alexyah Bot Data"
- * spreadsheet (Schedule/Log tabs). Configure with:
+ * Minimal Google Sheets reader — no SDK. Two auth modes, first configured
+ * wins; used by the dispatch module to read the bot's "Alexyah Bot Data"
+ * spreadsheet (Schedule/Log tabs):
  *
- *   GOOGLE_SERVICE_ACCOUNT_JSON  the service account's key file, as one line
- *   DISPATCH_SHEET_ID            the spreadsheet id (from its URL)
+ *  1. Service account: GOOGLE_SERVICE_ACCOUNT_JSON (key file as one line);
+ *     share the sheet with its client_email. Preferred, but the org policy
+ *     currently blocks creating SA keys.
+ *  2. OAuth refresh token (the dispatch bot's own pattern): GOOGLE_OAUTH_
+ *     REFRESH_TOKEN minted for the AUTH_GOOGLE_ID/SECRET client by an
+ *     account that can read the sheet (scripts/google-sheets-token.mjs).
  *
- * The sheet must be shared (Viewer) with the service account's client_email.
+ *  Plus DISPATCH_SHEET_ID (the spreadsheet id from its URL) in both modes.
  */
 import { createSign } from "node:crypto";
 
@@ -33,8 +36,40 @@ function serviceAccount(): ServiceAccount | null {
   }
 }
 
+function oauthConfigured(): boolean {
+  return Boolean(
+    process.env.GOOGLE_OAUTH_REFRESH_TOKEN &&
+      process.env.AUTH_GOOGLE_ID &&
+      process.env.AUTH_GOOGLE_SECRET,
+  );
+}
+
 export function isSheetsConfigured(): boolean {
-  return serviceAccount() !== null && Boolean(process.env.DISPATCH_SHEET_ID);
+  return (
+    (serviceAccount() !== null || oauthConfigured()) &&
+    Boolean(process.env.DISPATCH_SHEET_ID)
+  );
+}
+
+async function refreshTokenGrant(): Promise<string> {
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: process.env.AUTH_GOOGLE_ID ?? "",
+      client_secret: process.env.AUTH_GOOGLE_SECRET ?? "",
+      refresh_token: process.env.GOOGLE_OAUTH_REFRESH_TOKEN ?? "",
+    }),
+  });
+  if (!res.ok)
+    throw new Error(`Google refresh failed: ${res.status} ${await res.text()}`);
+  const data = (await res.json()) as { access_token: string; expires_in: number };
+  cachedToken = {
+    token: data.access_token,
+    expiresAt: Date.now() + data.expires_in * 1000,
+  };
+  return data.access_token;
 }
 
 const b64url = (data: string | Buffer) =>
@@ -86,8 +121,14 @@ async function accessToken(sa: ServiceAccount): Promise<string> {
 export async function readSheetRange(range: string): Promise<string[][]> {
   const sa = serviceAccount();
   const sheetId = process.env.DISPATCH_SHEET_ID;
-  if (!sa || !sheetId) throw new Error("Google Sheets access not configured");
-  const token = await accessToken(sa);
+  if ((!sa && !oauthConfigured()) || !sheetId)
+    throw new Error("Google Sheets access not configured");
+  const token =
+    cachedToken && Date.now() < cachedToken.expiresAt - 60_000
+      ? cachedToken.token
+      : sa
+        ? await accessToken(sa)
+        : await refreshTokenGrant();
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?majorDimension=ROWS`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },

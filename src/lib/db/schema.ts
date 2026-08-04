@@ -669,6 +669,136 @@ export const callLogs = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────
+// Dispatch module — replaces the ops team's loose spreadsheets. The MDD
+// (EverDriven driver id) is the thread that joins drivers to their covers,
+// compliance interactions and schedule rows across every source system.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Driver master — the platform-native replacement of the "All Drivers" Excel.
+ * One row per driver; the MDD identifies them across EverDriven, SharePoint
+ * and the dispatch bot.
+ */
+export const dispatchDrivers = pgTable(
+  "dispatch_drivers",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** EverDriven driver id — the cross-system key. Null when not assigned yet. */
+    mdd: text("mdd"),
+    name: text("name").notNull(),
+    /** Uppercased, accent/space-normalized name for cross-source matching. */
+    normName: text("norm_name").notNull(),
+    state: text("state"),
+    area: text("area"),
+    address: text("address"),
+    status: text("status").notNull().default("active"), // active | inactive
+    /** Whether the driver currently has routes assigned (master file split). */
+    hasRoutes: boolean("has_routes").notNull().default(true),
+    phone: text("phone"),
+    email: text("email"),
+    emergencyName: text("emergency_name"),
+    emergencyPhone: text("emergency_phone"),
+    emergencyRelation: text("emergency_relation"),
+    camera: boolean("camera").notNull().default(false),
+    carSeats: integer("car_seats").notNull().default(0),
+    boosterSeats: integer("booster_seats").notNull().default(0),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("dispatch_driver_mdd_unique").on(t.workspaceId, t.mdd),
+    index("dispatch_driver_workspace_idx").on(t.workspaceId),
+    index("dispatch_driver_norm_name_idx").on(t.workspaceId, t.normName),
+  ],
+);
+
+/**
+ * Ride covers — a driver can't make a trip and a rescue driver takes it.
+ * Platform-native replacement of the "Ride Covers" Excel; raw names are kept
+ * next to the resolved driver ids so imports never lose information.
+ */
+export const dispatchCovers = pgTable(
+  "dispatch_covers",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Day the absence was reported. */
+    date: timestamp("date"),
+    /** Day the rescue actually covers. */
+    rescueDate: timestamp("rescue_date"),
+    company: text("company"),
+    area: text("area"),
+    reason: text("reason"),
+    driverId: text("driver_id").references(() => dispatchDrivers.id, {
+      onDelete: "set null",
+    }),
+    driverName: text("driver_name"),
+    rescueDriverId: text("rescue_driver_id").references(
+      () => dispatchDrivers.id,
+      { onDelete: "set null" },
+    ),
+    rescueName: text("rescue_name"),
+    payment: text("payment"),
+    comments: text("comments"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("dispatch_cover_workspace_idx").on(t.workspaceId, t.date),
+    index("dispatch_cover_driver_idx").on(t.driverId),
+    index("dispatch_cover_rescue_idx").on(t.rescueDriverId),
+  ],
+);
+
+/**
+ * Compliance interactions — mirror of the SharePoint "Driver Incidents
+ * Report" list (the company's official record; billing depends on it).
+ * SharePoint stays the system of record: this table is a synced read model
+ * (one-off CSV import today, Microsoft Graph sync next), keyed by spItemId.
+ */
+export const dispatchInteractions = pgTable(
+  "dispatch_interactions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** SharePoint list item id once synced via Graph; null on CSV imports. */
+    spItemId: text("sp_item_id"),
+    driverId: text("driver_id").references(() => dispatchDrivers.id, {
+      onDelete: "set null",
+    }),
+    driverName: text("driver_name"),
+    priority: text("priority"),
+    status: text("status"),
+    /** Plain-text description (SharePoint's HTML stripped on import). */
+    description: text("description"),
+    classification: text("classification"),
+    category: text("category"),
+    /** SharePoint multi-choice, stored as JSON array of strings. */
+    subCategories: jsonb("sub_categories"),
+    assignedTo: text("assigned_to"),
+    createdBy: text("created_by"),
+    modifiedBy: text("modified_by"),
+    /** Timestamps as recorded in SharePoint. */
+    spCreatedAt: timestamp("sp_created_at"),
+    spModifiedAt: timestamp("sp_modified_at"),
+    resolvedAt: timestamp("resolved_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("dispatch_interaction_sp_unique").on(t.workspaceId, t.spItemId),
+    index("dispatch_interaction_workspace_idx").on(t.workspaceId, t.spCreatedAt),
+    index("dispatch_interaction_driver_idx").on(t.driverId),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────
 // Relations
 // ─────────────────────────────────────────────────────────────────────────
 

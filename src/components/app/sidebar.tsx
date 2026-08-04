@@ -11,6 +11,7 @@ import {
   PhoneOutgoing,
   Sparkles,
   FileBarChart,
+  Bus,
   Plug,
   Settings,
   TerminalSquare,
@@ -29,6 +30,7 @@ const fullNav = [
   { href: "/leads", label: "Leads", icon: Inbox },
   { href: "/leads/queue", label: "Contact Queue", icon: PhoneOutgoing },
   { href: "/leads/pipeline", label: "Pipeline", icon: Columns3 },
+  { href: "/dispatch", label: "Dispatch", icon: Bus },
   { href: "/insights", label: "AI Insights", icon: Sparkles },
   { href: "/reports", label: "Reports", icon: FileBarChart },
 ];

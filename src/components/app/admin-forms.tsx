@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState, useTransition } from "react";
+import { toast } from "sonner";
 import { CircleCheck, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import {
   createWorkspace,
@@ -8,6 +9,7 @@ import {
   deleteWorkspace,
   deleteUser,
   resetUserPassword,
+  setUserRole,
   type AdminActionState,
 } from "@/lib/actions/admin";
 import { Button } from "@/components/ui/button";
@@ -163,6 +165,58 @@ export function DeleteWorkspaceButton({
         Delete
       </Button>
     </form>
+  );
+}
+
+/**
+ * Inline platform-role editor for the Clients & Team roster. Saves on change;
+ * the server enforces the guardrails (no self-change, developer-only grants)
+ * and any rejection is surfaced as a toast with the value rolled back.
+ */
+export function UserRoleSelect({
+  userId,
+  role,
+  options,
+}: {
+  userId: string;
+  role: string;
+  /** value/label pairs the current viewer is allowed to assign. */
+  options: { value: string; label: string }[];
+}) {
+  const [value, setValue] = useState(role);
+  const [pending, start] = useTransition();
+
+  const onChange = (next: string) => {
+    const prev = value;
+    setValue(next);
+    start(async () => {
+      try {
+        const fd = new FormData();
+        fd.set("userId", userId);
+        fd.set("role", next);
+        await setUserRole(fd);
+        toast.success("Role updated.");
+      } catch (err) {
+        setValue(prev);
+        toast.error(err instanceof Error ? err.message : "Couldn't change the role.");
+      }
+    });
+  };
+
+  return (
+    <select
+      value={value}
+      disabled={pending}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-8 rounded-md border bg-background px-1.5 text-xs"
+      aria-label="Platform role"
+    >
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
   );
 }
 

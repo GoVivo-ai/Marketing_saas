@@ -16,6 +16,7 @@ import {
   DeleteWorkspaceButton,
   DeleteUserButton,
   ResetPasswordButton,
+  UserRoleSelect,
 } from "@/components/app/admin-forms";
 import {
   CreateOrgUserForm,
@@ -185,9 +186,26 @@ export default async function TeamPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant={u.role === "client" ? "secondary" : "default"}>
-                    {roleLabel[u.role] ?? u.role}
-                  </Badge>
+                  {u.id === me!.id ||
+                  (u.role === "developer" && role !== "developer") ? (
+                    <Badge variant={u.role === "client" ? "secondary" : "default"}>
+                      {roleLabel[u.role] ?? u.role}
+                    </Badge>
+                  ) : (
+                    <UserRoleSelect
+                      userId={u.id}
+                      role={u.role}
+                      options={[
+                        { value: "client", label: "Client" },
+                        { value: "agency_member", label: "Agency" },
+                        { value: "agency_admin", label: "Admin" },
+                        // Granting developer stays developer-only.
+                        ...(role === "developer"
+                          ? [{ value: "developer", label: "Developer" }]
+                          : []),
+                      ]}
+                    />
+                  )}
                   {u.role === "client" && (
                     <span className="text-xs text-muted-foreground">
                       {(workspacesByUser.get(u.id) ?? ["No workspace"]).join(", ")}

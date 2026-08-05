@@ -170,6 +170,42 @@ export async function createUser(
   };
 }
 
+/**
+ * Changes a user's platform role. Guardrails: admins only; you can't change
+ * your own role (no self-lockout, no self-promotion); the developer role can
+ * only be granted or removed by a developer.
+ */
+export async function setUserRole(formData: FormData) {
+  const session = await auth();
+  const me = session?.user as { id?: string; role?: string } | undefined;
+  if (!isPlatformAdmin(me?.role)) throw new Error("Only agency admins can do this.");
+
+  const userId = String(formData.get("userId") ?? "");
+  const role = String(formData.get("role") ?? "") as UserRole;
+  if (!userId || !USER_ROLES.includes(role)) throw new Error("Invalid request.");
+  if (userId === me?.id) throw new Error("You can't change your own role.");
+
+  const [target] = await db()
+    .select({ id: schema.users.id, role: schema.users.role })
+    .from(schema.users)
+    .where(eq(schema.users.id, userId))
+    .limit(1);
+  if (!target) throw new Error("User not found.");
+  if (
+    (role === "developer" || target.role === "developer") &&
+    me?.role !== "developer"
+  ) {
+    throw new Error("Only a developer can grant or remove the developer role.");
+  }
+  if (target.role === role) return;
+
+  await db()
+    .update(schema.users)
+    .set({ role })
+    .where(eq(schema.users.id, userId));
+  revalidatePath("/settings/team");
+}
+
 export async function resetUserPassword(
   _prev: AdminActionState,
   formData: FormData,

@@ -14,6 +14,7 @@ import {
   getWorkspaceContext,
 } from "@/lib/data";
 import { resolveDateRange } from "@/lib/date-range";
+import { requireLeadsAccess } from "@/lib/permissions";
 import { getScoreAutomation } from "@/lib/automations";
 import { cn } from "@/lib/utils";
 
@@ -87,6 +88,7 @@ export default async function ContactQueuePage({
     filter?: string;
   }>;
 }) {
+  await requireLeadsAccess();
   const sp = await searchParams;
   const adsetId = sp.adset ?? null;
   // Multi-select location filters — comma-separated in the URL, absent = all.

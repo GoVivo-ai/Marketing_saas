@@ -23,6 +23,7 @@ export const userRoleEnum = pgEnum("user_role", [
   "agency_member", // Vivo team — access to assigned workspaces
   "client", // Client user — restricted to their own workspace(s)
   "developer", // Platform engineer — everything admins see + the /dev dashboard
+  "operations", // Vivo dispatch team — the Dispatch module only
 ]);
 
 /** Role of a user inside a specific workspace (client account). */

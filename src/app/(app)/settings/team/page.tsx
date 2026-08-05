@@ -41,6 +41,7 @@ const roleLabel: Record<string, string> = {
   agency_member: "Agency",
   client: "Client",
   developer: "Developer",
+  operations: "Operations",
 };
 
 export default async function TeamPage() {
@@ -198,6 +199,7 @@ export default async function TeamPage() {
                       options={[
                         { value: "client", label: "Client" },
                         { value: "agency_member", label: "Agency" },
+                        { value: "operations", label: "Operations" },
                         { value: "agency_admin", label: "Admin" },
                         // Granting developer stays developer-only.
                         ...(role === "developer"

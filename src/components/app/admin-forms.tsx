@@ -91,6 +91,7 @@ export function CreateUserForm({
           >
             <option value="client">Client (their workspace only)</option>
             <option value="agency_member">Agency member (Vivo agent — queue only)</option>
+            <option value="operations">Operations (dispatch module only)</option>
             <option value="agency_admin">Agency admin (full control)</option>
             <option value="developer">Developer (admin + dev dashboard)</option>
           </select>

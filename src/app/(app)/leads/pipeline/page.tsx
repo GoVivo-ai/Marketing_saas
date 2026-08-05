@@ -3,7 +3,7 @@ import {
   getPipeline,
   getWorkspaceGeoOptions,
 } from "@/lib/data";
-import { canManageWorkspace } from "@/lib/permissions";
+import { canManageWorkspace, requireLeadsAccess } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 import { PipelineBoard } from "@/components/app/pipeline-board";
 import { LeadsMultiFilter } from "@/components/app/leads-filter";
@@ -30,6 +30,7 @@ export default async function PipelinePage({
     city?: string;
   }>;
 }) {
+  await requireLeadsAccess();
   const { active } = await getWorkspaceContext();
   if (!active) {
     return (

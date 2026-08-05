@@ -100,7 +100,13 @@ export async function deleteWorkspace(formData: FormData) {
 // Users
 // ─────────────────────────────────────────────────────────────────────────
 
-const USER_ROLES = ["client", "agency_member", "agency_admin", "developer"] as const;
+const USER_ROLES = [
+  "client",
+  "agency_member",
+  "agency_admin",
+  "developer",
+  "operations",
+] as const;
 type UserRole = (typeof USER_ROLES)[number];
 
 export async function createUser(

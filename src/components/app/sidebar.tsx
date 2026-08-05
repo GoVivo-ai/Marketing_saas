@@ -38,6 +38,9 @@ const fullNav = [
 // Agents only work their leads: Leads, Contact Queue and Pipeline.
 const AGENT_HREFS = new Set(["/leads", "/leads/queue", "/leads/pipeline"]);
 
+// The dispatch team only works the Dispatch module.
+const OPERATIONS_HREFS = new Set(["/dispatch"]);
+
 export function AppSidebar({
   workspaces,
   activeWorkspaceId,
@@ -56,17 +59,22 @@ export function AppSidebar({
     workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces[0];
   const clientLogo = active?.logoUrl ?? null;
 
-  const nav = isAgent ? fullNav.filter((n) => AGENT_HREFS.has(n.href)) : fullNav;
+  const isOperations = role === "operations";
+  const nav = isOperations
+    ? fullNav.filter((n) => OPERATIONS_HREFS.has(n.href))
+    : isAgent
+      ? fullNav.filter((n) => AGENT_HREFS.has(n.href))
+      : fullNav;
 
   // Connections only for those who can manage the active workspace (agency or
   // the client's supervisors/admins). The team link is the agency roster for
   // agency users and the client's own org for clients; agents don't get it —
   // they keep Settings for their own account (password, dialer).
   const bottomNav = [
-    ...(canManageActive
+    ...(canManageActive && !isOperations
       ? [{ href: "/settings", label: "Connections", icon: Plug }]
       : []),
-    ...(isAgent
+    ...(isAgent || isOperations
       ? []
       : [
           {

@@ -3,7 +3,16 @@ import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 
-export type Role = "developer" | "agency_admin" | "agency_member" | "client";
+export type Role =
+  | "developer"
+  | "agency_admin"
+  | "agency_member"
+  | "client"
+  | "operations";
+
+/** Vivo's dispatch team — they only get the Dispatch module. */
+export const isOperations = (role: Role | string | undefined) =>
+  role === "operations";
 
 /** Per-company role of a client user (stored on workspace_members). */
 export type WorkspaceRole = "admin" | "supervisor" | "agent";
@@ -74,11 +83,23 @@ export async function isWorkspaceAgent(workspaceId: string): Promise<boolean> {
 
 /**
  * Page guard for everything outside Leads / Contact Queue / Pipeline: agents
- * are sent to their queue. Call at the top of each restricted page.
+ * are sent to their queue, dispatch-only users to their board. Call at the
+ * top of each restricted page.
  */
 export async function requireFullAccess(workspaceId: string | null | undefined) {
+  const u = await currentUser();
+  if (isOperations(u?.role)) redirect("/dispatch");
   if (!workspaceId) return;
   if (await isWorkspaceAgent(workspaceId)) redirect("/leads/queue");
+}
+
+/**
+ * Page guard for the Leads surfaces (list, queue, pipeline): open to agents,
+ * closed to dispatch-only users.
+ */
+export async function requireLeadsAccess() {
+  const u = await currentUser();
+  if (isOperations(u?.role)) redirect("/dispatch");
 }
 
 /**
@@ -86,12 +107,13 @@ export async function requireFullAccess(workspaceId: string | null | undefined) 
  * their own password and connect their own RingCentral (personal, needed to
  * mirror their call log), never workspace connections. Vivo's
  * agency_member accounts are agents; client users qualify when every
- * workspace membership of theirs is 'agent'.
+ * workspace membership of theirs is 'agent'. Dispatch-only (operations)
+ * users get the same personal-settings-only treatment.
  */
 export async function isAgentOnly(): Promise<boolean> {
   const u = await currentUser();
   if (!u) return false;
-  if (u.role === "agency_member") return true;
+  if (u.role === "agency_member" || u.role === "operations") return true;
   if (isPlatformAdmin(u.role)) return false;
   const memberships = await db()
     .select({ role: schema.workspaceMembers.role })

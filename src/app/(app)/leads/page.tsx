@@ -12,6 +12,7 @@ import { LeadsFilter } from "@/components/app/leads-filter";
 import { LeadsSearch } from "@/components/app/leads-search";
 import { Pagination } from "@/components/app/pagination";
 import { auth } from "@/lib/auth";
+import { requireLeadsAccess } from "@/lib/permissions";
 import { isAnyTelephonyConnected } from "@/lib/integrations/telephony";
 import {
   getLeadCampaignOptions,
@@ -50,6 +51,7 @@ export default async function LeadsPage({
     lead?: string;
   }>;
 }) {
+  await requireLeadsAccess();
   const sp = await searchParams;
   const resolved = resolveDateRange(sp, {
     presets: [7, 30, 90],

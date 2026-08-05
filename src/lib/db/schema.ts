@@ -800,6 +800,29 @@ export const dispatchInteractions = pgTable(
 );
 
 /**
+ * Per-workspace Microsoft Graph connection for the dispatch module: each
+ * client registers its own Entra app (Sites.Selected, granted to one site)
+ * and connects it here — no shared credentials, no env coupling. The client
+ * secret is AES-256-GCM encrypted like every other stored credential.
+ */
+export const dispatchConnections = pgTable("dispatch_connections", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .unique()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull(),
+  clientId: text("client_id").notNull(),
+  clientSecretEnc: text("client_secret_enc").notNull(),
+  siteUrl: text("site_url").notNull(),
+  /** SharePoint list id (preferred) or display name. */
+  listName: text("list_name").notNull(),
+  lastSyncedAt: timestamp("last_synced_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/**
  * EverDriven trip assignments, ingested directly from the sync script's CSV
  * upload (see /upload-schedule). Unlike the bot's Google Sheet — which gets
  * replaced on every upload — rows accumulate per day, so the schedule has

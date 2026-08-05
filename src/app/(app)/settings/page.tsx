@@ -1,6 +1,8 @@
 import { formatDistanceToNow } from "date-fns";
+import { eq } from "drizzle-orm";
 import { RefreshCw, Unplug, CircleCheck, KeyRound, Sparkles } from "lucide-react";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
+import { DispatchConnectionCard } from "@/components/app/dispatch-connection-card";
 import { getWorkspaceContext } from "@/lib/data";
 import { canManageWorkspace, requireFullAccess } from "@/lib/permissions";
 import { metaConnector } from "@/lib/integrations/meta";
@@ -53,6 +55,29 @@ export default async function ConnectionsPage() {
       </div>
     );
   }
+
+  const dispatchConnRow =
+    isDatabaseConfigured() && active
+      ? (
+          await db()
+            .select({
+              tenantId: schema.dispatchConnections.tenantId,
+              clientId: schema.dispatchConnections.clientId,
+              siteUrl: schema.dispatchConnections.siteUrl,
+              listName: schema.dispatchConnections.listName,
+              lastSyncedAt: schema.dispatchConnections.lastSyncedAt,
+            })
+            .from(schema.dispatchConnections)
+            .where(eq(schema.dispatchConnections.workspaceId, active.id))
+            .limit(1)
+        )[0] ?? null
+      : null;
+  const dispatchConn = dispatchConnRow
+    ? {
+        ...dispatchConnRow,
+        lastSyncedAt: dispatchConnRow.lastSyncedAt?.toISOString() ?? null,
+      }
+    : null;
 
   const metaToken =
     isDatabaseConfigured() && active
@@ -374,6 +399,13 @@ export default async function ConnectionsPage() {
           })}
         </CardContent>
       </Card>
+
+      {active && (
+        <DispatchConnectionCard
+          workspaceId={active.id}
+          existing={dispatchConn}
+        />
+      )}
 
       <div className="grid gap-4 md:grid-cols-3">
         {upcomingPlatforms.map((p) => (

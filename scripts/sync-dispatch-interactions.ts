@@ -15,22 +15,21 @@
  *       "id": "<MS_CLIENT_ID>", "displayName": "Vivo Martech - Dispatch" } }] }
  */
 process.loadEnvFile(".env.local");
-import { isGraphConfigured, readListItems } from "../src/lib/integrations/ms-graph";
+import { getGraphConfig, readListItems } from "../src/lib/integrations/ms-graph";
 import { syncDispatchInteractions } from "../src/lib/dispatch-sync";
 
-const WS = "3013ca8e-e48e-40d8-b707-8a1987bccc63"; // AlexYah
+const WS = process.argv.find((a) => a.startsWith("--ws="))?.slice(5) ??
+  "3013ca8e-e48e-40d8-b707-8a1987bccc63"; // AlexYah by default
 
 async function main() {
-  if (!isGraphConfigured()) {
-    console.error(
-      "Graph not configured — set MS_TENANT_ID, MS_CLIENT_ID, MS_GRAPH_CLIENT_SECRET, SHAREPOINT_SITE_URL",
-    );
+  const cfg = await getGraphConfig(WS);
+  if (!cfg) {
+    console.error("No Microsoft connection for workspace", WS);
     process.exit(1);
   }
   if (process.argv.includes("--inspect")) {
-    const listName = process.env.SHAREPOINT_LIST_NAME ?? "Alexyah's Interactions";
-    const items = await readListItems(listName);
-    console.log(`list "${listName}": ${items.length} items`);
+    const items = await readListItems(cfg);
+    console.log(`list "${cfg.listName}": ${items.length} items`);
     console.log("field keys of first item:", Object.keys(items[0]?.fields ?? {}));
     console.log(JSON.stringify(items[0], null, 2).slice(0, 3000));
     process.exit(0);

@@ -5,7 +5,11 @@
  */
 import { and, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { readListItems, type SpListItem } from "@/lib/integrations/ms-graph";
+import {
+  getGraphConfig,
+  readListItems,
+  type SpListItem,
+} from "@/lib/integrations/ms-graph";
 
 /**
  * First matching field key wins. Verified against the live list: Title =
@@ -57,12 +61,13 @@ export interface DispatchSyncResult {
   upserts: number;
 }
 
-/** Pulls the whole SharePoint list and upserts it for the workspace. */
+/** Pulls the workspace's SharePoint list and upserts it. */
 export async function syncDispatchInteractions(
   workspaceId: string,
 ): Promise<DispatchSyncResult> {
-  const listName = process.env.SHAREPOINT_LIST_NAME ?? "Alexyah's Interactions";
-  const items: SpListItem[] = await readListItems(listName);
+  const cfg = await getGraphConfig(workspaceId);
+  if (!cfg) throw new Error("No Microsoft connection configured for this workspace");
+  const items: SpListItem[] = await readListItems(cfg);
 
   const drivers = await db()
     .select({
@@ -139,5 +144,17 @@ export async function syncDispatchInteractions(
         ),
       );
   }
+  await db()
+    .update(schema.dispatchConnections)
+    .set({ lastSyncedAt: new Date() })
+    .where(eq(schema.dispatchConnections.workspaceId, workspaceId));
   return { items: items.length, upserts };
+}
+
+/** Every workspace with a Microsoft connection, for the cron fan-out. */
+export async function connectedDispatchWorkspaces(): Promise<string[]> {
+  const rows = await db()
+    .select({ workspaceId: schema.dispatchConnections.workspaceId })
+    .from(schema.dispatchConnections);
+  return rows.map((r) => r.workspaceId);
 }

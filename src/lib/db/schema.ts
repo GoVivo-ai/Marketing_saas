@@ -799,6 +799,47 @@ export const dispatchInteractions = pgTable(
   ],
 );
 
+/**
+ * EverDriven trip assignments, ingested directly from the sync script's CSV
+ * upload (see /upload-schedule). Unlike the bot's Google Sheet — which gets
+ * replaced on every upload — rows accumulate per day, so the schedule has
+ * history. Re-uploads of the same trip update its status in place.
+ */
+export const dispatchScheduleTrips = pgTable(
+  "dispatch_schedule_trips",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Trip date parsed from EverDriven's "M/D Day" column. */
+    tripDate: date("trip_date").notNull(),
+    start: text("start").notNull(),
+    end: text("end"),
+    driverName: text("driver_name").notNull(),
+    /** Normalized driver name — part of the upsert key. */
+    normName: text("norm_name").notNull(),
+    driverId: text("driver_id").references(() => dispatchDrivers.id, {
+      onDelete: "set null",
+    }),
+    status: text("status"),
+    run: text("run"),
+    uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("dispatch_trip_unique").on(
+      t.workspaceId,
+      t.tripDate,
+      t.run,
+      t.normName,
+      t.start,
+    ),
+    index("dispatch_trip_date_idx").on(t.workspaceId, t.tripDate),
+    index("dispatch_trip_driver_idx").on(t.driverId),
+  ],
+);
+
 // ─────────────────────────────────────────────────────────────────────────
 // Relations
 // ─────────────────────────────────────────────────────────────────────────

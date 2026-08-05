@@ -8,6 +8,7 @@ import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db, schema } from "@/lib/db";
 import { isSheetsConfigured, readSheetRange } from "@/lib/integrations/google-sheets";
+import { latestIngestAt, tripsForDate } from "@/lib/dispatch-schedule";
 
 export interface DispatchDriverRow {
   id: string;
@@ -294,6 +295,8 @@ export interface DispatchSchedule {
   uploadedAt: string | null;
   /** Count of rows whose driver name didn't resolve to the master. */
   unresolved: number;
+  /** Where this board came from: the direct CSV ingest or the bot's Sheet. */
+  source: "direct" | "sheet";
   error?: string;
 }
 
@@ -310,8 +313,54 @@ function normalizeName(s: string): string {
 export async function getDispatchSchedule(
   workspaceId: string,
 ): Promise<DispatchSchedule> {
+  // Direct CSV ingest wins when it's fresh — once the office PC's sync
+  // points at /upload-schedule, the Sheet hop drops out on its own. The
+  // sync uploads every 10 minutes, so ≤30 min counts as live.
+  const ptToday = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+  }).format(new Date());
+  const ingestAt = await latestIngestAt(workspaceId, ptToday);
+  if (ingestAt && Date.now() - ingestAt.getTime() < 30 * 60_000) {
+    const [rows, masters] = await Promise.all([
+      tripsForDate(workspaceId, ptToday),
+      db()
+        .select({
+          id: schema.dispatchDrivers.id,
+          mdd: schema.dispatchDrivers.mdd,
+          area: schema.dispatchDrivers.area,
+        })
+        .from(schema.dispatchDrivers)
+        .where(eq(schema.dispatchDrivers.workspaceId, workspaceId)),
+    ]);
+    const byId = new Map(masters.map((d) => [d.id, d]));
+    return {
+      configured: true,
+      source: "direct",
+      trips: rows.map((t) => ({
+        date: t.tripDate,
+        start: t.start,
+        end: t.end ?? "",
+        driverName: t.driverName,
+        driverId: t.driverId,
+        driverMdd: t.driverId ? (byId.get(t.driverId)?.mdd ?? null) : null,
+        driverArea: t.driverId ? (byId.get(t.driverId)?.area ?? null) : null,
+        status: t.status ?? "",
+        run: t.run ?? "",
+        uploadedAt: t.uploadedAt.toISOString(),
+      })),
+      uploadedAt: ingestAt.toISOString(),
+      unresolved: rows.filter((t) => !t.driverId).length,
+    };
+  }
+
   if (!isSheetsConfigured())
-    return { configured: false, trips: [], uploadedAt: null, unresolved: 0 };
+    return {
+      configured: false,
+      trips: [],
+      uploadedAt: null,
+      unresolved: 0,
+      source: "sheet",
+    };
 
   let rows: string[][];
   try {
@@ -322,11 +371,18 @@ export async function getDispatchSchedule(
       trips: [],
       uploadedAt: null,
       unresolved: 0,
+      source: "sheet",
       error: err instanceof Error ? err.message : String(err),
     };
   }
   if (rows.length < 2)
-    return { configured: true, trips: [], uploadedAt: null, unresolved: 0 };
+    return {
+      configured: true,
+      trips: [],
+      uploadedAt: null,
+      unresolved: 0,
+      source: "sheet",
+    };
 
   const header = rows[0].map((h) => h.trim().toLowerCase());
   const col = (name: string) => header.indexOf(name);
@@ -399,5 +455,6 @@ export async function getDispatchSchedule(
     trips,
     uploadedAt: trips[0]?.uploadedAt ?? null,
     unresolved,
+    source: "sheet",
   };
 }

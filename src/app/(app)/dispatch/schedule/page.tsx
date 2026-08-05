@@ -71,9 +71,11 @@ export default async function DispatchSchedulePage() {
           Today&apos;s schedule
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          EverDriven trip assignments, refreshed by the dispatch bot every 10
-          minutes.
-          {schedule.uploadedAt ? ` Last upload: ${schedule.uploadedAt}.` : ""}
+          EverDriven trip assignments, refreshed every 10 minutes
+          {schedule.source === "direct"
+            ? " (direct upload)"
+            : " (via the dispatch bot's sheet)"}
+          .{schedule.uploadedAt ? ` Last upload: ${schedule.uploadedAt}.` : ""}
         </p>
       </div>
 

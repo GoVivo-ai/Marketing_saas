@@ -80,26 +80,52 @@ function deriveStatus(kind: string, position: number): LeadStatus {
   return position === 0 ? "new" : "contacted";
 }
 
-/** On first contact, advance a lead in the first open stage to the next open one. */
+/**
+ * Funnel rungs a touch can climb to automatically, as 1-based positions among
+ * the workspace's workable open stages (New → Attempted to Contact →
+ * Contacted → Interested in the production pipeline). Stages past the ladder
+ * (Contractor Compliance, won, lost) are only reached by explicit actions.
+ */
+const RUNG_ATTEMPTED = 2;
+const RUNG_CONTACTED = 3;
+const RUNG_INTERESTED = 4;
+
+/**
+ * Advances a lead up the funnel to match what a touch proved: any attempt
+ * (call placed, voicemail, no answer) puts it on the "attempted" rung, a live
+ * answer/reply on "contacted", and offer info sent to a lead who already
+ * answered on "interested". Never moves backward, and never touches a lead
+ * that already left the workable ladder.
+ */
 async function maybeAutoAdvance(
   lead: { id: string; workspaceId: string; stageId: string | null },
   userId: string,
+  outcome?: OutreachOutcome | "interested",
 ) {
   const stages = await db()
     .select({
       id: schema.stages.id,
       position: schema.stages.position,
       kind: schema.stages.kind,
+      workable: schema.stages.workable,
     })
     .from(schema.stages)
     .where(eq(schema.stages.workspaceId, lead.workspaceId))
     .orderBy(asc(schema.stages.position));
-  const firstOpen = stages.find((s) => s.kind === "open");
-  if (!firstOpen || lead.stageId !== firstOpen.id) return;
-  const next = stages.find(
-    (s) => s.position > firstOpen.position && s.kind === "open",
-  );
-  if (!next) return;
+  const ladder = stages.filter((s) => s.kind === "open" && s.workable);
+  const current = ladder.findIndex((s) => s.id === lead.stageId);
+  if (current === -1) return;
+
+  let rung = RUNG_ATTEMPTED;
+  if (outcome === "answered" || outcome === "replied") rung = RUNG_CONTACTED;
+  else if (outcome === "interested") rung = RUNG_INTERESTED;
+  // Info sent counts as interest only once the lead already answered —
+  // otherwise it's just another attempt.
+  else if (outcome === "sent" && current >= RUNG_CONTACTED - 1)
+    rung = RUNG_INTERESTED;
+
+  const next = ladder[rung - 1];
+  if (!next || current >= rung - 1) return;
   await db()
     .update(schema.leads)
     .set({
@@ -113,7 +139,11 @@ async function maybeAutoAdvance(
     userId,
     type: "status_change",
     // fromStageId lets undoLeadOutreach revert the advance.
-    payload: { fromStageId: firstOpen.id, toStageId: next.id, reason: "auto_contacted" },
+    payload: {
+      fromStageId: ladder[current].id,
+      toStageId: next.id,
+      reason: "auto_contacted",
+    },
   });
 }
 
@@ -283,6 +313,25 @@ export async function markLeadCcActivated(
       ok: false,
       message: err instanceof Error ? err.message : String(err),
     };
+  }
+}
+
+/**
+ * The agent sent the offer info to a lead who answered ("Requested info by
+ * email / SMS" in the queue's follow-up dispositions) — that's expressed
+ * interest, so climb the funnel to the Interested rung.
+ */
+export async function markLeadInterested(
+  leadId: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { userId, lead } = await requireLeadAccess(leadId);
+  try {
+    await maybeAutoAdvance(lead, userId, "interested");
+    revalidatePath("/leads");
+    revalidatePath("/leads/pipeline");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -492,8 +541,10 @@ export async function logLeadOutreach(
         payload: { manual: true, outcome: input.outcome, note },
       })
       .returning({ id: schema.leadEvents.id });
-    if (input.outcome === "answered" || input.outcome === "replied")
-      await maybeAutoAdvance(lead, userId);
+    // Terminal outcomes go through the disqualification flow instead; every
+    // other outcome proves at least an attempt and climbs the funnel.
+    if (input.outcome !== "not_interested" && input.outcome !== "wrong_number")
+      await maybeAutoAdvance(lead, userId, input.outcome);
     revalidatePath("/leads");
     revalidatePath("/leads/pipeline");
     return { ok: true, eventId: event.id };

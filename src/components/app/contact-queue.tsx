@@ -35,6 +35,7 @@ import {
   claimLead,
   logLeadOutreach,
   markLeadCcActivated,
+  markLeadInterested,
   releaseLead,
   setLeadDisqual,
   undoLeadOutreach,
@@ -132,9 +133,19 @@ const FOLLOWUP_REASONS = [
 ] as const;
 
 /**
+ * Dispositions that mean the offer info went out to a lead who answered —
+ * expressed interest, so they also move the lead to the Interested stage.
+ */
+const INFO_SENT_REASONS: readonly string[] = [
+  "Requested info by email / SMS",
+  "Email Sent / SMS Sent",
+];
+
+/**
  * The "Profile created" progression — grouped in one dropdown so the agent
  * marks where the lead sits in profile creation (next steps explained →
- * completing A1s) without cluttering the quick dispositions above.
+ * completing A1s) without cluttering the quick dispositions above. Picking one
+ * also moves the lead to the Contractor Compliance stage.
  */
 const PROFILE_STEPS = [
   "Profile created - Next Steps Explained",
@@ -171,6 +182,22 @@ function AnswerFollowUp({
         setPending(null);
         return;
       }
+      // A "Profile created" disposition means the lead is now in Contractor
+      // Compliance — move the stage too, so the pipeline reflects what the
+      // agent just recorded instead of the activation living only in a note.
+      if ((PROFILE_STEPS as readonly string[]).includes(reason)) {
+        const cc = await markLeadCcActivated(leadId);
+        if (cc.ok) {
+          toast.success(`${reason} — moved to ${cc.stageName}.`);
+        } else {
+          toast.error(cc.message);
+        }
+        onDone();
+        return;
+      }
+      // Info sent to a lead who answered = expressed interest — reflect it
+      // in the pipeline too, not just the note.
+      if (INFO_SENT_REASONS.includes(reason)) await markLeadInterested(leadId);
       toast.success(`Follow-up noted: ${reason}.`);
       onDone();
     });

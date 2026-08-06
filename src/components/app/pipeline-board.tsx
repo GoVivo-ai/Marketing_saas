@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -51,7 +51,16 @@ export function PipelineBoard({
   const [selected, setSelected] = useState<LeadRow | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [activeCard, setActiveCard] = useState<PipelineCard | null>(null);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
+
+  // Fresh server data (auto-refresh polling, another agent's action) flows
+  // into the board — except mid-drag or while a move is saving, where the
+  // optimistic layout wins until the server confirms.
+  useEffect(() => {
+    if (activeCard || isPending) return;
+    setBoard(cardsByStage);
+    setCount(counts);
+  }, [cardsByStage, counts, activeCard, isPending]);
 
   const openDetail = (card: PipelineCard) => {
     setOpeningId(card.id);

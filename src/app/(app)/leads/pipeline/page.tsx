@@ -6,6 +6,7 @@ import {
 import { canManageWorkspace, requireLeadsAccess } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 import { PipelineBoard } from "@/components/app/pipeline-board";
+import { AutoRefresh } from "@/components/app/auto-refresh";
 import { LeadsMultiFilter } from "@/components/app/leads-filter";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 
@@ -78,6 +79,7 @@ export default async function PipelinePage({
 
   return (
     <div className="space-y-6">
+      <AutoRefresh />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">

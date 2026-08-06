@@ -91,11 +91,13 @@ const RUNG_CONTACTED = 3;
 const RUNG_INTERESTED = 4;
 
 /**
- * Advances a lead up the funnel to match what a touch proved: any attempt
- * (call placed, voicemail, no answer) puts it on the "attempted" rung, a live
- * answer/reply on "contacted", and offer info sent to a lead who already
- * answered on "interested". Never moves backward, and never touches a lead
- * that already left the workable ladder.
+ * Moves a lead to the stage its latest touch proved — last action wins, in
+ * both directions: voicemail/no answer land on "attempted" (even for a lead
+ * sitting in Interested or Contractor Compliance), a live answer/reply on
+ * "contacted", and offer info sent to a lead who already answered on
+ * "interested". Won/lost leads are never touched, and a touch with no
+ * outcome yet (a call just placed from the platform) only moves forward —
+ * dialing a lead must not demote it before the agent grades the result.
  */
 async function maybeAutoAdvance(
   lead: { id: string; workspaceId: string; stageId: string | null },
@@ -112,20 +114,27 @@ async function maybeAutoAdvance(
     .from(schema.stages)
     .where(eq(schema.stages.workspaceId, lead.workspaceId))
     .orderBy(asc(schema.stages.position));
+  const current = stages.find((s) => s.id === lead.stageId);
+  if (!current || current.kind !== "open") return;
   const ladder = stages.filter((s) => s.kind === "open" && s.workable);
-  const current = ladder.findIndex((s) => s.id === lead.stageId);
-  if (current === -1) return;
+  // Rung the lead sits on now; a non-workable open stage (Contractor
+  // Compliance) counts as past the top of the ladder.
+  const currentRung = current.workable
+    ? ladder.findIndex((s) => s.id === current.id) + 1
+    : ladder.length + 1;
+  if (currentRung === 0) return;
 
   let rung = RUNG_ATTEMPTED;
   if (outcome === "answered" || outcome === "replied") rung = RUNG_CONTACTED;
   else if (outcome === "interested") rung = RUNG_INTERESTED;
   // Info sent counts as interest only once the lead already answered —
   // otherwise it's just another attempt.
-  else if (outcome === "sent" && current >= RUNG_CONTACTED - 1)
-    rung = RUNG_INTERESTED;
+  else if (outcome === "sent")
+    rung = currentRung >= RUNG_CONTACTED ? RUNG_INTERESTED : RUNG_ATTEMPTED;
 
+  if (outcome === undefined && currentRung >= rung) return;
   const next = ladder[rung - 1];
-  if (!next || current >= rung - 1) return;
+  if (!next || next.id === current.id) return;
   await db()
     .update(schema.leads)
     .set({
@@ -140,7 +149,7 @@ async function maybeAutoAdvance(
     type: "status_change",
     // fromStageId lets undoLeadOutreach revert the advance.
     payload: {
-      fromStageId: ladder[current].id,
+      fromStageId: current.id,
       toStageId: next.id,
       reason: "auto_contacted",
     },

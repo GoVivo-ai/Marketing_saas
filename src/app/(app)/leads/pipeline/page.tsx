@@ -129,6 +129,12 @@ export default async function PipelinePage({
         counts={pipeline.counts}
         cap={pipeline.cap}
         canManage={canManage}
+        filters={{
+          regions: states,
+          cities,
+          start: resolved.start?.toISOString() ?? null,
+          end: resolved.end?.toISOString() ?? null,
+        }}
       />
     </div>
   );

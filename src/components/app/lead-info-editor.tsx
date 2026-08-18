@@ -26,7 +26,18 @@ const LAST_NAME_KEYS = ["last_name", "apellido"];
 const FULL_NAME_KEYS = ["full_name", "nombre_completo"];
 const NAME_KEYS = [...FIRST_NAME_KEYS, ...LAST_NAME_KEYS, ...FULL_NAME_KEYS];
 
-type Field = { id: number; key: string; value: string };
+type Field = {
+  id: number;
+  key: string;
+  value: string;
+  /** Question label from the platform form; the key is fixed for these. */
+  label?: string;
+  fromForm?: boolean;
+};
+
+const humanize = (key: string) => key.replaceAll("_", " ");
+const asText = (value: unknown) =>
+  typeof value === "string" ? value : JSON.stringify(value);
 
 /**
  * Contact (name/phone/email) + form responses for a lead, with an inline edit
@@ -57,20 +68,38 @@ export function LeadInfoEditor({
     lead.formData,
   );
 
+  // The campaign's CURRENT platform form (Meta lead-gen questions), minus the
+  // name questions edited through First/Last above.
+  const questions = (lead.formQuestions ?? []).filter(
+    (q) => q.key && !NAME_KEYS.includes(q.key),
+  );
+  const questionKeys = new Set(questions.map((q) => q.key));
+
   const begin = () => {
     setFirstName(nameParts.first);
     setLastName(nameParts.last);
     setEmail(clean(lead.email));
     setPhone(clean(lead.phone));
-    setFields(
-      Object.entries(lead.formData ?? {})
-        .filter(([key]) => !NAME_KEYS.includes(key))
+    const data = lead.formData ?? {};
+    setFields([
+      // Every form question first — answered or blank — so agents can fill in
+      // what the lead skipped without inventing the field by hand…
+      ...questions.map((q) => ({
+        id: nextId.current++,
+        key: q.key,
+        label: q.label,
+        fromForm: true,
+        value: q.key in data ? asText(data[q.key]) : "",
+      })),
+      // …then any custom/legacy field the lead carries outside the form.
+      ...Object.entries(data)
+        .filter(([key]) => !NAME_KEYS.includes(key) && !questionKeys.has(key))
         .map(([key, value]) => ({
           id: nextId.current++,
           key,
-          value: typeof value === "string" ? value : JSON.stringify(value),
+          value: asText(value),
         })),
-    );
+    ]);
     setEditing(true);
   };
 
@@ -89,7 +118,10 @@ export function LeadInfoEditor({
       const formData: Record<string, string> = {};
       for (const f of fields) {
         const k = f.key.trim();
-        if (k && !NAME_KEYS.includes(k)) formData[k] = f.value;
+        if (!k || NAME_KEYS.includes(k)) continue;
+        // A blank form question stays unanswered rather than stored as "".
+        if (f.fromForm && !f.value.trim()) continue;
+        formData[k] = f.value;
       }
       // Rewrite the form's own name fields with the edited values so views
       // that read the name from formData agree with the new name. First/last
@@ -131,7 +163,19 @@ export function LeadInfoEditor({
       toast.success("Lead updated.");
     });
 
-  const entries = Object.entries(lead.formData ?? {});
+  // Read view: form questions in form order (blank when unanswered), then
+  // the lead's extra fields.
+  const data = lead.formData ?? {};
+  const entries: { key: string; label: string; value: string | null }[] = [
+    ...questions.map((q) => ({
+      key: q.key,
+      label: q.label || humanize(q.key),
+      value: q.key in data ? asText(data[q.key]) : null,
+    })),
+    ...Object.entries(data)
+      .filter(([key]) => !questionKeys.has(key))
+      .map(([key, value]) => ({ key, label: humanize(key), value: asText(value) })),
+  ];
 
   return (
     <div className="space-y-4">
@@ -246,45 +290,61 @@ export function LeadInfoEditor({
 
         {editing ? (
           <div className="space-y-2">
-            {fields.map((f) => (
-              <div key={f.id} className="flex items-start gap-2">
-                <Input
-                  value={f.key}
-                  onChange={(e) => setField(f.id, { key: e.target.value })}
-                  placeholder="Field"
-                  className="w-2/5"
-                />
-                <Input
-                  value={f.value}
-                  onChange={(e) => setField(f.id, { value: e.target.value })}
-                  placeholder="Value"
-                  className="flex-1"
-                />
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-9 w-9 shrink-0 text-muted-foreground"
-                  onClick={() => removeField(f.id)}
-                  aria-label="Remove field"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
+            {fields.map((f) =>
+              f.fromForm ? (
+                <div key={f.id} className="space-y-1">
+                  <p
+                    className="truncate text-xs text-muted-foreground"
+                    title={f.key}
+                  >
+                    {f.label || humanize(f.key)}
+                  </p>
+                  <Input
+                    value={f.value}
+                    onChange={(e) => setField(f.id, { value: e.target.value })}
+                    placeholder="Not answered"
+                  />
+                </div>
+              ) : (
+                <div key={f.id} className="flex items-start gap-2">
+                  <Input
+                    value={f.key}
+                    onChange={(e) => setField(f.id, { key: e.target.value })}
+                    placeholder="Field"
+                    className="w-2/5"
+                  />
+                  <Input
+                    value={f.value}
+                    onChange={(e) => setField(f.id, { value: e.target.value })}
+                    placeholder="Value"
+                    className="flex-1"
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-9 w-9 shrink-0 text-muted-foreground"
+                    onClick={() => removeField(f.id)}
+                    aria-label="Remove field"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ),
+            )}
             <Button size="sm" variant="outline" className="h-8" onClick={addField}>
               <Plus className="mr-1 h-3.5 w-3.5" />
               Add field
             </Button>
           </div>
         ) : entries.length > 0 ? (
-          entries.map(([key, value]) => (
+          entries.map(({ key, label, value }) => (
             <div key={key} className="space-y-0.5">
-              <p className="text-xs capitalize text-muted-foreground">
-                {key.replaceAll("_", " ")}
-              </p>
-              <p className="break-words font-medium">
-                {typeof value === "string" ? value : JSON.stringify(value)}
-              </p>
+              <p className="text-xs capitalize text-muted-foreground">{label}</p>
+              {value != null ? (
+                <p className="break-words font-medium">{value}</p>
+              ) : (
+                <p className="text-muted-foreground">Not answered</p>
+              )}
             </div>
           ))
         ) : (

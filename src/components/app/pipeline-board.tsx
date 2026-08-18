@@ -23,7 +23,12 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { moveLeadToStage, getLeadDetail } from "@/lib/actions/leads";
+import {
+  moveLeadToStage,
+  getLeadDetail,
+  searchPipelineStage,
+  type PipelineSearchFilters,
+} from "@/lib/actions/leads";
 import { Button } from "@/components/ui/button";
 import type { Stage, PipelineCard, LeadRow } from "@/lib/data";
 import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
@@ -38,6 +43,7 @@ export function PipelineBoard({
   counts,
   cap,
   canManage,
+  filters = {},
 }: {
   workspaceId: string;
   stages: Stage[];
@@ -45,6 +51,8 @@ export function PipelineBoard({
   counts: Record<string, number>;
   cap: number;
   canManage: boolean;
+  /** The page's location/date slice — column search applies the same one. */
+  filters?: PipelineSearchFilters;
 }) {
   const [board, setBoard] = useState<Board>(cardsByStage);
   const [count, setCount] = useState<Record<string, number>>(counts);
@@ -204,6 +212,8 @@ export function PipelineBoard({
             return (
               <StageColumn
                 key={stage.id}
+                workspaceId={workspaceId}
+                filters={filters}
                 stage={stage}
                 cards={board[stage.id] ?? []}
                 total={count[stage.id] ?? 0}
@@ -234,6 +244,8 @@ export function PipelineBoard({
 }
 
 function StageColumn({
+  workspaceId,
+  filters,
   stage,
   cards,
   total,
@@ -242,6 +254,8 @@ function StageColumn({
   onCardClick,
   openingId,
 }: {
+  workspaceId: string;
+  filters: PipelineSearchFilters;
   stage: Stage;
   cards: PipelineCard[];
   total: number;
@@ -254,10 +268,42 @@ function StageColumn({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const accent = stage.color ?? "#94a3b8";
-  // Per-column name search — filters the cards already loaded in this stage.
+  // Per-column name search. Cards already on the board filter instantly; when
+  // the stage holds more leads than the column loaded (past the cap), the
+  // server is asked too, so older leads are still findable from here.
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
-  const visible = q ? cards.filter((c) => c.name.toLowerCase().includes(q)) : cards;
+  const local = q ? cards.filter((c) => c.name.toLowerCase().includes(q)) : cards;
+  const needsServer = q.length > 0 && total > cards.length;
+  const [remote, setRemote] = useState<{ q: string; cards: PipelineCard[] } | null>(null);
+  useEffect(() => {
+    if (!needsServer) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const res = await searchPipelineStage(workspaceId, stage.id, q, filters);
+        if (!cancelled) setRemote({ q, cards: res });
+      } catch {
+        // Fall back to local matches; the query can be retried by retyping.
+        if (!cancelled) setRemote({ q, cards: [] });
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+    // `filters` is a fresh object per render; the page remounts the board
+    // when the slice changes, so keying on its JSON is enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsServer, q, workspaceId, stage.id, JSON.stringify(filters)]);
+  // Server results win when they answer the CURRENT query; otherwise show the
+  // local matches while the request is in flight.
+  const visible =
+    needsServer && remote && remote.q === q
+      ? mergeCards(remote.cards, cards, q)
+      : local;
+  // Waiting on the server for the current query (debounce or in flight).
+  const pending = needsServer && (!remote || remote.q !== q);
   return (
     <div
       className={`flex h-full w-72 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/40 shadow-sm transition-colors ${
@@ -323,17 +369,38 @@ function StageColumn({
         ))}
         {visible.length === 0 && (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-            {q ? `No leads matching "${query.trim()}".` : "No leads here."}
+            {pending
+              ? "Searching…"
+              : q
+                ? `No leads matching "${query.trim()}".`
+                : "No leads here."}
           </p>
         )}
-        {total > cap && (
+        {pending && visible.length > 0 && (
+          <p className="flex items-center justify-center gap-1 px-2 pt-1 text-center text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" /> Searching older leads…
+          </p>
+        )}
+        {total > cap && !q && (
           <p className="px-2 pt-1 text-center text-xs text-muted-foreground">
-            Showing the {cap} most recent of {total}.
+            Showing the {cap} most recent of {total}. Search to find older leads.
           </p>
         )}
       </div>
     </div>
   );
+}
+
+/**
+ * Server matches + any board card that also matches (a lead moved optimistically
+ * into this column may not be in the server answer yet), de-duplicated by id.
+ */
+function mergeCards(remote: PipelineCard[], board: PipelineCard[], q: string) {
+  const seen = new Set(remote.map((c) => c.id));
+  const extra = board.filter(
+    (c) => !seen.has(c.id) && c.name.toLowerCase().includes(q),
+  );
+  return [...remote, ...extra];
 }
 
 function LeadCard({

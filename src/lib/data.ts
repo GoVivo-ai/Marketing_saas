@@ -127,6 +127,11 @@ export interface LeadRow {
   aiReason: string | null;
   aiSuggestedAction: string | null;
   formData: Record<string, unknown> | null;
+  /**
+   * The CURRENT lead-gen form questions of the lead's campaign (synced from
+   * the platform), so the editor can offer every question — answered or not.
+   */
+  formQuestions: { key: string; label?: string; type?: string }[] | null;
   assignedTo: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -1176,6 +1181,7 @@ function leadRowQuery() {
       disqualL2: schema.leads.disqualL2,
       disqualL3: schema.leads.disqualL3,
       formData: schema.leads.formData,
+      formQuestions: schema.campaigns.formQuestions,
       platform: schema.leads.platform,
       externalId: schema.leads.externalId,
       createdAt: schema.leads.createdAt,
@@ -1225,6 +1231,7 @@ function mapLeadRow(
     disqualL2: r.disqualL2,
     disqualL3: r.disqualL3,
     formData: (r.formData ?? null) as Record<string, unknown> | null,
+    formQuestions: r.formQuestions ?? null,
     assignedTo: r.assignedTo,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
@@ -1364,16 +1371,69 @@ function effectiveCitySql() {
   return sql<string>`coalesce(${schema.adsets.cityName}, ${schema.leads.formData} ->> 'advertisement_area')`;
 }
 
+/** Filters that carve out the slice of leads a pipeline view shows. */
+export interface PipelineFilters {
+  /** Restrict to leads whose ad set targets one of these states/cities. */
+  regions?: string[] | null;
+  cities?: string[] | null;
+  /** Restrict to leads created inside this window (inclusive). */
+  start?: Date | null;
+  end?: Date | null;
+}
+
+/** Shared lead slice: location (via the ad set's targeting) + created date. */
+function pipelineLeadFilters(workspaceId: string, opts: PipelineFilters) {
+  return [
+    eq(schema.leads.workspaceId, workspaceId),
+    opts.regions?.length
+      ? inArray(schema.adsets.cityRegion, opts.regions)
+      : undefined,
+    opts.cities?.length
+      ? inArray(effectiveCitySql(), opts.cities)
+      : undefined,
+    opts.start ? gte(schema.leads.createdAt, opts.start) : undefined,
+    opts.end ? lte(schema.leads.createdAt, opts.end) : undefined,
+  ];
+}
+
+function pipelineCardQuery() {
+  return db()
+    .select({
+      id: schema.leads.id,
+      name: schema.leads.name,
+      phone: schema.leads.phone,
+      email: schema.leads.email,
+      platform: schema.leads.platform,
+      aiScore: schema.leads.aiScore,
+      stageId: schema.leads.stageId,
+      createdAt: schema.leads.createdAt,
+      campaign: schema.campaigns.name,
+    })
+    .from(schema.leads)
+    .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
+    .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+    .$dynamic();
+}
+
+function mapPipelineCard(
+  r: Awaited<ReturnType<typeof pipelineCardQuery>>[number],
+): PipelineCard {
+  return {
+    id: r.id,
+    name: r.name ?? "Unknown",
+    campaign: formatCampaignName(r.campaign) || "—",
+    platform: r.platform,
+    phone: r.phone ?? "—",
+    email: r.email ?? "—",
+    aiScore: r.aiScore,
+    stageId: r.stageId,
+    createdAt: r.createdAt,
+  };
+}
+
 export async function getPipeline(
   workspaceId: string,
-  opts: {
-    /** Restrict to leads whose ad set targets one of these states/cities. */
-    regions?: string[] | null;
-    cities?: string[] | null;
-    /** Restrict to leads created inside this window (inclusive). */
-    start?: Date | null;
-    end?: Date | null;
-  } = {},
+  opts: PipelineFilters = {},
 ): Promise<PipelineData> {
   const stages = await db()
     .select({
@@ -1388,18 +1448,7 @@ export async function getPipeline(
     .where(eq(schema.stages.workspaceId, workspaceId))
     .orderBy(asc(schema.stages.position));
 
-  // Shared lead slice: location (via the ad set's targeting) + created date.
-  const leadFilters = [
-    eq(schema.leads.workspaceId, workspaceId),
-    opts.regions?.length
-      ? inArray(schema.adsets.cityRegion, opts.regions)
-      : undefined,
-    opts.cities?.length
-      ? inArray(effectiveCitySql(), opts.cities)
-      : undefined,
-    opts.start ? gte(schema.leads.createdAt, opts.start) : undefined,
-    opts.end ? lte(schema.leads.createdAt, opts.end) : undefined,
-  ];
+  const leadFilters = pipelineLeadFilters(workspaceId, opts);
 
   const countRows = await db()
     .select({
@@ -1415,39 +1464,40 @@ export async function getPipeline(
 
   const cardsByStage: Record<string, PipelineCard[]> = {};
   for (const st of stages) {
-    const rows = await db()
-      .select({
-        id: schema.leads.id,
-        name: schema.leads.name,
-        phone: schema.leads.phone,
-        email: schema.leads.email,
-        platform: schema.leads.platform,
-        aiScore: schema.leads.aiScore,
-        stageId: schema.leads.stageId,
-        createdAt: schema.leads.createdAt,
-        campaign: schema.campaigns.name,
-      })
-      .from(schema.leads)
-      .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
-      .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+    const rows = await pipelineCardQuery()
       .where(and(...leadFilters, eq(schema.leads.stageId, st.id)))
       .orderBy(desc(schema.leads.createdAt))
       .limit(PIPELINE_CARD_CAP);
-
-    cardsByStage[st.id] = rows.map((r) => ({
-      id: r.id,
-      name: r.name ?? "Unknown",
-      campaign: formatCampaignName(r.campaign) || "—",
-      platform: r.platform,
-      phone: r.phone ?? "—",
-      email: r.email ?? "—",
-      aiScore: r.aiScore,
-      stageId: r.stageId,
-      createdAt: r.createdAt,
-    }));
+    cardsByStage[st.id] = rows.map(mapPipelineCard);
   }
 
   return { stages, cardsByStage, counts, cap: PIPELINE_CARD_CAP };
+}
+
+/**
+ * Name search inside one stage, over the SAME slice the board shows but not
+ * limited to the newest PIPELINE_CARD_CAP cards — so an old lead sitting past
+ * the cap is still findable from its column.
+ */
+export async function searchPipelineStage(
+  workspaceId: string,
+  stageId: string,
+  query: string,
+  opts: PipelineFilters = {},
+): Promise<PipelineCard[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const rows = await pipelineCardQuery()
+    .where(
+      and(
+        ...pipelineLeadFilters(workspaceId, opts),
+        eq(schema.leads.stageId, stageId),
+        ilike(schema.leads.name, `%${q.replace(/[\\%_]/g, "\\$&")}%`),
+      ),
+    )
+    .orderBy(desc(schema.leads.createdAt))
+    .limit(PIPELINE_CARD_CAP);
+  return rows.map(mapPipelineCard);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

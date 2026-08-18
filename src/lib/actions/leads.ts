@@ -13,7 +13,12 @@ import {
   NoProviderConnectedError,
 } from "@/lib/integrations/telephony";
 import { isValidRcaPath } from "@/lib/rca";
-import { getLeadRowById, type LeadRow } from "@/lib/data";
+import {
+  getLeadRowById,
+  searchPipelineStage as searchPipelineStageData,
+  type LeadRow,
+  type PipelineCard,
+} from "@/lib/data";
 import {
   LEAD_CLAIM_TTL_MS,
   OUTREACH_CHANNELS,
@@ -1025,4 +1030,35 @@ export async function smsLead(
 export async function getLeadDetail(leadId: string): Promise<LeadRow | null> {
   const { lead } = await requireLeadAccess(leadId);
   return getLeadRowById(lead.workspaceId, leadId);
+}
+
+/** Board filters as they travel from the page to the client (dates as ISO). */
+export interface PipelineSearchFilters {
+  regions?: string[];
+  cities?: string[];
+  start?: string | null;
+  end?: string | null;
+}
+
+/**
+ * Name search inside one pipeline column, past the board's card cap. Same
+ * access rule as the pages: any workspace member (agents included) or agency.
+ */
+export async function searchPipelineStage(
+  workspaceId: string,
+  stageId: string,
+  query: string,
+  filters: PipelineSearchFilters = {},
+): Promise<PipelineCard[]> {
+  const u = await currentUser();
+  if (!u) throw new Error("Unauthorized");
+  if (!isAgency(u.role) && !(await getWorkspaceRole(u.id, workspaceId))) {
+    throw new Error("Forbidden");
+  }
+  return searchPipelineStageData(workspaceId, stageId, query, {
+    regions: filters.regions,
+    cities: filters.cities,
+    start: filters.start ? new Date(filters.start) : null,
+    end: filters.end ? new Date(filters.end) : null,
+  });
 }

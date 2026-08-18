@@ -1475,13 +1475,13 @@ export async function getPipeline(
 }
 
 /**
- * Name search inside one stage, over the SAME slice the board shows but not
- * limited to the newest PIPELINE_CARD_CAP cards — so an old lead sitting past
- * the cap is still findable from its column.
+ * Name search across the whole board, over the SAME slice the board shows but
+ * not limited to the newest PIPELINE_CARD_CAP cards per column — so an old
+ * lead sitting past its column's cap is still findable, and the result says
+ * which stage it is in.
  */
-export async function searchPipelineStage(
+export async function searchPipelineLeads(
   workspaceId: string,
-  stageId: string,
   query: string,
   opts: PipelineFilters = {},
 ): Promise<PipelineCard[]> {
@@ -1491,7 +1491,7 @@ export async function searchPipelineStage(
     .where(
       and(
         ...pipelineLeadFilters(workspaceId, opts),
-        eq(schema.leads.stageId, stageId),
+        isNotNull(schema.leads.stageId),
         ilike(schema.leads.name, `%${q.replace(/[\\%_]/g, "\\$&")}%`),
       ),
     )

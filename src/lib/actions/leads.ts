@@ -15,7 +15,7 @@ import {
 import { isValidRcaPath } from "@/lib/rca";
 import {
   getLeadRowById,
-  searchPipelineStage as searchPipelineStageData,
+  searchPipelineLeads as searchPipelineLeadsData,
   type LeadRow,
   type PipelineCard,
 } from "@/lib/data";
@@ -1041,12 +1041,11 @@ export interface PipelineSearchFilters {
 }
 
 /**
- * Name search inside one pipeline column, past the board's card cap. Same
+ * Name search across the pipeline, past the board's per-column card cap. Same
  * access rule as the pages: any workspace member (agents included) or agency.
  */
-export async function searchPipelineStage(
+export async function searchPipelineLeads(
   workspaceId: string,
-  stageId: string,
   query: string,
   filters: PipelineSearchFilters = {},
 ): Promise<PipelineCard[]> {
@@ -1055,7 +1054,7 @@ export async function searchPipelineStage(
   if (!isAgency(u.role) && !(await getWorkspaceRole(u.id, workspaceId))) {
     throw new Error("Forbidden");
   }
-  return searchPipelineStageData(workspaceId, stageId, query, {
+  return searchPipelineLeadsData(workspaceId, query, {
     regions: filters.regions,
     cities: filters.cities,
     start: filters.start ? new Date(filters.start) : null,

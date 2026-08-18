@@ -26,7 +26,7 @@ import {
 import {
   moveLeadToStage,
   getLeadDetail,
-  searchPipelineStage,
+  searchPipelineLeads,
   type PipelineSearchFilters,
 } from "@/lib/actions/leads";
 import { Button } from "@/components/ui/button";
@@ -86,6 +86,58 @@ export function PipelineBoard({
       }
     });
   };
+  // Board-wide name search. Cards already loaded filter instantly; the server
+  // is asked too (debounced) so leads past a column's card cap still show up
+  // — in the column they belong to.
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const [remote, setRemote] = useState<{ q: string; cards: PipelineCard[] } | null>(null);
+  const filtersKey = JSON.stringify(filters);
+  useEffect(() => {
+    if (!q) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const res = await searchPipelineLeads(workspaceId, q, filters);
+        if (!cancelled) setRemote({ q, cards: res });
+      } catch {
+        // Fall back to the local matches; retyping retries.
+        if (!cancelled) setRemote({ q, cards: [] });
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+    // `filters` is a fresh object per render; its JSON is the stable key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, workspaceId, filtersKey]);
+  const searching = q.length > 0 && (!remote || remote.q !== q);
+
+  // What each column shows: everything when idle; otherwise the union of
+  // local matches and server matches for that stage (deduped by id).
+  const visibleByStage: Board = {};
+  const matchCount: Record<string, number> = {};
+  if (q) {
+    const remoteCards = remote && remote.q === q ? remote.cards : [];
+    for (const st of stages) {
+      const seen = new Set<string>();
+      const list: PipelineCard[] = [];
+      for (const c of [
+        ...(board[st.id] ?? []),
+        ...remoteCards.filter((c) => c.stageId === st.id),
+      ]) {
+        if (seen.has(c.id) || !c.name.toLowerCase().includes(q)) continue;
+        seen.add(c.id);
+        list.push(c);
+      }
+      visibleByStage[st.id] = list;
+      matchCount[st.id] = list.length;
+    }
+  }
+  const totalMatches = Object.values(matchCount).reduce((a, b) => a + b, 0);
+  const foundIn = stages.filter((st) => (matchCount[st.id] ?? 0) > 0);
+
   // Distance-based activation: a plain click (no movement) opens the lead
   // detail; dragging starts only after the pointer moves a few pixels. The
   // old tiny press-delay turned nearly every click into a micro-drag, which
@@ -192,12 +244,33 @@ export function PipelineBoard({
       onDragCancel={() => setActiveCard(null)}
     >
       <div className="flex h-[calc(100vh-11rem)] flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-muted-foreground">
             Drag a card by its ⋮⋮ handle to move it between stages — click
             anywhere else on the card to open the lead.
           </p>
           <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search leads by name…"
+                aria-label="Search leads across the pipeline"
+                className="h-8 w-64 rounded-md border bg-background pl-8 pr-8 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/30"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
             <Button variant="outline" size="sm" onClick={exportCsv}>
               <Download className="mr-1 h-3.5 w-3.5" />
               Export CSV
@@ -206,18 +279,55 @@ export function PipelineBoard({
           </div>
         </div>
 
+        {q && (
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+            {searching && totalMatches === 0 ? (
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…
+              </span>
+            ) : totalMatches === 0 ? (
+              <span className="text-muted-foreground">
+                No leads matching &ldquo;{query.trim()}&rdquo; in this pipeline.
+              </span>
+            ) : (
+              <>
+                <span className="text-muted-foreground">
+                  {totalMatches} {totalMatches === 1 ? "lead" : "leads"} found in:
+                </span>
+                {foundIn.map((st) => (
+                  <span
+                    key={st.id}
+                    className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium"
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: st.color ?? "#94a3b8" }}
+                    />
+                    {st.name}
+                    <span className="text-muted-foreground">{matchCount[st.id]}</span>
+                  </span>
+                ))}
+                {searching && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                )}
+              </>
+            )}
+          </p>
+        )}
+
         <div className="board-scroll flex min-h-0 min-w-0 flex-1 gap-4 overflow-x-auto pb-2">
           {stages.map((stage, i) => {
             const conv = conversionFromPrev(stage, stages[i - 1]);
             return (
               <StageColumn
                 key={stage.id}
-                workspaceId={workspaceId}
-                filters={filters}
                 stage={stage}
-                cards={board[stage.id] ?? []}
+                cards={q ? (visibleByStage[stage.id] ?? []) : (board[stage.id] ?? [])}
                 total={count[stage.id] ?? 0}
                 cap={cap}
+                query={q ? query.trim() : null}
+                highlight={q ? (matchCount[stage.id] ?? 0) > 0 : false}
+                searching={searching}
                 conversion={conv != null ? fmtPct(conv) : null}
                 onCardClick={openDetail}
                 openingId={openingId}
@@ -244,8 +354,6 @@ export function PipelineBoard({
 }
 
 function StageColumn({
-  workspaceId,
-  filters,
   stage,
   cards,
   total,
@@ -253,9 +361,10 @@ function StageColumn({
   conversion,
   onCardClick,
   openingId,
+  query,
+  highlight,
+  searching,
 }: {
-  workspaceId: string;
-  filters: PipelineSearchFilters;
   stage: Stage;
   cards: PipelineCard[];
   total: number;
@@ -265,49 +374,25 @@ function StageColumn({
   onCardClick: (c: PipelineCard) => void;
   /** Card whose detail is currently being fetched (shows a spinner). */
   openingId: string | null;
+  /** Active board search (null when idle) — the column shows matches only. */
+  query: string | null;
+  /** This column holds at least one match for the active search. */
+  highlight: boolean;
+  /** Server search for the active query is still in flight. */
+  searching: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const accent = stage.color ?? "#94a3b8";
-  // Per-column name search. Cards already on the board filter instantly; when
-  // the stage holds more leads than the column loaded (past the cap), the
-  // server is asked too, so older leads are still findable from here.
-  const [query, setQuery] = useState("");
-  const q = query.trim().toLowerCase();
-  const local = q ? cards.filter((c) => c.name.toLowerCase().includes(q)) : cards;
-  const needsServer = q.length > 0 && total > cards.length;
-  const [remote, setRemote] = useState<{ q: string; cards: PipelineCard[] } | null>(null);
-  useEffect(() => {
-    if (!needsServer) return;
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      try {
-        const res = await searchPipelineStage(workspaceId, stage.id, q, filters);
-        if (!cancelled) setRemote({ q, cards: res });
-      } catch {
-        // Fall back to local matches; the query can be retried by retyping.
-        if (!cancelled) setRemote({ q, cards: [] });
-      }
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-    // `filters` is a fresh object per render; the page remounts the board
-    // when the slice changes, so keying on its JSON is enough.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needsServer, q, workspaceId, stage.id, JSON.stringify(filters)]);
-  // Server results win when they answer the CURRENT query; otherwise show the
-  // local matches while the request is in flight.
-  const visible =
-    needsServer && remote && remote.q === q
-      ? mergeCards(remote.cards, cards, q)
-      : local;
-  // Waiting on the server for the current query (debounce or in flight).
-  const pending = needsServer && (!remote || remote.q !== q);
   return (
     <div
       className={`flex h-full w-72 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/40 shadow-sm transition-colors ${
-        isOver ? "border-primary/60 ring-2 ring-primary/30" : ""
+        isOver
+          ? "border-primary/60 ring-2 ring-primary/30"
+          : highlight
+            ? "border-primary/50 ring-2 ring-primary/20"
+            : query
+              ? "opacity-60"
+              : ""
       }`}
     >
       <div className="h-1 w-full shrink-0" style={{ backgroundColor: accent }} />
@@ -318,8 +403,13 @@ function StageColumn({
             style={{ backgroundColor: accent }}
           />
           <span className="text-sm font-semibold">{stage.name}</span>
-          <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-            {total}
+          <span
+            className={`ml-auto rounded-full px-2 py-0.5 text-xs font-medium ${
+              highlight ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+            }`}
+            title={query ? `${cards.length} matching of ${total}` : undefined}
+          >
+            {query ? `${cards.length} / ${total}` : total}
           </span>
         </div>
         {conversion && (
@@ -331,27 +421,6 @@ function StageColumn({
             {conversion} from previous stage
           </p>
         )}
-        <div className="relative mt-2">
-          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name…"
-            aria-label={`Search leads in ${stage.name}`}
-            className="h-7 w-full rounded-md border bg-background pl-7 pr-7 text-xs outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/30"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              aria-label="Clear search"
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
-        </div>
       </div>
       <div
         ref={setNodeRef}
@@ -359,7 +428,7 @@ function StageColumn({
           isOver ? "bg-primary/5" : ""
         }`}
       >
-        {visible.map((card) => (
+        {cards.map((card) => (
           <LeadCard
             key={card.id}
             card={card}
@@ -367,21 +436,16 @@ function StageColumn({
             onClick={() => onCardClick(card)}
           />
         ))}
-        {visible.length === 0 && (
+        {cards.length === 0 && (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-            {pending
-              ? "Searching…"
-              : q
-                ? `No leads matching "${query.trim()}".`
-                : "No leads here."}
+            {query
+              ? searching
+                ? "Searching…"
+                : "No matches here."
+              : "No leads here."}
           </p>
         )}
-        {pending && visible.length > 0 && (
-          <p className="flex items-center justify-center gap-1 px-2 pt-1 text-center text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" /> Searching older leads…
-          </p>
-        )}
-        {total > cap && !q && (
+        {total > cap && !query && (
           <p className="px-2 pt-1 text-center text-xs text-muted-foreground">
             Showing the {cap} most recent of {total}. Search to find older leads.
           </p>
@@ -389,18 +453,6 @@ function StageColumn({
       </div>
     </div>
   );
-}
-
-/**
- * Server matches + any board card that also matches (a lead moved optimistically
- * into this column may not be in the server answer yet), de-duplicated by id.
- */
-function mergeCards(remote: PipelineCard[], board: PipelineCard[], q: string) {
-  const seen = new Set(remote.map((c) => c.id));
-  const extra = board.filter(
-    (c) => !seen.has(c.id) && c.name.toLowerCase().includes(q),
-  );
-  return [...remote, ...extra];
 }
 
 function LeadCard({

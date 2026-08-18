@@ -20,6 +20,8 @@ import {
   Loader2,
   ChevronRight,
   Download,
+  Search,
+  X,
 } from "lucide-react";
 import { moveLeadToStage, getLeadDetail } from "@/lib/actions/leads";
 import { Button } from "@/components/ui/button";
@@ -252,6 +254,10 @@ function StageColumn({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const accent = stage.color ?? "#94a3b8";
+  // Per-column name search — filters the cards already loaded in this stage.
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const visible = q ? cards.filter((c) => c.name.toLowerCase().includes(q)) : cards;
   return (
     <div
       className={`flex h-full w-72 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/40 shadow-sm transition-colors ${
@@ -279,6 +285,27 @@ function StageColumn({
             {conversion} from previous stage
           </p>
         )}
+        <div className="relative mt-2">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name…"
+            aria-label={`Search leads in ${stage.name}`}
+            className="h-7 w-full rounded-md border bg-background pl-7 pr-7 text-xs outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/30"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
       <div
         ref={setNodeRef}
@@ -286,7 +313,7 @@ function StageColumn({
           isOver ? "bg-primary/5" : ""
         }`}
       >
-        {cards.map((card) => (
+        {visible.map((card) => (
           <LeadCard
             key={card.id}
             card={card}
@@ -294,9 +321,9 @@ function StageColumn({
             onClick={() => onCardClick(card)}
           />
         ))}
-        {cards.length === 0 && (
+        {visible.length === 0 && (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-            No leads here.
+            {q ? `No leads matching "${query.trim()}".` : "No leads here."}
           </p>
         )}
         {total > cap && (

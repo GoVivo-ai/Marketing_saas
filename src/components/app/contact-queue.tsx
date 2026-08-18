@@ -19,7 +19,6 @@ import {
   Sparkles,
   Ban,
   ListChecks,
-  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -803,21 +802,6 @@ export function ContactQueue({
       advance();
     });
 
-  /** The lead's CC profile got activated — move stages and leave the queue. */
-  const onCcActivated = () =>
-    startLog(async () => {
-      if (!current) return;
-      const item = current;
-      const r = await markLeadCcActivated(item.id);
-      if (!r.ok) {
-        toast.error(r.message);
-        return;
-      }
-      setDone((n) => n + 1);
-      toast.success(`${item.name} moved to ${r.stageName} — out of the queue.`);
-      advance();
-    });
-
   const onSkip = () => {
     // Send the current lead to the back of the queue without logging anything.
     if (current) releaseLead(current.id).catch(() => {});
@@ -1072,25 +1056,6 @@ export function ContactQueue({
                         </Button>
                       ))}
                     </div>
-                  </div>
-
-                  {/* The lead got activated in Contractor Compliance — record
-                      it here (not on the Kanban) and let it leave the queue. */}
-                  <div className="border-t pt-3">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={logging}
-                      className="h-8 gap-1.5 border-success/40 font-normal text-success hover:text-success"
-                      onClick={onCcActivated}
-                    >
-                      {logging ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <ShieldCheck className="h-3.5 w-3.5" />
-                      )}
-                      Activated in Contractor Compliance
-                    </Button>
                   </div>
                 </>
               )}

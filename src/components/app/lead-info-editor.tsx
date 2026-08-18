@@ -18,6 +18,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -450,11 +451,9 @@ export function LeadInfoEditor({
                   const avail = g.fields.filter((pf) => !taken.has(pf.key));
                   if (!avail.length) return null;
                   return (
-                    <div key={g.group}>
+                    <DropdownMenuGroup key={g.group}>
                       <DropdownMenuSeparator />
-                      <DropdownMenuLabel className="text-xs text-muted-foreground">
-                        {g.group}
-                      </DropdownMenuLabel>
+                      <DropdownMenuLabel>{g.group}</DropdownMenuLabel>
                       {avail.map((pf) => (
                         <DropdownMenuItem
                           key={pf.key}
@@ -463,7 +462,7 @@ export function LeadInfoEditor({
                           {pf.label}
                         </DropdownMenuItem>
                       ))}
-                    </div>
+                    </DropdownMenuGroup>
                   );
                 })}
               </DropdownMenuContent>

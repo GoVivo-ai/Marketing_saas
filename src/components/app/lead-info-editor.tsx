@@ -3,7 +3,26 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Mail, Phone, Pencil, Check, X, Plus, Trash2, Loader2 } from "lucide-react";
+import {
+  Mail,
+  Phone,
+  Pencil,
+  Check,
+  X,
+  Plus,
+  Trash2,
+  Loader2,
+  ChevronDown,
+  PenLine,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { updateLeadInfo } from "@/lib/actions/leads";
 import { LeadContactActions } from "@/components/app/lead-contact-actions";
 import { Button } from "@/components/ui/button";
@@ -30,10 +49,63 @@ type Field = {
   id: number;
   key: string;
   value: string;
-  /** Question label from the platform form; the key is fixed for these. */
+  /** Display label; the key is fixed for form questions and preset fields. */
   label?: string;
+  /** Question of the campaign's platform form (always listed, not removable). */
   fromForm?: boolean;
+  /** One of the ready-made properties below (fixed key, removable). */
+  preset?: boolean;
 };
+
+/**
+ * Ready-made lead properties (HubSpot-style) an agent can attach to any lead
+ * without inventing a key. Stored in formData under the given key, next to
+ * the platform form answers and any custom field.
+ */
+const PRESET_FIELDS: { group: string; fields: { key: string; label: string }[] }[] = [
+  {
+    group: "Company",
+    fields: [
+      { key: "company", label: "Company" },
+      { key: "job_title", label: "Job title" },
+      { key: "industry", label: "Industry" },
+      { key: "website", label: "Website" },
+    ],
+  },
+  {
+    group: "Location",
+    fields: [
+      { key: "street_address", label: "Street address" },
+      { key: "city", label: "City" },
+      { key: "state", label: "State" },
+      { key: "zip_code", label: "ZIP code" },
+      { key: "country", label: "Country" },
+    ],
+  },
+  {
+    group: "Contact",
+    fields: [
+      { key: "secondary_phone", label: "Secondary phone" },
+      { key: "secondary_email", label: "Secondary email" },
+      { key: "preferred_language", label: "Preferred language" },
+      { key: "best_time_to_contact", label: "Best time to contact" },
+    ],
+  },
+  {
+    group: "Sales",
+    fields: [
+      { key: "lead_source", label: "Lead source" },
+      { key: "service_interest", label: "Service of interest" },
+      { key: "budget", label: "Budget" },
+      { key: "timeline", label: "Timeline" },
+      { key: "referred_by", label: "Referred by" },
+      { key: "notes", label: "Notes" },
+    ],
+  },
+];
+const PRESET_BY_KEY = new Map(
+  PRESET_FIELDS.flatMap((g) => g.fields).map((f) => [f.key, f.label] as const),
+);
 
 const humanize = (key: string) => key.replaceAll("_", " ");
 const asText = (value: unknown) =>
@@ -98,13 +170,24 @@ export function LeadInfoEditor({
           id: nextId.current++,
           key,
           value: asText(value),
+          label: PRESET_BY_KEY.get(key),
+          preset: PRESET_BY_KEY.has(key),
         })),
     ]);
     setEditing(true);
   };
 
-  const addField = () =>
+  /** Blank custom row — the agent names it. */
+  const addCustomField = () =>
     setFields((f) => [...f, { id: nextId.current++, key: "", value: "" }]);
+
+  /** Ready-made property with a fixed key and label. */
+  const addPresetField = (key: string, label: string) =>
+    setFields((f) =>
+      f.some((x) => x.key === key)
+        ? f
+        : [...f, { id: nextId.current++, key, label, value: "", preset: true }],
+    );
 
   const setField = (id: number, patch: Partial<Field>) =>
     setFields((f) => f.map((x) => (x.id === id ? { ...x, ...patch } : x)));
@@ -119,8 +202,8 @@ export function LeadInfoEditor({
       for (const f of fields) {
         const k = f.key.trim();
         if (!k || NAME_KEYS.includes(k)) continue;
-        // A blank form question stays unanswered rather than stored as "".
-        if (f.fromForm && !f.value.trim()) continue;
+        // A blank form question / preset stays unanswered rather than "".
+        if ((f.fromForm || f.preset) && !f.value.trim()) continue;
         formData[k] = f.value;
       }
       // Rewrite the form's own name fields with the edited values so views
@@ -174,7 +257,11 @@ export function LeadInfoEditor({
     })),
     ...Object.entries(data)
       .filter(([key]) => !questionKeys.has(key))
-      .map(([key, value]) => ({ key, label: humanize(key), value: asText(value) })),
+      .map(([key, value]) => ({
+        key,
+        label: PRESET_BY_KEY.get(key) ?? humanize(key),
+        value: asText(value),
+      })),
   ];
 
   return (
@@ -291,7 +378,7 @@ export function LeadInfoEditor({
         {editing ? (
           <div className="space-y-2">
             {fields.map((f) =>
-              f.fromForm ? (
+              f.fromForm || f.preset ? (
                 <div key={f.id} className="space-y-1">
                   <p
                     className="truncate text-xs text-muted-foreground"
@@ -299,11 +386,25 @@ export function LeadInfoEditor({
                   >
                     {f.label || humanize(f.key)}
                   </p>
-                  <Input
-                    value={f.value}
-                    onChange={(e) => setField(f.id, { value: e.target.value })}
-                    placeholder="Not answered"
-                  />
+                  <div className="flex items-start gap-2">
+                    <Input
+                      value={f.value}
+                      onChange={(e) => setField(f.id, { value: e.target.value })}
+                      placeholder={f.fromForm ? "Not answered" : "Value"}
+                      className="flex-1"
+                    />
+                    {f.preset && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-9 w-9 shrink-0 text-muted-foreground"
+                        onClick={() => removeField(f.id)}
+                        aria-label="Remove field"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div key={f.id} className="flex items-start gap-2">
@@ -331,10 +432,42 @@ export function LeadInfoEditor({
                 </div>
               ),
             )}
-            <Button size="sm" variant="outline" className="h-8" onClick={addField}>
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              Add field
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button size="sm" variant="outline" className="h-8" />}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Add field
+                <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-60" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-[360px] w-64 overflow-auto">
+                <DropdownMenuItem onClick={addCustomField}>
+                  <PenLine className="h-4 w-4" />
+                  <span className="flex-1">Custom field…</span>
+                </DropdownMenuItem>
+                {PRESET_FIELDS.map((g) => {
+                  const taken = new Set(fields.map((x) => x.key));
+                  const avail = g.fields.filter((pf) => !taken.has(pf.key));
+                  if (!avail.length) return null;
+                  return (
+                    <div key={g.group}>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-xs text-muted-foreground">
+                        {g.group}
+                      </DropdownMenuLabel>
+                      {avail.map((pf) => (
+                        <DropdownMenuItem
+                          key={pf.key}
+                          onClick={() => addPresetField(pf.key, pf.label)}
+                        >
+                          {pf.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         ) : entries.length > 0 ? (
           entries.map(({ key, label, value }) => (

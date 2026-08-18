@@ -212,6 +212,23 @@ export async function moveLeadToStage(
   }
 }
 
+/** The stages a lead can be moved to — its workspace's stages, in order. */
+export async function getLeadStages(
+  leadId: string,
+): Promise<{ id: string; name: string; color: string | null; kind: string }[]> {
+  const { lead } = await requireLeadAccess(leadId);
+  return db()
+    .select({
+      id: schema.stages.id,
+      name: schema.stages.name,
+      color: schema.stages.color,
+      kind: schema.stages.kind,
+    })
+    .from(schema.stages)
+    .where(eq(schema.stages.workspaceId, lead.workspaceId))
+    .orderBy(asc(schema.stages.position));
+}
+
 export type LeadClaimResult =
   | { ok: true }
   /** Someone else holds a live claim — show who, don't steal it. */

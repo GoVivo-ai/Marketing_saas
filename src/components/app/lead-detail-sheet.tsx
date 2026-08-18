@@ -23,6 +23,7 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LeadInfoEditor } from "@/components/app/lead-info-editor";
+import { LeadStagePicker } from "@/components/app/lead-stage-picker";
 import { LeadActivity } from "@/components/app/lead-activity";
 import { LeadDisqualify } from "@/components/app/lead-disqualify";
 import { cn } from "@/lib/utils";
@@ -92,13 +93,7 @@ export function LeadDetailSheet({
             <SheetHeader className="border-b">
               <SheetTitle className="flex items-center gap-2">
                 {lead.name}
-                <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: lead.stageColor ?? "#94a3b8" }}
-                  />
-                  {lead.stageName ?? lead.status}
-                </span>
+                <LeadStagePicker lead={lead} onPatch={onPatch} />
               </SheetTitle>
               <SheetDescription>
                 Received {formatDistanceToNow(lead.createdAt, { addSuffix: true })} via{" "}

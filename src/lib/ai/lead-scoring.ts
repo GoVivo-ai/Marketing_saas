@@ -4,9 +4,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { radiusBoost } from "@/lib/geo";
 import { runScoreAutomation } from "@/lib/automations";
-import { anthropicProvider, isAiConfigured } from "./provider";
-
-const MODEL = "claude-haiku-4-5-20251001"; // high volume, low latency — cheap model
+import { scoringModel } from "./provider";
 
 /**
  * How many API calls run at once. Scoring used to be one-lead-at-a-time,
@@ -52,14 +50,14 @@ const chunkScoreSchema = z.object({
  * model skipped is simply absent (it stays unscored and a later pass retries).
  */
 async function scoreLeadChunk(input: {
-  provider: Awaited<ReturnType<typeof anthropicProvider>>;
+  model: NonNullable<Awaited<ReturnType<typeof scoringModel>>>["model"];
   workspaceName: string;
   industry?: string;
   qualificationCriteria?: string;
   leads: { formData: Record<string, unknown> }[];
 }): Promise<Map<number, LeadScore>> {
   const { object } = await generateObject({
-    model: input.provider(MODEL),
+    model: input.model,
     schema: chunkScoreSchema,
     abortSignal: AbortSignal.timeout(CHUNK_TIMEOUT_MS),
     prompt: [
@@ -110,10 +108,10 @@ export async function summarizeCriteria(
 ): Promise<string | null> {
   if (!criteria.trim()) return null;
   try {
-    if (!(await isAiConfigured(workspaceId))) return null;
-    const anthropic = await anthropicProvider(workspaceId);
+    const resolved = await scoringModel(workspaceId);
+    if (!resolved) return null;
     const { object } = await generateObject({
-      model: anthropic(MODEL),
+      model: resolved.model,
       schema: z.object({
         summary: z
           .string()
@@ -199,7 +197,8 @@ export async function scoreLeadBatch(input: {
   criteriaFor: (leadId: string) => string | undefined;
 }): Promise<string[]> {
   if (!input.leads.length) return [];
-  const anthropic = await anthropicProvider(input.workspaceId);
+  const resolved = await scoringModel(input.workspaceId);
+  if (!resolved) return [];
 
   // Group by criteria so every lead in a chunk shares one prompt, then chunk.
   type BatchLead = { id: string; pos: number; formData: Record<string, unknown> };
@@ -234,7 +233,7 @@ export async function scoreLeadBatch(input: {
         const chunk = chunks[next++];
         try {
           const results = await scoreLeadChunk({
-            provider: anthropic,
+            model: resolved.model,
             workspaceName: input.workspaceName,
             industry: input.industry,
             qualificationCriteria: chunk.criteria,
@@ -273,7 +272,7 @@ export async function scoreLeadBatch(input: {
     // Loud, not fatal: the caller still gets whatever scored before the wall,
     // but the cron/server logs name the real problem instead of "scored: 0".
     console.error(
-      `[lead-scoring] batch aborted for workspace ${input.workspaceId}:`,
+      `[lead-scoring] batch aborted for workspace ${input.workspaceId} (${resolved.label}):`,
       fatal instanceof Error ? fatal.message : fatal,
     );
   }
@@ -288,9 +287,14 @@ export async function scoreLeadBatch(input: {
 function isPermanentApiError(err: unknown): boolean {
   const status = (err as { statusCode?: number } | null)?.statusCode;
   if (status === 401 || status === 402 || status === 403) return true;
-  if (status !== 400) return false;
   const msg = err instanceof Error ? err.message.toLowerCase() : "";
-  return msg.includes("credit balance") || msg.includes("billing");
+  // Anthropic: 400 "credit balance is too low". OpenAI: 429 insufficient_quota
+  // ("you exceeded your current quota") — unlike a rate limit, waiting won't fix it.
+  if (status === 400)
+    return msg.includes("credit balance") || msg.includes("billing");
+  if (status === 429)
+    return msg.includes("insufficient_quota") || msg.includes("exceeded your current quota");
+  return false;
 }
 
 /** Final score = AI base + radius boost, capped at 100 (with the boost actually applied). */
@@ -311,7 +315,7 @@ export async function scorePendingLeads(
   workspaceId: string,
   limit = 100,
 ): Promise<{ scored: number; remaining: number }> {
-  if (!(await isAiConfigured(workspaceId))) return { scored: 0, remaining: 0 };
+  if (!(await scoringModel(workspaceId))) return { scored: 0, remaining: 0 };
 
   const [ws] = await db()
     .select({
@@ -381,7 +385,7 @@ export async function rescoreCampaignLeads(
   workspaceId: string,
   campaignId: string,
 ): Promise<{ scored: number; total: number }> {
-  if (!(await isAiConfigured(workspaceId))) return { scored: 0, total: 0 };
+  if (!(await scoringModel(workspaceId))) return { scored: 0, total: 0 };
 
   const [ws] = await db()
     .select({

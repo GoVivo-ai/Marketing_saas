@@ -36,6 +36,20 @@ import { StageManager } from "@/components/app/stage-manager";
 
 type Board = Record<string, PipelineCard[]>;
 
+/**
+ * Client-side twin of the server's lead search: name, email or phone. Phones
+ * compare digit-only so any formatting the team pastes still matches; a query
+ * with fewer than 4 digits isn't treated as a phone.
+ */
+function cardMatches(c: PipelineCard, q: string): boolean {
+  if (c.name.toLowerCase().includes(q)) return true;
+  if (c.email.toLowerCase().includes(q)) return true;
+  const digits = q.replace(/\D/g, "");
+  return (
+    digits.length >= 4 && c.phone.replace(/\D/g, "").includes(digits)
+  );
+}
+
 export function PipelineBoard({
   workspaceId,
   stages,
@@ -86,7 +100,7 @@ export function PipelineBoard({
       }
     });
   };
-  // Board-wide name search. Cards already loaded filter instantly; the server
+  // Board-wide search. Cards already loaded filter instantly; the server
   // is asked too (debounced) so leads past a column's card cap still show up
   // — in the column they belong to.
   const [query, setQuery] = useState("");
@@ -127,7 +141,7 @@ export function PipelineBoard({
         ...(board[st.id] ?? []),
         ...remoteCards.filter((c) => c.stageId === st.id),
       ]) {
-        if (seen.has(c.id) || !c.name.toLowerCase().includes(q)) continue;
+        if (seen.has(c.id) || !cardMatches(c, q)) continue;
         seen.add(c.id);
         list.push(c);
       }
@@ -256,8 +270,8 @@ export function PipelineBoard({
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search leads by name…"
-                aria-label="Search leads across the pipeline"
+                placeholder="Search by name, email or phone…"
+                aria-label="Search leads across the pipeline by name, email or phone"
                 className="h-8 w-64 rounded-md border bg-background pl-8 pr-8 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/30"
               />
               {query && (

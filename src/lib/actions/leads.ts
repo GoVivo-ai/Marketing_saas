@@ -98,11 +98,19 @@ const RUNG_INTERESTED = 4;
 /**
  * Moves a lead to the stage its latest touch proved — last action wins, in
  * both directions: voicemail/no answer land on "attempted" (even for a lead
- * sitting in Interested or Contractor Compliance), a live answer/reply on
- * "contacted", and offer info sent to a lead who already answered on
- * "interested". Won/lost leads are never touched, and a touch with no
- * outcome yet (a call just placed from the platform) only moves forward —
- * dialing a lead must not demote it before the agent grades the result.
+ * sitting in Interested), a live answer/reply on "contacted", and offer info
+ * sent to a lead who already answered on "interested". Won/lost leads are
+ * never touched, and a touch with no outcome yet (a call just placed from the
+ * platform) only moves forward — dialing a lead must not demote it before the
+ * agent grades the result.
+ *
+ * Leads in an open stage that opted out of the queue (Contractor Compliance)
+ * are never moved either: they are being onboarded in an external system and
+ * the team keeps calling them there daily ("next steps explained" chasing), so
+ * auto-advancing would demote them out of the compliance column on every
+ * follow-up call and hide the activation from the pipeline. They leave that
+ * stage only by an explicit action — a manual move, a disqualification, or
+ * being hired.
  */
 async function maybeAutoAdvance(
   lead: { id: string; workspaceId: string; stageId: string | null },
@@ -121,12 +129,10 @@ async function maybeAutoAdvance(
     .orderBy(asc(schema.stages.position));
   const current = stages.find((s) => s.id === lead.stageId);
   if (!current || current.kind !== "open") return;
+  // Out of the queue (Contractor Compliance) → out of the ladder's reach.
+  if (!current.workable) return;
   const ladder = stages.filter((s) => s.kind === "open" && s.workable);
-  // Rung the lead sits on now; a non-workable open stage (Contractor
-  // Compliance) counts as past the top of the ladder.
-  const currentRung = current.workable
-    ? ladder.findIndex((s) => s.id === current.id) + 1
-    : ladder.length + 1;
+  const currentRung = ladder.findIndex((s) => s.id === current.id) + 1;
   if (currentRung === 0) return;
 
   let rung = RUNG_ATTEMPTED;

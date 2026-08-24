@@ -13,6 +13,7 @@ import {
   lte,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
@@ -1363,12 +1364,22 @@ export interface PipelineData {
 export const PIPELINE_CARD_CAP = 100;
 
 /**
- * A lead's effective targeted city: its ad set's audience city when it came
- * from an ad, else the advertisement area recorded on manual leads — so city
- * filters don't silently drop leads that have no ad set.
+ * City filter that matches a lead through any of its city signals: the lead's
+ * own reported city (what the team manages by), the ad set's audience city,
+ * or the advertisement area recorded on manual leads. Case/whitespace
+ * insensitive so hand-typed values ("LAS VEGAS ") still match. Requires the
+ * query to left-join `adsets`.
  */
-function effectiveCitySql() {
-  return sql<string>`coalesce(${schema.adsets.cityName}, ${schema.leads.formData} ->> 'advertisement_area')`;
+function cityFilterSql(cities: string[]): SQL<unknown> {
+  const wanted = cities.map((c) => c.trim().toLowerCase());
+  return or(
+    inArray(sql`lower(btrim(${schema.leads.geoCity}))`, wanted),
+    inArray(sql`lower(btrim(${schema.adsets.cityName}))`, wanted),
+    inArray(
+      sql`lower(btrim(${schema.leads.formData} ->> 'advertisement_area'))`,
+      wanted,
+    ),
+  )!;
 }
 
 /** Filters that carve out the slice of leads a pipeline view shows. */
@@ -1389,7 +1400,7 @@ function pipelineLeadFilters(workspaceId: string, opts: PipelineFilters) {
       ? inArray(schema.adsets.cityRegion, opts.regions)
       : undefined,
     opts.cities?.length
-      ? inArray(effectiveCitySql(), opts.cities)
+      ? cityFilterSql(opts.cities)
       : undefined,
     opts.start ? gte(schema.leads.createdAt, opts.start) : undefined,
     opts.end ? lte(schema.leads.createdAt, opts.end) : undefined,
@@ -1429,6 +1440,24 @@ function mapPipelineCard(
     stageId: r.stageId,
     createdAt: r.createdAt,
   };
+}
+
+/**
+ * Matches a lead by any identifier a person would paste in: part of the name,
+ * part of the email, or a phone number in any format (both sides are reduced
+ * to digits, so "(323) 961-0026" finds "+13239610026"). A query with fewer
+ * than 4 digits is not treated as a phone — it would match almost everything.
+ */
+export function leadIdentifierMatch(query: string): SQL<unknown> {
+  const like = `%${query.replace(/[\\%_]/g, "\\$&")}%`;
+  const digits = query.replace(/\D/g, "");
+  return or(
+    ilike(schema.leads.name, like),
+    ilike(schema.leads.email, like),
+    digits.length >= 4
+      ? sql`regexp_replace(coalesce(${schema.leads.phone}, ''), '\\D', '', 'g') LIKE ${"%" + digits + "%"}`
+      : undefined,
+  )!;
 }
 
 export async function getPipeline(
@@ -1475,10 +1504,13 @@ export async function getPipeline(
 }
 
 /**
- * Name search across the whole board, over the SAME slice the board shows but
- * not limited to the newest PIPELINE_CARD_CAP cards per column — so an old
- * lead sitting past its column's cap is still findable, and the result says
- * which stage it is in.
+ * Search across the whole board by name, email or phone — the team looks a
+ * lead up by whichever identifier the external system (Contractor Compliance,
+ * the dialer) shows them, so name-only search reads as "the lead isn't in the
+ * pipeline at all". Covers the SAME slice the board shows but is not limited
+ * to the newest PIPELINE_CARD_CAP cards per column, so an old lead sitting
+ * past its column's cap is still findable, and the result says which stage it
+ * is in.
  */
 export async function searchPipelineLeads(
   workspaceId: string,
@@ -1492,7 +1524,7 @@ export async function searchPipelineLeads(
       and(
         ...pipelineLeadFilters(workspaceId, opts),
         isNotNull(schema.leads.stageId),
-        ilike(schema.leads.name, `%${q.replace(/[\\%_]/g, "\\$&")}%`),
+        leadIdentifierMatch(q),
       ),
     )
     .orderBy(desc(schema.leads.createdAt))
@@ -1754,7 +1786,7 @@ export async function getContactQueue(
           ? inArray(schema.adsets.cityRegion, opts.regions)
           : undefined,
         opts.cities?.length
-          ? inArray(effectiveCitySql(), opts.cities)
+          ? cityFilterSql(opts.cities)
           : undefined,
         opts.q
           ? or(
@@ -1934,7 +1966,7 @@ export interface FunnelReport {
 export async function getWorkspaceGeoOptions(
   workspaceId: string,
 ): Promise<{ region: string | null; city: string | null }[]> {
-  const [fromAdsets, fromManual] = await Promise.all([
+  const [fromAdsets, fromManual, fromLeads] = await Promise.all([
     db()
       .selectDistinct({
         region: schema.adsets.cityRegion,
@@ -1954,13 +1986,34 @@ export async function getWorkspaceGeoOptions(
           sql`${schema.leads.formData} ->> 'advertisement_area' is not null`,
         ),
       ),
+    // The lead's own reported city — what the team actually manages by.
+    // Title-cased so hand-typed variants ("LAS VEGAS", "las vegas") collapse.
+    db()
+      .selectDistinct({
+        city: sql<string>`initcap(btrim(${schema.leads.geoCity}))`,
+      })
+      .from(schema.leads)
+      .where(
+        and(
+          eq(schema.leads.workspaceId, workspaceId),
+          sql`nullif(btrim(${schema.leads.geoCity}), '') is not null`,
+        ),
+      ),
   ]);
-  const seen = new Set(fromAdsets.map((r) => r.city).filter(Boolean));
+  // Dedupe case-insensitively; ad-set entries win (they carry the region).
+  const seen = new Set(
+    fromAdsets.map((r) => r.city?.trim().toLowerCase()).filter(Boolean),
+  );
+  const extras: { region: string | null; city: string | null }[] = [];
+  for (const r of [...fromManual, ...fromLeads]) {
+    const key = r.city?.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    extras.push({ region: null, city: r.city });
+  }
   return [
     ...fromAdsets,
-    ...fromManual
-      .filter((r) => r.city && !seen.has(r.city))
-      .map((r) => ({ region: null, city: r.city })),
+    ...extras.sort((a, b) => (a.city ?? "").localeCompare(b.city ?? "")),
   ];
 }
 
@@ -1999,7 +2052,7 @@ export async function getFunnelReport(
   if (opts.regions?.length)
     leadFilters.push(inArray(schema.adsets.cityRegion, opts.regions));
   if (opts.cities?.length)
-    leadFilters.push(inArray(effectiveCitySql(), opts.cities));
+    leadFilters.push(cityFilterSql(opts.cities));
 
   const [leadRows, moveRows] = await Promise.all([
     db()

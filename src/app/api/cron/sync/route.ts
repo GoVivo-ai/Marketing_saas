@@ -66,12 +66,19 @@ export async function GET(req: NextRequest) {
 
   // Drain pending AI scores so no lead stays unscored (also retries failures).
   const workspaceIds = [...new Set(activeConnections.map((c) => c.workspaceId))];
-  const scored: Record<string, { scored: number; remaining: number }> = {};
+  const scored: Record<
+    string,
+    { scored: number; remaining: number } | { error: string }
+  > = {};
   for (const wsId of workspaceIds) {
     try {
       scored[wsId] = await scorePendingLeads(wsId, 100);
-    } catch {
-      // non-fatal
+    } catch (err) {
+      // Non-fatal for the sync, but named in the logs and the response —
+      // a dead API key or empty credit balance must not hide as "scored: 0".
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[cron/sync] scoring failed for workspace ${wsId}:`, message);
+      scored[wsId] = { error: message };
     }
   }
 

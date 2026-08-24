@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { ScorePending } from "@/components/app/score-pending";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { Loader2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -83,9 +83,8 @@ export function LeadsTable({
                     )}
                   </>
                 ) : (
-                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Procesando…
+                  <span className="text-xs">
+                    <ScorePending createdAt={lead.createdAt} />
                   </span>
                 )}
               </TableCell>

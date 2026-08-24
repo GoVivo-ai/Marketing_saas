@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 import { claimLead, markLeadCcActivated } from "@/lib/actions/leads";
 import { CC_STATUSES, CC_STATUS_COLOR, CC_STATUS_LABEL, isCcStatus } from "@/lib/cc";
+import { ScorePending } from "@/components/app/score-pending";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -190,9 +191,8 @@ export function LeadDetailSheet({
                       )}
                     </>
                   ) : (
-                    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Procesando…
+                    <p className="text-sm">
+                      <ScorePending createdAt={lead.createdAt} />
                     </p>
                   )}
                 </div>

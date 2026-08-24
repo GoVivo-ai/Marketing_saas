@@ -34,6 +34,7 @@ import { CC_STATUSES, CC_STATUS_COLOR, CC_STATUS_LABEL, isCcStatus } from "@/lib
 import type { Stage, PipelineCard, LeadRow } from "@/lib/data";
 import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
 import { StageManager } from "@/components/app/stage-manager";
+import { ScorePending } from "@/components/app/score-pending";
 
 type Board = Record<string, PipelineCard[]>;
 
@@ -596,9 +597,8 @@ function LeadCardContent({
                 {card.aiScore}
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Procesando
+              <span className="inline-flex rounded-full bg-muted px-1.5 py-0.5 text-xs">
+                <ScorePending createdAt={card.createdAt} />
               </span>
             )}
             {card.phone !== "—" && (

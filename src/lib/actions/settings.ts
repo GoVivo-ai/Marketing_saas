@@ -5,7 +5,11 @@ import { auth } from "@/lib/auth";
 import { isPlatformAdmin } from "@/lib/permissions";
 import { setSecret, type SecretKey } from "@/lib/settings";
 
-const ALLOWED_KEYS: SecretKey[] = ["meta_access_token", "anthropic_api_key"];
+const ALLOWED_KEYS: SecretKey[] = [
+  "meta_access_token",
+  "anthropic_api_key",
+  "openai_api_key",
+];
 
 /** Saves an agency-level credential (encrypted at rest). Admins only. */
 export async function savePlatformSecret(formData: FormData) {

@@ -9,7 +9,11 @@ import { metaConnector } from "@/lib/integrations/meta";
 import {
   getWorkspaceMetaToken,
   getWorkspaceAnthropicKeyPreview,
+  getSecretPreview,
 } from "@/lib/settings";
+import { savePlatformSecret } from "@/lib/actions/settings";
+import { isPlatformAdmin } from "@/lib/permissions";
+import { auth } from "@/lib/auth";
 import {
   connectMetaAccount,
   disconnectConnection,
@@ -87,6 +91,15 @@ export default async function ConnectionsPage() {
   const aiPreview =
     isDatabaseConfigured() && active
       ? await getWorkspaceAnthropicKeyPreview(active.id)
+      : null;
+  // Agency-wide OpenAI key (bulk lead scoring runs on it when present).
+  const session = await auth();
+  const platformAdmin = isPlatformAdmin(
+    (session?.user as { role?: string } | undefined)?.role,
+  );
+  const openaiPreview =
+    isDatabaseConfigured() && platformAdmin
+      ? await getSecretPreview("openai_api_key")
       : null;
   const ready = isDatabaseConfigured() && Boolean(metaToken);
   let accounts: { externalId: string; name: string; currency: string }[] = [];
@@ -223,10 +236,12 @@ export default async function ConnectionsPage() {
             </CardTitle>
             <CardDescription>
               Each client uses its own Anthropic API key (encrypted at rest) to
-              power lead scoring and AI insights for {active.name}.
+              power lead scoring and AI insights for {active.name}. When an
+              agency-wide OpenAI key is set, bulk lead scoring runs on it
+              (gpt-5-mini) instead.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4">
               <div className="min-w-44">
                 <p className="text-sm font-medium">Anthropic API key</p>
@@ -248,6 +263,30 @@ export default async function ConnectionsPage() {
                 <Button size="sm" type="submit">Save</Button>
               </form>
             </div>
+            {platformAdmin && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4">
+                <div className="min-w-44">
+                  <p className="text-sm font-medium">OpenAI API key</p>
+                  <p className="text-xs text-muted-foreground">Agency-wide</p>
+                  {openaiPreview ? (
+                    <Badge variant="secondary" className="mt-1">{openaiPreview}</Badge>
+                  ) : (
+                    <Badge variant="outline" className="mt-1">Not configured</Badge>
+                  )}
+                </div>
+                <form action={savePlatformSecret} className="flex flex-1 items-center gap-2">
+                  <input type="hidden" name="key" value="openai_api_key" />
+                  <Input
+                    name="value"
+                    type="password"
+                    placeholder={openaiPreview ? "Replace key…" : "sk-…"}
+                    className="max-w-md"
+                    required
+                  />
+                  <Button size="sm" type="submit">Save</Button>
+                </form>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

@@ -30,11 +30,20 @@ import {
   type PipelineSearchFilters,
 } from "@/lib/actions/leads";
 import { Button } from "@/components/ui/button";
+import { CC_STATUSES, CC_STATUS_COLOR, CC_STATUS_LABEL, isCcStatus } from "@/lib/cc";
 import type { Stage, PipelineCard, LeadRow } from "@/lib/data";
 import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
 import { StageManager } from "@/components/app/stage-manager";
 
 type Board = Record<string, PipelineCard[]>;
+
+/** "María Alejandra Pantoja" → "MA" — first + last word of the name. */
+function agentInitials(name: string): string {
+  const words = name.trim().split(/\s+/);
+  const first = words[0]?.[0] ?? "";
+  const last = words.length > 1 ? words[words.length - 1][0] : "";
+  return (first + last).toUpperCase() || "?";
+}
 
 /**
  * Client-side twin of the server's lead search: name, email or phone. Phones
@@ -55,6 +64,7 @@ export function PipelineBoard({
   stages,
   cardsByStage,
   counts,
+  ccCounts = {},
   cap,
   canManage,
   filters = {},
@@ -63,6 +73,8 @@ export function PipelineBoard({
   stages: Stage[];
   cardsByStage: Board;
   counts: Record<string, number>;
+  /** CC sub-pipeline breakdown (cc_status → count) for the compliance column. */
+  ccCounts?: Record<string, number>;
   cap: number;
   canManage: boolean;
   /** The page's location/date slice — column search applies the same one. */
@@ -338,6 +350,7 @@ export function PipelineBoard({
                 stage={stage}
                 cards={q ? (visibleByStage[stage.id] ?? []) : (board[stage.id] ?? [])}
                 total={count[stage.id] ?? 0}
+                ccCounts={ccCounts}
                 cap={cap}
                 query={q ? query.trim() : null}
                 highlight={q ? (matchCount[stage.id] ?? 0) > 0 : false}
@@ -371,6 +384,7 @@ function StageColumn({
   stage,
   cards,
   total,
+  ccCounts,
   cap,
   conversion,
   onCardClick,
@@ -382,6 +396,8 @@ function StageColumn({
   stage: Stage;
   cards: PipelineCard[];
   total: number;
+  /** CC sub-pipeline breakdown — rendered only under the compliance column. */
+  ccCounts?: Record<string, number>;
   cap: number;
   /** Formatted conversion rate from the previous stage (null on the first). */
   conversion: string | null;
@@ -397,6 +413,9 @@ function StageColumn({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const accent = stage.color ?? "#94a3b8";
+  // The compliance column: open but out of the queue. Sub-status badges only
+  // make sense here — a lead moved back out keeps cc_status as history.
+  const isCcColumn = stage.kind === "open" && !stage.workable;
   return (
     <div
       className={`flex h-full w-72 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/40 shadow-sm transition-colors ${
@@ -435,6 +454,22 @@ function StageColumn({
             {conversion} from previous stage
           </p>
         )}
+        {/* CC sub-pipeline at a glance — the morning "who to chase" counts. */}
+        {isCcColumn && Object.keys(ccCounts ?? {}).length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1 pl-[18px]">
+            {CC_STATUSES.filter((st) => (ccCounts?.[st] ?? 0) > 0).map((st) => (
+              <span
+                key={st}
+                title={CC_STATUS_LABEL[st]}
+                className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
+                style={{ color: CC_STATUS_COLOR[st], borderColor: `${CC_STATUS_COLOR[st]}66` }}
+              >
+                {CC_STATUS_LABEL[st]}
+                <span className="font-semibold">{ccCounts?.[st]}</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       <div
         ref={setNodeRef}
@@ -446,6 +481,7 @@ function StageColumn({
           <LeadCard
             key={card.id}
             card={card}
+            showCc={isCcColumn}
             opening={openingId === card.id}
             onClick={() => onCardClick(card)}
           />
@@ -471,10 +507,12 @@ function StageColumn({
 
 function LeadCard({
   card,
+  showCc = false,
   onClick,
   opening = false,
 }: {
   card: PipelineCard;
+  showCc?: boolean;
   onClick: () => void;
   opening?: boolean;
 }) {
@@ -495,6 +533,7 @@ function LeadCard({
     >
       <LeadCardContent
         card={card}
+        showCc={showCc}
         dragHandle={
           <span
             {...listeners}
@@ -514,13 +553,17 @@ function LeadCard({
 /** Pure card visuals — reused for the in-column card and the drag overlay. */
 function LeadCardContent({
   card,
+  showCc = false,
   overlay = false,
   dragHandle,
 }: {
   card: PipelineCard;
+  /** Render the CC sub-status badge (only inside the compliance column). */
+  showCc?: boolean;
   overlay?: boolean;
   dragHandle?: React.ReactNode;
 }) {
+  const cc = showCc && isCcStatus(card.ccStatus) ? card.ccStatus : null;
   return (
     <div
       className={`rounded-lg border bg-card p-3 shadow-sm select-none ${
@@ -538,6 +581,14 @@ function LeadCardContent({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{card.name}</p>
           <p className="truncate text-xs text-muted-foreground">{card.campaign}</p>
+          {cc && (
+            <span
+              className="mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
+              style={{ color: CC_STATUS_COLOR[cc], borderColor: `${CC_STATUS_COLOR[cc]}66` }}
+            >
+              {CC_STATUS_LABEL[cc]}
+            </span>
+          )}
           <div className="mt-2 flex items-center gap-2">
             {card.aiScore != null ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
@@ -552,6 +603,14 @@ function LeadCardContent({
             )}
             {card.phone !== "—" && (
               <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+            {card.agentName && (
+              <span
+                title={`Worked by ${card.agentName}`}
+                className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-semibold text-secondary-foreground ring-1 ring-border"
+              >
+                {agentInitials(card.agentName)}
+              </span>
             )}
           </div>
         </div>

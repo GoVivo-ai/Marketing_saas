@@ -1,6 +1,7 @@
 import {
   getWorkspaceContext,
   getPipeline,
+  getWorkspaceAgentOptions,
   getWorkspaceGeoOptions,
 } from "@/lib/data";
 import { canManageWorkspace, requireLeadsAccess } from "@/lib/permissions";
@@ -29,6 +30,7 @@ export default async function PipelinePage({
     to?: string;
     state?: string;
     city?: string;
+    agent?: string;
   }>;
 }) {
   await requireLeadsAccess();
@@ -51,16 +53,19 @@ export default async function PipelinePage({
   // Multi-select location filters — comma-separated in the URL, absent = all.
   const states = sp.state ? sp.state.split(",").filter(Boolean) : [];
   const cities = sp.city ? sp.city.split(",").filter(Boolean) : [];
+  const agents = sp.agent ? sp.agent.split(",").filter(Boolean) : [];
 
-  const [pipeline, canManage, geo] = await Promise.all([
+  const [pipeline, canManage, geo, agentOptions] = await Promise.all([
     getPipeline(active.id, {
       regions: states,
       cities,
+      agents,
       start: resolved.start,
       end: resolved.end,
     }),
     canManageWorkspace(active.id),
     getWorkspaceGeoOptions(active.id),
+    getWorkspaceAgentOptions(active.id),
   ]);
 
   const stateOptions = [
@@ -106,6 +111,14 @@ export default async function PipelinePage({
             activeValues={cities}
             options={cityOptions.map((c) => ({ value: c, label: c }))}
           />
+          <LeadsMultiFilter
+            param="agent"
+            icon="agent"
+            title="Agent"
+            allLabel="All agents"
+            activeValues={agents}
+            options={agentOptions.map((a) => ({ value: a.id, label: a.name }))}
+          />
           <label className="flex items-center gap-1.5">
             <span className="text-xs font-medium text-muted-foreground">
               Created
@@ -122,16 +135,18 @@ export default async function PipelinePage({
       <PipelineBoard
         /* The board keeps its own drag state — remount it when the slice
            changes so it doesn't render stale cards. */
-        key={`${sp.state ?? ""}:${sp.city ?? ""}:${resolved.label}`}
+        key={`${sp.state ?? ""}:${sp.city ?? ""}:${sp.agent ?? ""}:${resolved.label}`}
         workspaceId={active.id}
         stages={pipeline.stages}
         cardsByStage={pipeline.cardsByStage}
         counts={pipeline.counts}
+        ccCounts={pipeline.ccCounts}
         cap={pipeline.cap}
         canManage={canManage}
         filters={{
           regions: states,
           cities,
+          agents,
           start: resolved.start?.toISOString() ?? null,
           end: resolved.end?.toISOString() ?? null,
         }}

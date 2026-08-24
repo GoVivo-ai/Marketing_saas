@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { claimLead, markLeadCcActivated } from "@/lib/actions/leads";
+import { CC_STATUSES, CC_STATUS_COLOR, CC_STATUS_LABEL, isCcStatus } from "@/lib/cc";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -54,11 +55,18 @@ export function LeadDetailSheet({
   lead,
   onClose,
   onPatch,
+  onStageChange,
 }: {
   lead: LeadRow | null;
   onClose: () => void;
   /** Reflect inline edits (LeadInfoEditor) back into the caller's state. */
   onPatch?: (patch: Partial<LeadRow>) => void;
+  /**
+   * Fired after the lead's pipeline stage changed from inside the sheet (the
+   * stage picker or the CC section) — the contact queue uses it to drop the
+   * lead from today's list without a second manual action.
+   */
+  onStageChange?: (leadId: string) => void;
 }) {
   // Opening a lead soft-claims it (viewing = working) so teammates get a
   // heads-up instead of contacting it too; if someone already holds a live
@@ -93,7 +101,11 @@ export function LeadDetailSheet({
             <SheetHeader className="border-b">
               <SheetTitle className="flex items-center gap-2">
                 {lead.name}
-                <LeadStagePicker lead={lead} onPatch={onPatch} />
+                <LeadStagePicker
+                  lead={lead}
+                  onPatch={onPatch}
+                  onMoved={() => onStageChange?.(lead.id)}
+                />
               </SheetTitle>
               <SheetDescription>
                 Received {formatDistanceToNow(lead.createdAt, { addSuffix: true })} via{" "}
@@ -126,7 +138,12 @@ export function LeadDetailSheet({
               >
                 <LeadActivity key={lead.id} leadId={lead.id} />
                 <Separator />
-                <CcActivated key={`cc-${lead.id}`} leadId={lead.id} />
+                <CcActivated
+                  key={`cc-${lead.id}`}
+                  lead={lead}
+                  onPatch={onPatch}
+                  onStageChange={onStageChange}
+                />
                 <Separator />
                 <LeadDisqualify
                   key={`dq-${lead.id}`}
@@ -221,37 +238,81 @@ export function LeadDetailSheet({
 }
 
 /**
- * One-click "the lead got activated in Contractor Compliance" — moves it to
- * the compliance stage (and out of the contact queue) without visiting the
- * Kanban board.
+ * The Contractor Compliance section: one click activates the lead in CC
+ * (moving it to the compliance stage, out of the contact queue), and once
+ * there the sub-pipeline picker tracks where the onboarding stands —
+ * Activated → Next Steps Explained → Completing A1s → Abandoned — without
+ * the card ever leaving the compliance column.
  */
-function CcActivated({ leadId }: { leadId: string }) {
+function CcActivated({
+  lead,
+  onPatch,
+  onStageChange,
+}: {
+  lead: LeadRow;
+  onPatch?: (patch: Partial<LeadRow>) => void;
+  onStageChange?: (leadId: string) => void;
+}) {
   const [saving, start] = useTransition();
-  const onClick = () =>
+  const current = isCcStatus(lead.ccStatus) ? lead.ccStatus : null;
+  const pick = (status: (typeof CC_STATUSES)[number]) =>
     start(async () => {
-      const r = await markLeadCcActivated(leadId);
-      if (r.ok) toast.success(`Moved to ${r.stageName}.`);
-      else toast.error(r.message);
+      const r = await markLeadCcActivated(lead.id, status);
+      if (!r.ok) {
+        toast.error(r.message);
+        return;
+      }
+      const moved = lead.stageName !== r.stageName;
+      onPatch?.({ ccStatus: status, stageName: r.stageName });
+      toast.success(
+        moved
+          ? `Moved to ${r.stageName} — ${CC_STATUS_LABEL[status]}.`
+          : `CC status: ${CC_STATUS_LABEL[status]}.`,
+      );
+      if (moved) onStageChange?.(lead.id);
     });
   return (
     <div className="space-y-2">
-      <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <h4 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <ShieldCheck className="h-3.5 w-3.5" />
         Contractor Compliance
+        {saving && <Loader2 className="h-3 w-3 animate-spin" />}
       </h4>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={saving}
-        className="h-8 gap-1.5 border-success/40 font-normal text-success hover:text-success"
-        onClick={onClick}
-      >
-        {saving ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <ShieldCheck className="h-3.5 w-3.5" />
-        )}
-        Activated in Contractor Compliance
-      </Button>
+      <div className="flex flex-wrap gap-1.5">
+        {CC_STATUSES.map((status) => {
+          const active = current === status;
+          return (
+            <Button
+              key={status}
+              size="sm"
+              variant="outline"
+              disabled={saving}
+              aria-pressed={active}
+              className="h-8 gap-1.5 font-normal"
+              style={
+                active
+                  ? {
+                      color: CC_STATUS_COLOR[status],
+                      borderColor: CC_STATUS_COLOR[status],
+                      backgroundColor: `${CC_STATUS_COLOR[status]}14`,
+                    }
+                  : undefined
+              }
+              onClick={() => pick(status)}
+            >
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: CC_STATUS_COLOR[status] }}
+              />
+              {CC_STATUS_LABEL[status]}
+            </Button>
+          );
+        })}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Marking any state moves the lead to the compliance stage; the state
+        itself tracks the onboarding inside Contractor Compliance.
+      </p>
     </div>
   );
 }

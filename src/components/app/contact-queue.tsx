@@ -40,6 +40,7 @@ import {
   undoLeadOutreach,
 } from "@/lib/actions/leads";
 import { RCA_LEVEL1, rcaLevel2, rcaLevel3, isValidRcaPath } from "@/lib/rca";
+import type { CcStatus } from "@/lib/cc";
 import { DISQUAL_PREFILL, OUTCOME_CHIPS } from "@/lib/outreach";
 import type { OutreachChannel, OutreachOutcome } from "@/lib/outreach";
 import type { ContactQueueData, LeadRow, QueueItem } from "@/lib/data";
@@ -143,13 +144,16 @@ const INFO_SENT_REASONS: readonly string[] = [
 /**
  * The "Profile created" progression — grouped in one dropdown so the agent
  * marks where the lead sits in profile creation (next steps explained →
- * completing A1s) without cluttering the quick dispositions above. Picking one
- * also moves the lead to the Contractor Compliance stage.
+ * completing A1s → abandoned) without cluttering the quick dispositions
+ * above. Picking one moves the lead to the Contractor Compliance stage AND
+ * records the matching sub-pipeline state, so the ops lead can chase the
+ * "Next Steps Explained" list every morning straight from the board.
  */
-const PROFILE_STEPS = [
-  "Profile created - Next Steps Explained",
-  "Profile created - Completing A1s",
-] as const;
+const PROFILE_STEPS: Record<string, CcStatus> = {
+  "Profile created - Next Steps Explained": "next_steps_explained",
+  "Profile created - Completing A1s": "completing_a1s",
+  "Profile created - Abandoned": "abandoned",
+};
 
 /**
  * Shown after a connected call ("answered") so the agent can record what the
@@ -184,8 +188,8 @@ function AnswerFollowUp({
       // A "Profile created" disposition means the lead is now in Contractor
       // Compliance — move the stage too, so the pipeline reflects what the
       // agent just recorded instead of the activation living only in a note.
-      if ((PROFILE_STEPS as readonly string[]).includes(reason)) {
-        const cc = await markLeadCcActivated(leadId);
+      if (PROFILE_STEPS[reason]) {
+        const cc = await markLeadCcActivated(leadId, PROFILE_STEPS[reason]);
         if (cc.ok) {
           toast.success(`${reason} — moved to ${cc.stageName}.`);
         } else {
@@ -248,7 +252,7 @@ function AnswerFollowUp({
             <SelectValue placeholder="Profile created…" />
           </SelectTrigger>
           <SelectContent>
-            {PROFILE_STEPS.map((step) => (
+            {Object.keys(PROFILE_STEPS).map((step) => (
               <SelectItem key={step} value={step}>
                 {step.replace("Profile created - ", "")}
               </SelectItem>
@@ -1209,6 +1213,17 @@ export function ContactQueue({
         lead={detail}
         onClose={() => setDetail(null)}
         onPatch={(patch) => setDetail((d) => (d ? { ...d, ...patch } : d))}
+        onStageChange={(leadId) => {
+          // The agent just placed the lead somewhere on the pipeline — that
+          // decision IS the work, so the lead leaves today's queue instead of
+          // asking for a second action. If it was the lead on deck, this also
+          // advances to the next one (its stage no longer reflects "to work").
+          if (leadId === currentId) {
+            advance();
+          } else {
+            setItems((list) => list.filter((x) => x.id !== leadId));
+          }
+        }}
       />
     </div>
   );

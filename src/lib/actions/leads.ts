@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { currentUser, isAgency, getWorkspaceRole } from "@/lib/permissions";
@@ -13,6 +13,7 @@ import {
   NoProviderConnectedError,
 } from "@/lib/integrations/telephony";
 import { isValidRcaPath } from "@/lib/rca";
+import { CC_STATUS_LABEL, isCcStatus, type CcStatus } from "@/lib/cc";
 import {
   getLeadRowById,
   searchPipelineLeads as searchPipelineLeadsData,
@@ -182,6 +183,7 @@ export async function moveLeadToStage(
       id: schema.stages.id,
       workspaceId: schema.stages.workspaceId,
       kind: schema.stages.kind,
+      workable: schema.stages.workable,
       position: schema.stages.position,
     })
     .from(schema.stages)
@@ -191,11 +193,15 @@ export async function moveLeadToStage(
     return { ok: false, reason: "invalid_stage" };
   if (lead.stageId === stageId) return { ok: true };
 
+  // Dragging into the compliance column starts its sub-pipeline: a lead with
+  // no cc_status yet begins at "activated" (a returning one keeps its state).
+  const intoCc = stage.kind === "open" && !stage.workable;
   try {
     await db()
       .update(schema.leads)
       .set({
         stageId,
+        ...(intoCc ? { ccStatus: sql`coalesce(cc_status, 'activated')` } : {}),
         status: deriveStatus(stage.kind, stage.position),
         updatedAt: new Date(),
       })
@@ -208,6 +214,7 @@ export async function moveLeadToStage(
     });
     revalidatePath("/leads/pipeline");
     revalidatePath("/leads");
+    revalidatePath("/leads/queue");
     return { ok: true };
   } catch (err) {
     return {
@@ -295,10 +302,13 @@ export type LeadCcResult =
  * workspace's compliance stage (the stage opted out of the contact queue via
  * `workable = false`, else the first won stage). One click from the queue or
  * the lead detail — the counterpart of a disqualification, so agents never
- * need to visit the Kanban to record it.
+ * need to visit the Kanban to record it. `ccStatus` records where inside the
+ * CC onboarding the lead sits (the sub-pipeline); a lead already in the
+ * compliance stage just gets its sub-status updated.
  */
 export async function markLeadCcActivated(
   leadId: string,
+  ccStatus: CcStatus = "activated",
 ): Promise<LeadCcResult> {
   const { userId, lead } = await requireLeadAccess(leadId);
   const stages = await db()
@@ -321,13 +331,22 @@ export async function markLeadCcActivated(
       message:
         "No compliance stage configured — uncheck “Queue” on that stage in Edit stages first.",
     };
-  if (lead.stageId === target.id) return { ok: true, stageName: target.name };
-
   try {
+    if (lead.stageId === target.id) {
+      // Already in the compliance column — this touch only advances the
+      // sub-pipeline (e.g. Next Steps Explained → Completing A1s).
+      await db()
+        .update(schema.leads)
+        .set({ ccStatus, updatedAt: new Date() })
+        .where(eq(schema.leads.id, leadId));
+      revalidatePath("/leads/pipeline");
+      return { ok: true, stageName: target.name };
+    }
     await db()
       .update(schema.leads)
       .set({
         stageId: target.id,
+        ccStatus,
         status: deriveStatus(target.kind, target.position),
         updatedAt: new Date(),
       })
@@ -340,11 +359,47 @@ export async function markLeadCcActivated(
         fromStageId: lead.stageId,
         toStageId: target.id,
         reason: "cc_activated",
+        ccStatus,
       },
     });
     revalidatePath("/leads");
     revalidatePath("/leads/pipeline");
+    revalidatePath("/leads/queue");
     return { ok: true, stageName: target.name };
+  } catch (err) {
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Moves a lead along the Contractor Compliance sub-pipeline without touching
+ * its stage — the card stays in the compliance column, only its sub-status
+ * badge changes. Used from the lead detail once the lead is already in CC.
+ */
+export async function setLeadCcStatus(
+  leadId: string,
+  ccStatus: CcStatus,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { userId, lead } = await requireLeadAccess(leadId);
+  if (!isCcStatus(ccStatus)) return { ok: false, message: "Invalid CC status." };
+  try {
+    await db()
+      .update(schema.leads)
+      .set({ ccStatus, updatedAt: new Date() })
+      .where(eq(schema.leads.id, leadId));
+    await db().insert(schema.leadEvents).values({
+      leadId,
+      userId,
+      type: "note",
+      payload: { text: `CC status: ${CC_STATUS_LABEL[ccStatus]}`, ccStatus },
+    });
+    void lead;
+    revalidatePath("/leads/pipeline");
+    revalidatePath("/leads");
+    return { ok: true };
   } catch (err) {
     return {
       ok: false,
@@ -1059,6 +1114,7 @@ export async function getLeadDetail(leadId: string): Promise<LeadRow | null> {
 export interface PipelineSearchFilters {
   regions?: string[];
   cities?: string[];
+  agents?: string[];
   start?: string | null;
   end?: string | null;
 }
@@ -1080,6 +1136,7 @@ export async function searchPipelineLeads(
   return searchPipelineLeadsData(workspaceId, query, {
     regions: filters.regions,
     cities: filters.cities,
+    agents: filters.agents,
     start: filters.start ? new Date(filters.start) : null,
     end: filters.end ? new Date(filters.end) : null,
   });

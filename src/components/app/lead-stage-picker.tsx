@@ -23,9 +23,12 @@ type StageOption = { id: string; name: string; color: string | null; kind: strin
 export function LeadStagePicker({
   lead,
   onPatch,
+  onMoved,
 }: {
   lead: LeadRow;
   onPatch?: (patch: Partial<LeadRow>) => void;
+  /** Fired after a successful move — e.g. the queue drops the lead. */
+  onMoved?: (stage: StageOption) => void;
 }) {
   const router = useRouter();
   const [stages, setStages] = useState<StageOption[] | null>(null);
@@ -54,6 +57,7 @@ export function LeadStagePicker({
       }
       onPatch?.({ stageId: st.id, stageName: st.name, stageColor: st.color });
       toast.success(`Moved to ${st.name}.`);
+      onMoved?.(st);
       router.refresh();
     });
   };

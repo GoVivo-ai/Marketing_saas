@@ -464,6 +464,15 @@ export const leads = pgTable(
     stageId: text("stage_id").references(() => stages.id, {
       onDelete: "set null",
     }),
+    /**
+     * Contractor Compliance sub-pipeline: where the lead sits inside the CC
+     * onboarding while its card stays in the "In Contractor Compliance"
+     * column. `activated` → `next_steps_explained` (invited but never
+     * activated the account — the team chases these every morning) →
+     * `completing_a1s` (activated and completed at least one task — a valid
+     * driver for the client) → `abandoned`. Null for leads never in CC.
+     */
+    ccStatus: text("cc_status"),
     /** 0–100, assigned by the AI lead-scoring engine (radius boost included). */
     aiScore: integer("ai_score"),
     /** Portion of aiScore earned for being inside the ad set's radius. */

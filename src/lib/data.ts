@@ -124,6 +124,8 @@ export interface LeadRow {
   stageId: string | null;
   stageName: string | null;
   stageColor: string | null;
+  /** Contractor Compliance sub-pipeline state (null if never in CC). */
+  ccStatus: string | null;
   aiScore: number | null;
   aiReason: string | null;
   aiSuggestedAction: string | null;
@@ -1192,6 +1194,7 @@ function leadRowQuery() {
       stageId: schema.leads.stageId,
       stageName: schema.stages.name,
       stageColor: schema.stages.color,
+      ccStatus: schema.leads.ccStatus,
       leadCity: schema.leads.geoCity,
       leadRegion: schema.leads.geoRegion,
       leadLat: schema.leads.geoLat,
@@ -1225,6 +1228,7 @@ function mapLeadRow(
     stageId: r.stageId,
     stageName: r.stageName,
     stageColor: r.stageColor,
+    ccStatus: r.ccStatus,
     aiScore: r.aiScore,
     aiReason: r.aiReason,
     aiSuggestedAction: r.aiSuggestedAction,
@@ -1350,6 +1354,10 @@ export interface PipelineCard {
   email: string;
   aiScore: number | null;
   stageId: string | null;
+  /** Contractor Compliance sub-pipeline state (null outside the CC column). */
+  ccStatus: string | null;
+  /** The agent who last worked the lead — shown as an initial on the card. */
+  agentName: string | null;
   createdAt: Date;
 }
 
@@ -1357,6 +1365,12 @@ export interface PipelineData {
   stages: Stage[];
   cardsByStage: Record<string, PipelineCard[]>;
   counts: Record<string, number>;
+  /**
+   * Contractor Compliance sub-pipeline breakdown over the SAME slice as
+   * `counts` (not just the loaded cards): cc_status → lead count for the
+   * compliance stage. The morning chase list at a glance.
+   */
+  ccCounts: Record<string, number>;
   cap: number;
 }
 
@@ -1387,9 +1401,24 @@ export interface PipelineFilters {
   /** Restrict to leads whose ad set targets one of these states/cities. */
   regions?: string[] | null;
   cities?: string[] | null;
+  /** Restrict to leads one of these agents (user ids) has worked. */
+  agents?: string[] | null;
   /** Restrict to leads created inside this window (inclusive). */
   start?: Date | null;
   end?: Date | null;
+}
+
+/**
+ * "This agent worked the lead" = the agent logged any event on it (a call,
+ * SMS, email, note, stage move, disqualification). Matches the meeting's ask:
+ * pick an agent, see everything that agent has managed.
+ */
+function agentFilterSql(agents: string[]): SQL<unknown> {
+  return sql`exists (
+    select 1 from ${schema.leadEvents} e
+    where e.lead_id = ${schema.leads.id}
+      and e.user_id in (${sql.join(agents.map((a) => sql`${a}`), sql`, `)})
+  )`;
 }
 
 /** Shared lead slice: location (via the ad set's targeting) + created date. */
@@ -1402,6 +1431,7 @@ function pipelineLeadFilters(workspaceId: string, opts: PipelineFilters) {
     opts.cities?.length
       ? cityFilterSql(opts.cities)
       : undefined,
+    opts.agents?.length ? agentFilterSql(opts.agents) : undefined,
     opts.start ? gte(schema.leads.createdAt, opts.start) : undefined,
     opts.end ? lte(schema.leads.createdAt, opts.end) : undefined,
   ];
@@ -1417,6 +1447,18 @@ function pipelineCardQuery() {
       platform: schema.leads.platform,
       aiScore: schema.leads.aiScore,
       stageId: schema.leads.stageId,
+      ccStatus: schema.leads.ccStatus,
+      // Whoever logged the lead's most recent event — the "worked by" initial
+      // on the card. Correlated per card, but each column is capped so the
+      // board runs at most ~stages × cap of these tiny index lookups.
+      // NB: literal "leads"."id" — in a SELECT list drizzle renders the
+      // column ref without its table prefix, which is ambiguous here.
+      agentName: sql<string | null>`(
+        select u.name from lead_events e
+        join users u on u.id = e.user_id
+        where e.lead_id = "leads"."id"
+        order by e.created_at desc limit 1
+      )`,
       createdAt: schema.leads.createdAt,
       campaign: schema.campaigns.name,
     })
@@ -1438,8 +1480,29 @@ function mapPipelineCard(
     email: r.email ?? "—",
     aiScore: r.aiScore,
     stageId: r.stageId,
+    ccStatus: r.ccStatus,
+    agentName: r.agentName,
     createdAt: r.createdAt,
   };
+}
+
+/**
+ * Agents offered by the pipeline's agent filter: every user who has logged at
+ * least one event on a lead of this workspace — so the list mirrors who has
+ * actually worked leads, without needing a formal member roster.
+ */
+export async function getWorkspaceAgentOptions(
+  workspaceId: string,
+): Promise<{ id: string; name: string }[]> {
+  const rows = await db()
+    .selectDistinct({ id: schema.users.id, name: schema.users.name })
+    .from(schema.leadEvents)
+    .innerJoin(schema.leads, eq(schema.leadEvents.leadId, schema.leads.id))
+    .innerJoin(schema.users, eq(schema.leadEvents.userId, schema.users.id))
+    .where(eq(schema.leads.workspaceId, workspaceId));
+  return rows
+    .filter((r): r is { id: string; name: string } => !!r.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -1479,17 +1542,33 @@ export async function getPipeline(
 
   const leadFilters = pipelineLeadFilters(workspaceId, opts);
 
-  const countRows = await db()
-    .select({
-      stageId: schema.leads.stageId,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(schema.leads)
-    .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
-    .where(and(...leadFilters))
-    .groupBy(schema.leads.stageId);
+  const ccStage = stages.find((s) => s.kind === "open" && !s.workable);
+  const [countRows, ccRows] = await Promise.all([
+    db()
+      .select({
+        stageId: schema.leads.stageId,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(schema.leads)
+      .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+      .where(and(...leadFilters))
+      .groupBy(schema.leads.stageId),
+    ccStage
+      ? db()
+          .select({
+            ccStatus: schema.leads.ccStatus,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(schema.leads)
+          .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+          .where(and(...leadFilters, eq(schema.leads.stageId, ccStage.id)))
+          .groupBy(schema.leads.ccStatus)
+      : Promise.resolve([]),
+  ]);
   const counts: Record<string, number> = {};
   for (const r of countRows) if (r.stageId) counts[r.stageId] = r.count;
+  const ccCounts: Record<string, number> = {};
+  for (const r of ccRows) if (r.ccStatus) ccCounts[r.ccStatus] = r.count;
 
   const cardsByStage: Record<string, PipelineCard[]> = {};
   for (const st of stages) {
@@ -1500,7 +1579,7 @@ export async function getPipeline(
     cardsByStage[st.id] = rows.map(mapPipelineCard);
   }
 
-  return { stages, cardsByStage, counts, cap: PIPELINE_CARD_CAP };
+  return { stages, cardsByStage, counts, ccCounts, cap: PIPELINE_CARD_CAP };
 }
 
 /**

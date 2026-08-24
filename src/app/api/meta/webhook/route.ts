@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { eq, gte } from "drizzle-orm";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
+import { getAllMetaAppSecrets } from "@/lib/settings";
 import { syncConnection } from "@/lib/sync";
 
 export const maxDuration = 300;
@@ -12,13 +13,15 @@ export const maxDuration = 300;
  * connections, which reuses the whole ingest pipeline (attribution, geocode,
  * AI scoring, score automation) and is idempotent via the lead's external id.
  *
- * Setup (Meta App Dashboard → Webhooks → Page):
+ * Setup (per client's Meta App Dashboard → Webhooks → Page):
  *   Callback URL: https://<app-domain>/api/meta/webhook
  *   Verify token: META_WEBHOOK_VERIFY_TOKEN (any secret string, set in both)
  *   Field:        leadgen
- * plus META_APP_SECRET (App Dashboard → Settings → Basic) for signatures,
- * and each page subscribed to the app (POST /{page-id}/subscribed_apps
- * with subscribed_fields=leadgen, page access token).
+ * The app secret for signature validation is per client: Settings →
+ * Connections → Meta app (stored encrypted on the workspace; env
+ * META_APP_SECRET remains as a fallback). Each page must also be subscribed
+ * to the app (scripts/subscribe-leadgen-webhook.ts does it for every page
+ * reachable by the stored connection tokens).
  */
 
 /** GET — Meta's one-time subscription verification handshake. */
@@ -34,13 +37,20 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: "Verification failed" }, { status: 403 });
 }
 
-/** Constant-time check of Meta's X-Hub-Signature-256 over the raw body. */
-function signatureValid(raw: string, header: string | null, secret: string): boolean {
-  const expected = Buffer.from(
-    "sha256=" + createHmac("sha256", secret).update(raw).digest("hex"),
-  );
+/**
+ * Constant-time check of Meta's X-Hub-Signature-256 over the raw body. Each
+ * client workspace has its own Meta app (its own secret, stored in Settings),
+ * and Meta doesn't say which app is calling — so the signature is accepted if
+ * it matches ANY configured secret.
+ */
+function signatureValid(raw: string, header: string | null, secrets: string[]): boolean {
   const got = Buffer.from(header ?? "");
-  return got.length === expected.length && timingSafeEqual(got, expected);
+  return secrets.some((secret) => {
+    const expected = Buffer.from(
+      "sha256=" + createHmac("sha256", secret).update(raw).digest("hex"),
+    );
+    return got.length === expected.length && timingSafeEqual(got, expected);
+  });
 }
 
 /** Ignore notifications while a sync started this recently is in flight. */
@@ -48,16 +58,16 @@ const DEBOUNCE_MS = 45_000;
 
 /** POST — a leadgen event: pull fresh leads for every active Meta connection. */
 export async function POST(req: NextRequest) {
-  const secret = process.env.META_APP_SECRET;
-  if (!secret) {
+  if (!isDatabaseConfigured()) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+  const secrets = await getAllMetaAppSecrets();
+  if (!secrets.length) {
     return NextResponse.json({ error: "Webhook not configured" }, { status: 503 });
   }
   const raw = await req.text();
-  if (!signatureValid(raw, req.headers.get("x-hub-signature-256"), secret)) {
+  if (!signatureValid(raw, req.headers.get("x-hub-signature-256"), secrets)) {
     return NextResponse.json({ error: "Bad signature" }, { status: 401 });
-  }
-  if (!isDatabaseConfigured()) {
-    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
   let body: {

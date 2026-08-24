@@ -152,6 +152,14 @@ export const workspaces = pgTable("workspaces", {
    * client's ad accounts with it.
    */
   metaAccessTokenEnc: text("meta_access_token_enc"),
+  /**
+   * This client's Meta APP credentials (the app the client's token belongs
+   * to), powering the real-time leadgen webhook: the webhook signature is
+   * validated against each client's app secret, so onboarding a client never
+   * touches server env vars. The id is informative; the secret is encrypted.
+   */
+  metaAppId: text("meta_app_id"),
+  metaAppSecretEnc: text("meta_app_secret_enc"),
   /** This client's own Anthropic API key (encrypted) for AI scoring/insights. */
   anthropicApiKeyEnc: text("anthropic_api_key_enc"),
   isActive: boolean("is_active").notNull().default(true),

@@ -9,6 +9,7 @@ import {
   getWorkspaceMetaToken,
   setWorkspaceMetaToken,
   setWorkspaceAnthropicKey,
+  setWorkspaceMetaApp,
 } from "@/lib/settings";
 import { canManageWorkspace } from "@/lib/permissions";
 
@@ -174,6 +175,16 @@ export async function saveWorkspaceMetaToken(formData: FormData) {
 }
 
 /** Saves a client's own Anthropic (AI) API key (encrypted). */
+export async function saveWorkspaceMetaApp(formData: FormData) {
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const appId = String(formData.get("appId") ?? "").trim();
+  const appSecret = String(formData.get("appSecret") ?? "").trim();
+  await requireWorkspaceManager(workspaceId);
+  if (!appId || !appSecret) throw new Error("App ID and App Secret are required");
+  await setWorkspaceMetaApp(workspaceId, { appId, appSecret });
+  revalidatePath("/settings");
+}
+
 export async function saveWorkspaceAiKey(formData: FormData) {
   const workspaceId = String(formData.get("workspaceId") ?? "");
   const value = String(formData.get("value") ?? "").trim();

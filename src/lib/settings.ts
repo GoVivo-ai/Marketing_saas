@@ -208,6 +208,57 @@ export async function getWorkspaceMetaTokenPreview(
   return value ? `••••••${value.slice(-4)}` : null;
 }
 
+// ── Per-client Meta app credentials (leadgen webhook) ────────────────────────
+
+export async function getWorkspaceMetaApp(
+  workspaceId: string,
+): Promise<{ appId: string | null; appSecret: string | null }> {
+  if (!isDatabaseConfigured()) return { appId: null, appSecret: null };
+  const [row] = await db()
+    .select({
+      appId: schema.workspaces.metaAppId,
+      enc: schema.workspaces.metaAppSecretEnc,
+    })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, workspaceId))
+    .limit(1);
+  return {
+    appId: row?.appId ?? null,
+    appSecret: row?.enc ? decryptSecret(row.enc) : null,
+  };
+}
+
+export async function setWorkspaceMetaApp(
+  workspaceId: string,
+  input: { appId: string; appSecret: string },
+): Promise<void> {
+  await db()
+    .update(schema.workspaces)
+    .set({
+      metaAppId: input.appId.trim(),
+      metaAppSecretEnc: encryptSecret(input.appSecret.trim()),
+    })
+    .where(eq(schema.workspaces.id, workspaceId));
+}
+
+/**
+ * Every configured Meta app secret (decrypted), plus the env fallback — the
+ * leadgen webhook tries each one against the payload signature, since Meta
+ * doesn't say which app is calling.
+ */
+export async function getAllMetaAppSecrets(): Promise<string[]> {
+  const secrets: string[] = [];
+  if (isDatabaseConfigured()) {
+    const rows = await db()
+      .select({ enc: schema.workspaces.metaAppSecretEnc })
+      .from(schema.workspaces)
+      .where(eq(schema.workspaces.isActive, true));
+    for (const r of rows) if (r.enc) secrets.push(decryptSecret(r.enc));
+  }
+  if (process.env.META_APP_SECRET) secrets.push(process.env.META_APP_SECRET);
+  return [...new Set(secrets)];
+}
+
 // ── Per-client Anthropic (AI) key ────────────────────────────────────────────
 
 export async function getWorkspaceAnthropicKey(

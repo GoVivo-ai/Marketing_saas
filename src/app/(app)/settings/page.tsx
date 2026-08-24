@@ -8,6 +8,7 @@ import { canManageWorkspace, requireFullAccess } from "@/lib/permissions";
 import { metaConnector } from "@/lib/integrations/meta";
 import {
   getWorkspaceMetaToken,
+  getWorkspaceMetaApp,
   getWorkspaceAnthropicKeyPreview,
   getSecretPreview,
 } from "@/lib/settings";
@@ -19,6 +20,7 @@ import {
   disconnectConnection,
   syncConnectionNow,
   saveWorkspaceMetaToken,
+  saveWorkspaceMetaApp,
   saveWorkspaceAiKey,
 } from "@/lib/actions/connections";
 import { Input } from "@/components/ui/input";
@@ -88,6 +90,13 @@ export default async function ConnectionsPage() {
       ? await getWorkspaceMetaToken(active.id)
       : null;
   const metaPreview = metaToken ? `••••••${metaToken.slice(-4)}` : null;
+  const metaApp =
+    isDatabaseConfigured() && active
+      ? await getWorkspaceMetaApp(active.id)
+      : { appId: null, appSecret: null };
+  const metaAppSecretPreview = metaApp.appSecret
+    ? `••••••${metaApp.appSecret.slice(-4)}`
+    : null;
   const aiPreview =
     isDatabaseConfigured() && active
       ? await getWorkspaceAnthropicKeyPreview(active.id)
@@ -198,10 +207,11 @@ export default async function ConnectionsPage() {
             <CardDescription>
               Each client uses its own Meta system-user token (encrypted at
               rest). This token lists and syncs only {active.name}&apos;s ad
-              accounts.
+              accounts. The Meta app credentials power real-time lead delivery
+              (the leadgen webhook signature is validated with the app secret).
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4">
               <div className="min-w-44">
                 <p className="text-sm font-medium">System-user token</p>
@@ -217,6 +227,39 @@ export default async function ConnectionsPage() {
                   name="value"
                   type="password"
                   placeholder={metaPreview ? "Replace token…" : "EAA…"}
+                  className="max-w-md"
+                  required
+                />
+                <Button size="sm" type="submit">Save</Button>
+              </form>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4">
+              <div className="min-w-44">
+                <p className="text-sm font-medium">Meta app</p>
+                <p className="text-xs text-muted-foreground">
+                  Real-time leads (webhook)
+                </p>
+                {metaApp.appId ? (
+                  <Badge variant="secondary" className="mt-1">
+                    {metaApp.appId} · {metaAppSecretPreview}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="mt-1">Not configured</Badge>
+                )}
+              </div>
+              <form action={saveWorkspaceMetaApp} className="flex flex-1 flex-wrap items-center gap-2">
+                <input type="hidden" name="workspaceId" value={active.id} />
+                <Input
+                  name="appId"
+                  placeholder="App ID"
+                  defaultValue={metaApp.appId ?? ""}
+                  className="max-w-44"
+                  required
+                />
+                <Input
+                  name="appSecret"
+                  type="password"
+                  placeholder={metaAppSecretPreview ? "Replace app secret…" : "App secret"}
                   className="max-w-md"
                   required
                 />

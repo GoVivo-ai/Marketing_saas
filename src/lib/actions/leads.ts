@@ -5,6 +5,7 @@ import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { currentUser, isAgency, getWorkspaceRole } from "@/lib/permissions";
+import { isDemoSession, DEMO_BLOCKED_MSG } from "@/lib/demo";
 import { geocodeCityCached } from "@/lib/integrations/geocode";
 import {
   placeCall,
@@ -428,6 +429,8 @@ export async function markLeadInterested(
 }
 
 export async function callLead(leadId: string): Promise<LeadContactResult> {
+  if (await isDemoSession())
+    return { ok: false, reason: "error", message: DEMO_BLOCKED_MSG };
   const { userId, lead } = await requireLeadAccess(leadId);
   if (!lead.phone) return { ok: false, reason: "no_phone" };
 
@@ -1066,6 +1069,8 @@ export async function smsLead(
   leadId: string,
   text: string,
 ): Promise<LeadContactResult> {
+  if (await isDemoSession())
+    return { ok: false, reason: "error", message: DEMO_BLOCKED_MSG };
   const { userId, lead } = await requireLeadAccess(leadId);
   const body = text.trim();
   if (!body) return { ok: false, reason: "error", message: "Message is empty" };

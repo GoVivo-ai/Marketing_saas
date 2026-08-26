@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { canManageWorkspace } from "@/lib/permissions";
+import { isDemoSession, DEMO_BLOCKED_MSG } from "@/lib/demo";
 
 export interface ScoreAutomationState {
   error?: string;
@@ -21,6 +22,7 @@ export async function saveScoreAutomation(
   if (!workspaceId) return { error: "Missing workspace" };
   if (!(await canManageWorkspace(workspaceId)))
     return { error: "You don't have permission to manage this workspace" };
+  if (await isDemoSession()) return { error: DEMO_BLOCKED_MSG };
 
   const enabled = formData.get("enabled") === "on";
   const direction = formData.get("direction") === "below" ? "below" : "above";

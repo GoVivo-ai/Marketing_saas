@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { canManageWorkspace } from "@/lib/permissions";
+import { isDemoSession, DEMO_BLOCKED_MSG } from "@/lib/demo";
 import { rescoreCampaignLeads, summarizeCriteria } from "@/lib/ai/lead-scoring";
 
 export interface CampaignScoringState {
@@ -39,6 +40,7 @@ export async function saveCampaignScoringCriteria(
   const auth = await authorizeCampaign(campaignId);
   if (!auth)
     return { error: "You don't have permission to edit this campaign." };
+  if (await isDemoSession()) return { error: DEMO_BLOCKED_MSG };
 
   const scoringCriteria =
     String(formData.get("scoringCriteria") ?? "").trim() || null;
@@ -79,6 +81,7 @@ export async function rescoreCampaign(
   const auth = await authorizeCampaign(campaignId);
   if (!auth)
     return { error: "You don't have permission to edit this campaign." };
+  if (await isDemoSession()) return { error: DEMO_BLOCKED_MSG };
 
   const { scored, total } = await rescoreCampaignLeads(auth.workspaceId, campaignId);
 

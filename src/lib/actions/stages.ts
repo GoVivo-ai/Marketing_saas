@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { asc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { canManageWorkspace } from "@/lib/permissions";
+import { assertNotDemo } from "@/lib/demo";
 
 const PALETTE = ["#011640", "#026a60", "#04d98b", "#2bbf9a", "#64dc54", "#f2e205"];
 
@@ -18,6 +19,7 @@ export async function createStage(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   if (!(await canManageWorkspace(workspaceId)))
     throw new Error("You don't have permission to manage stages");
+  await assertNotDemo();
   if (!name) throw new Error("Stage name is required");
 
   const [{ max }] = await db()
@@ -46,6 +48,7 @@ export async function saveStages(formData: FormData) {
   const workspaceId = String(formData.get("workspaceId") ?? "");
   if (!(await canManageWorkspace(workspaceId)))
     throw new Error("You don't have permission to manage stages");
+  await assertNotDemo();
 
   const stages = await db()
     .select()

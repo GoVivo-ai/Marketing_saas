@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { encryptSecret } from "@/lib/crypto";
 import { canManageWorkspace } from "@/lib/permissions";
+import { isDemoSession, DEMO_BLOCKED_MSG } from "@/lib/demo";
 import { getGraphConfig, getSiteId } from "@/lib/integrations/ms-graph";
 
 export interface DispatchConnState {
@@ -25,6 +26,7 @@ export async function saveDispatchConnection(
   const workspaceId = String(formData.get("workspaceId") ?? "");
   if (!workspaceId || !(await canManageWorkspace(workspaceId)))
     return { error: "You don't have permission to manage this workspace." };
+  if (await isDemoSession()) return { error: DEMO_BLOCKED_MSG };
 
   const tenantId = String(formData.get("tenantId") ?? "").trim();
   const clientId = String(formData.get("clientId") ?? "").trim();
@@ -95,6 +97,7 @@ export async function deleteDispatchConnection(formData: FormData) {
   const workspaceId = String(formData.get("workspaceId") ?? "");
   if (!workspaceId || !(await canManageWorkspace(workspaceId)))
     throw new Error("You don't have permission to manage this workspace.");
+  if (await isDemoSession()) throw new Error(DEMO_BLOCKED_MSG);
   await db()
     .delete(schema.dispatchConnections)
     .where(eq(schema.dispatchConnections.workspaceId, workspaceId));
@@ -107,6 +110,7 @@ export async function testDispatchConnection(
 ): Promise<{ ok: boolean; message: string }> {
   if (!(await canManageWorkspace(workspaceId)))
     return { ok: false, message: "No permission." };
+  if (await isDemoSession()) return { ok: false, message: DEMO_BLOCKED_MSG };
   const cfg = await getGraphConfig(workspaceId);
   if (!cfg) return { ok: false, message: "No connection configured." };
   try {

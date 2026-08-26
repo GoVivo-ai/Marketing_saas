@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { canManageWorkspace } from "@/lib/permissions";
+import { isDemoSession, DEMO_BLOCKED_MSG } from "@/lib/demo";
 
 export type PromptTemplateResult =
   | { ok: true; id: string }
@@ -23,6 +24,7 @@ export async function savePromptTemplate(
   const session = await auth();
   if (!(await canManageWorkspace(workspaceId)))
     return { ok: false, error: "You don't have permission to manage this workspace" };
+  if (await isDemoSession()) return { ok: false, error: DEMO_BLOCKED_MSG };
   const cleanName = name.trim();
   const cleanContent = content.trim();
   if (!cleanName) return { ok: false, error: "Give the template a name" };
@@ -52,6 +54,7 @@ export async function deletePromptTemplate(
 ): Promise<PromptTemplateResult> {
   if (!(await canManageWorkspace(workspaceId)))
     return { ok: false, error: "You don't have permission to manage this workspace" };
+  if (await isDemoSession()) return { ok: false, error: DEMO_BLOCKED_MSG };
   await db()
     .delete(schema.promptTemplates)
     .where(

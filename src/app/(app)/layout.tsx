@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { Wrench, LogOut } from "lucide-react";
+import { Wrench, LogOut, Sparkles } from "lucide-react";
+import { isDemoEmail } from "@/lib/demo";
 import { auth, signOut } from "@/lib/auth";
 import { getWorkspaceContext } from "@/lib/data";
 import { getMaintenance } from "@/lib/settings";
@@ -87,6 +88,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           (e.g. a pipeline with many stages) scrolls inside instead of
           stretching the page. */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {isDemoEmail(session.user.email) && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-violet-500/40 bg-violet-500/10 px-6 py-2 text-sm text-violet-600 dark:text-violet-400">
+            <Sparkles className="h-4 w-4 shrink-0" />
+            <span>
+              Demo mode — you&apos;re exploring sample data. Feel free to move
+              leads around; settings and messaging are disabled and everything
+              resets periodically.
+            </span>
+          </div>
+        )}
         {maintenance.active && (
           <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-6 py-2 text-sm text-amber-600 dark:text-amber-400">
             <Wrench className="h-4 w-4 shrink-0" />

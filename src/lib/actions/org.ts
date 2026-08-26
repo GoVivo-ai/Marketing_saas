@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { canManageWorkspace, currentUser } from "@/lib/permissions";
+import { isDemoSession, DEMO_BLOCKED_MSG } from "@/lib/demo";
 import { summarizeCriteria } from "@/lib/ai/lead-scoring";
 
 export interface OrgActionState {
@@ -61,6 +62,7 @@ export async function createOrgUser(
   const workspaceId = String(formData.get("workspaceId") ?? "");
   if (!(await canManageWorkspace(workspaceId)))
     return { error: "You don't have permission to manage this organization." };
+  if (await isDemoSession()) return { error: DEMO_BLOCKED_MSG };
 
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -102,6 +104,7 @@ export async function updateOrgUser(
   const userId = String(formData.get("userId") ?? "");
   if (!(await canManageWorkspace(workspaceId)))
     return { error: "You don't have permission to manage this organization." };
+  if (await isDemoSession()) return { error: DEMO_BLOCKED_MSG };
   const member = await clientMember(workspaceId, userId);
   if (!member) return { error: "That user is not in your organization." };
 
@@ -150,6 +153,7 @@ export async function deleteOrgUser(formData: FormData) {
   const userId = String(formData.get("userId") ?? "");
   if (!(await canManageWorkspace(workspaceId)))
     throw new Error("You don't have permission to manage this organization.");
+  if (await isDemoSession()) throw new Error(DEMO_BLOCKED_MSG);
 
   const me = await currentUser();
   if (me?.id === userId) throw new Error("You can't delete yourself.");
@@ -171,6 +175,7 @@ export async function resetOrgUserPassword(
   const userId = String(formData.get("userId") ?? "");
   if (!(await canManageWorkspace(workspaceId)))
     return { error: "You don't have permission to manage this organization." };
+  if (await isDemoSession()) return { error: DEMO_BLOCKED_MSG };
   if (!(await clientMember(workspaceId, userId)))
     return { error: "That user is not in your organization." };
 
@@ -200,6 +205,7 @@ export async function updateWorkspaceProfile(
   const workspaceId = String(formData.get("workspaceId") ?? "");
   if (!(await canManageWorkspace(workspaceId)))
     return { error: "You don't have permission to manage this organization." };
+  if (await isDemoSession()) return { error: DEMO_BLOCKED_MSG };
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "Company name is required." };
@@ -244,6 +250,7 @@ export async function uploadWorkspaceLogo(
   const workspaceId = String(formData.get("workspaceId") ?? "");
   if (!(await canManageWorkspace(workspaceId)))
     return { error: "You don't have permission to manage this organization." };
+  if (await isDemoSession()) return { error: DEMO_BLOCKED_MSG };
 
   const file = formData.get("logo");
   if (!(file instanceof File) || file.size === 0)
@@ -271,6 +278,7 @@ export async function removeWorkspaceLogo(
   const workspaceId = String(formData.get("workspaceId") ?? "");
   if (!(await canManageWorkspace(workspaceId)))
     return { error: "You don't have permission to manage this organization." };
+  if (await isDemoSession()) return { error: DEMO_BLOCKED_MSG };
 
   await db()
     .update(schema.workspaces)

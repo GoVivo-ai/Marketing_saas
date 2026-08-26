@@ -1,6 +1,7 @@
 "use server";
 
 import { auth } from "@/lib/auth";
+import { isDemoEmail, DEMO_BLOCKED_MSG } from "@/lib/demo";
 
 export interface SupportTicketState {
   error?: string;
@@ -31,6 +32,7 @@ export async function createSupportTicket(
   const session = await auth();
   const email = session?.user?.email;
   if (!email) return { error: "You must be signed in." };
+  if (isDemoEmail(email)) return { error: DEMO_BLOCKED_MSG };
 
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();

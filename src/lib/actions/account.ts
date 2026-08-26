@@ -4,6 +4,7 @@ import { compare, hash } from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
+import { isDemoSession, DEMO_BLOCKED_MSG } from "@/lib/demo";
 
 export interface ChangePasswordState {
   error?: string;
@@ -17,6 +18,7 @@ export async function changePassword(
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return { error: "Not authenticated." };
+  if (await isDemoSession()) return { error: DEMO_BLOCKED_MSG };
 
   const current = String(formData.get("currentPassword") ?? "");
   const next = String(formData.get("newPassword") ?? "");

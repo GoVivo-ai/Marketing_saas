@@ -5,6 +5,7 @@ import { compare } from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
+import { DEMO_EMAIL } from "@/lib/demo";
 
 // Valid bcrypt hash of a throwaway string. Compared against when the email is
 // unknown so login takes the same time whether or not the account exists
@@ -69,6 +70,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const valid = await compare(password, user.passwordHash);
         if (!valid) return null;
 
+        return { id: user.id, name: user.name, email: user.email, role: user.role };
+      },
+    }),
+    // Passwordless sign-in for the public demo tour (/demo). It only ever
+    // resolves to the seeded demo account, so the worst an abuser gets is the
+    // demo itself. Optionally gated by DEMO_ACCESS_KEY (?key= on the link).
+    Credentials({
+      id: "demo",
+      name: "Demo",
+      credentials: { key: { type: "text" } },
+      async authorize(credentials) {
+        if (!isDatabaseConfigured()) return null;
+        const required = process.env.DEMO_ACCESS_KEY;
+        if (required && String(credentials?.key ?? "") !== required) return null;
+        if (!rateLimit("login:demo", 60, 15 * 60_000)) return null;
+        const [user] = await db()
+          .select()
+          .from(schema.users)
+          .where(eq(schema.users.email, DEMO_EMAIL))
+          .limit(1);
+        if (!user) return null; // demo not seeded → no way in
         return { id: user.id, name: user.name, email: user.email, role: user.role };
       },
     }),

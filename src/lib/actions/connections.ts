@@ -12,9 +12,11 @@ import {
   setWorkspaceMetaApp,
 } from "@/lib/settings";
 import { canManageWorkspace } from "@/lib/permissions";
+import { assertNotDemo } from "@/lib/demo";
 
 /** The agency team or the workspace owner may manage a workspace's connections. */
 async function requireWorkspaceManager(workspaceId: string) {
+  await assertNotDemo();
   if (!workspaceId) throw new Error("Missing workspace");
   if (!(await canManageWorkspace(workspaceId))) {
     throw new Error("You don't have permission to manage this workspace");
@@ -127,6 +129,7 @@ export async function syncWorkspaceNow(
   workspaceId: string,
 ): Promise<{ ok: true; connections: number } | { ok: false; message: string }> {
   try {
+    await assertNotDemo();
     if (!workspaceId) return { ok: false, message: "Missing workspace" };
     if (!(await canManageWorkspace(workspaceId))) {
       return { ok: false, message: "You don't have permission to sync this workspace" };

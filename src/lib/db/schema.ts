@@ -881,6 +881,99 @@ export const dispatchScheduleTrips = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────
+// API keys — personal bearer tokens for the read-only MCP server
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * A personal API key lets an MCP client (Claude Code, Claude Desktop, Cursor)
+ * query the platform as this user: same role, same workspaces, read-only.
+ * Only the SHA-256 hash is stored; the plaintext is shown once at creation.
+ */
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Human label chosen by the user, e.g. "Claude Code laptop". */
+    name: text("name").notNull(),
+    /** SHA-256 hex of the full token — looked up on every request. */
+    keyHash: text("key_hash").notNull().unique(),
+    /** First characters of the token so the user can tell keys apart. */
+    keyPrefix: text("key_prefix").notNull(),
+    lastUsedAt: timestamp("last_used_at"),
+    revokedAt: timestamp("revoked_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("api_key_user_idx").on(t.userId)],
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// OAuth 2.1 authorization server — lets MCP clients (claude.ai, ChatGPT,
+// Claude Code) get a read-only token through a normal sign-in + consent flow
+// instead of a pasted API key.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** A client registered via Dynamic Client Registration (RFC 7591). */
+export const oauthClients = pgTable("oauth_clients", {
+  /** The public client_id (random, opaque). */
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  /** SHA-256 of the client_secret; null for public (PKCE-only) clients. */
+  secretHash: text("secret_hash"),
+  /** Exact-match allowlist of redirect URIs. */
+  redirectUris: jsonb("redirect_uris").$type<string[]>().notNull(),
+  /** none | client_secret_post | client_secret_basic */
+  tokenEndpointAuthMethod: text("token_endpoint_auth_method").notNull().default("none"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+/** Short-lived authorization code issued after the user approves consent. */
+export const oauthCodes = pgTable("oauth_codes", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  codeHash: text("code_hash").notNull().unique(),
+  clientId: text("client_id")
+    .notNull()
+    .references(() => oauthClients.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  redirectUri: text("redirect_uri").notNull(),
+  /** PKCE S256 challenge — mandatory, public clients have no other proof. */
+  codeChallenge: text("code_challenge").notNull(),
+  scope: text("scope").notNull().default("read"),
+  /** RFC 8707 resource indicator the client asked for, if any. */
+  resource: text("resource"),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+/** An access + refresh token pair; refreshing rotates both in place. */
+export const oauthTokens = pgTable(
+  "oauth_tokens",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accessHash: text("access_hash").notNull().unique(),
+    refreshHash: text("refresh_hash").notNull().unique(),
+    scope: text("scope").notNull().default("read"),
+    accessExpiresAt: timestamp("access_expires_at").notNull(),
+    refreshExpiresAt: timestamp("refresh_expires_at").notNull(),
+    revokedAt: timestamp("revoked_at"),
+    lastUsedAt: timestamp("last_used_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("oauth_token_user_idx").on(t.userId)],
+);
+
+// ─────────────────────────────────────────────────────────────────────────
 // Relations
 // ─────────────────────────────────────────────────────────────────────────
 

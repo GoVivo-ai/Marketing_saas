@@ -16,11 +16,14 @@ const highlights = [
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; email?: string }>;
+  searchParams: Promise<{ error?: string; email?: string; next?: string }>;
 }) {
+  const { error, email: prevEmail, next: rawNext } = await searchParams;
+  // Where to land after signing in (e.g. the OAuth consent screen). Only
+  // same-origin paths are honored so the param can't bounce users off-site.
+  const next = safeNextPath(rawNext);
   const session = await auth();
-  if (session?.user) redirect("/dashboard");
-  const { error, email: prevEmail } = await searchParams;
+  if (session?.user) redirect(next);
 
   async function login(formData: FormData) {
     "use server";
@@ -29,12 +32,16 @@ export default async function LoginPage({
       await signIn("credentials", {
         email,
         password: formData.get("password"),
-        redirectTo: "/dashboard",
+        redirectTo: next,
       });
     } catch (err) {
       // Keep the typed email so a wrong password doesn't clear the form.
       if (err instanceof AuthError)
-        redirect(`/login?error=1&email=${encodeURIComponent(email)}`);
+        redirect(
+          `/login?error=1&email=${encodeURIComponent(email)}${
+            next !== "/dashboard" ? `&next=${encodeURIComponent(next)}` : ""
+          }`,
+        );
       throw err;
     }
   }
@@ -171,7 +178,7 @@ export default async function LoginPage({
               <form
                 action={async () => {
                   "use server";
-                  await signIn("google", { redirectTo: "/dashboard" });
+                  await signIn("google", { redirectTo: next });
                 }}
               >
                 <Button
@@ -210,4 +217,12 @@ export default async function LoginPage({
       </section>
     </main>
   );
+}
+
+/** Relative, same-origin path or the dashboard. Rejects "//host" and absolute URLs. */
+function safeNextPath(raw: string | undefined): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) {
+    return "/dashboard";
+  }
+  return raw;
 }

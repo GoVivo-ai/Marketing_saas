@@ -22,6 +22,11 @@ import {
   type ScoreAutomationUsage,
 } from "@/lib/automations";
 import { ChangePasswordForm } from "@/components/app/change-password-form";
+import { ApiAccessCard } from "@/components/app/api-access-card";
+import { listApiKeys } from "@/lib/api-keys";
+import { listConnectedApps } from "@/lib/oauth";
+import { isDemoEmail } from "@/lib/demo";
+import { headers } from "next/headers";
 import { DialpadConnectCard } from "@/components/app/dialpad-connect-card";
 import { CompanyProfileForm, WorkspaceLogoForm } from "@/components/app/org-forms";
 import {
@@ -39,9 +44,25 @@ import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
+/** Public URL of the MCP endpoint, from env or the current request's host. */
+async function mcpEndpointUrl() {
+  const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  if (base) return `${base}/api/mcp`;
+  const h = await headers();
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  return `${proto}://${h.get("host") ?? "localhost:3000"}/api/mcp`;
+}
+
 export default async function GeneralSettingsPage() {
   const session = await auth();
   const userId = session?.user?.id;
+  // The demo tour user never gets API keys (the workspace is anonymized data).
+  const showApiAccess = Boolean(userId) && !isDemoEmail(session?.user?.email);
+  const [apiKeys, connectedApps, mcpUrl] = await Promise.all([
+    showApiAccess && userId ? listApiKeys(userId) : Promise.resolve([]),
+    showApiAccess && userId ? listConnectedApps(userId) : Promise.resolve([]),
+    mcpEndpointUrl(),
+  ]);
 
   // Agents manage their own password and their own RingCentral connection —
   // never workspace configuration. The personal RC link is what lets the
@@ -89,6 +110,15 @@ export default async function GeneralSettingsPage() {
             />
           </Suspense>
         </div>
+        {showApiAccess && (
+          <section className="space-y-3">
+            <SectionHeading
+              title="API access"
+              description="Connect Claude, ChatGPT, Cursor or other AI tools to query your leads and pipeline (read-only)."
+            />
+            <ApiAccessCard keys={apiKeys} apps={connectedApps} mcpUrl={mcpUrl} />
+          </section>
+        )}
       </div>
     );
   }
@@ -407,6 +437,16 @@ export default async function GeneralSettingsPage() {
           </Card>
         </div>
       </section>
+
+      {showApiAccess && (
+        <section className="space-y-3">
+          <SectionHeading
+            title="API access"
+            description="Connect Claude, ChatGPT, Claude Code, Cursor or any MCP client to query campaigns, leads and reports (read-only)."
+          />
+          <ApiAccessCard keys={apiKeys} apps={connectedApps} mcpUrl={mcpUrl} />
+        </section>
+      )}
     </div>
   );
 }

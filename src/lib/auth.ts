@@ -40,7 +40,10 @@ async function userByEmail(email: string | null | undefined) {
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt", maxAge: 60 * 60 * 24 },
   trustHost: true,
-  pages: { signIn: "/login" },
+  // Auth.js errors (e.g. an expired Google sign-in attempt whose PKCE cookie
+  // no longer decrypts) land back on /login?error=… instead of the bare
+  // "Server error" page.
+  pages: { signIn: "/login", error: "/login" },
   providers: [
     ...(googleSsoEnabled ? [Google] : []),
     Credentials({

@@ -157,7 +157,9 @@ export default async function LoginPage({
               <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 {error === "AccessDenied"
                   ? "That Google account isn't registered here — ask your administrator to add it, or sign in with email."
-                  : "Invalid email or password. Please try again."}
+                  : error === "1"
+                    ? "Invalid email or password. Please try again."
+                    : "Your sign-in attempt expired or was interrupted. Please try again."}
               </p>
             )}
             <Button

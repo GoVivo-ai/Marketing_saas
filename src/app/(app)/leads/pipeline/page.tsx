@@ -11,6 +11,8 @@ import { AutoRefresh } from "@/components/app/auto-refresh";
 import { LeadsMultiFilter } from "@/components/app/leads-filter";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { isCcStatus } from "@/lib/cc";
+import { DateBasisToggle } from "@/components/app/date-basis-toggle";
+import type { PipelineDateBasis } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +35,7 @@ export default async function PipelinePage({
     city?: string;
     agent?: string;
     cc?: string;
+    by?: string;
   }>;
 }) {
   await requireLeadsAccess();
@@ -58,6 +61,8 @@ export default async function PipelinePage({
   const agents = sp.agent ? sp.agent.split(",").filter(Boolean) : [];
   // Contractor Compliance sub-status — set by clicking a badge on the column.
   const ccStatus = isCcStatus(sp.cc) ? sp.cc : null;
+  // Date basis: lead creation (default) or entry into its current stage.
+  const dateBy: PipelineDateBasis = sp.by === "stage" ? "stage" : "created";
 
   const [pipeline, canManage, geo, agentOptions] = await Promise.all([
     getPipeline(active.id, {
@@ -67,6 +72,7 @@ export default async function PipelinePage({
       start: resolved.start,
       end: resolved.end,
       ccStatus,
+      dateBy,
     }),
     canManageWorkspace(active.id),
     getWorkspaceGeoOptions(active.id),
@@ -124,23 +130,21 @@ export default async function PipelinePage({
             activeValues={agents}
             options={agentOptions.map((a) => ({ value: a.id, label: a.name }))}
           />
-          <label className="flex items-center gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground">
-              Created
-            </span>
+          <div className="flex items-center gap-1.5">
+            <DateBasisToggle value={dateBy} />
             <DateRangePicker
               presets={RANGES}
               defaultValue={DEFAULT_RANGE}
               label={resolved.label}
             />
-          </label>
+          </div>
         </div>
       </div>
 
       <PipelineBoard
         /* The board keeps its own drag state — remount it when the slice
            changes so it doesn't render stale cards. */
-        key={`${sp.state ?? ""}:${sp.city ?? ""}:${sp.agent ?? ""}:${ccStatus ?? ""}:${resolved.label}`}
+        key={`${sp.state ?? ""}:${sp.city ?? ""}:${sp.agent ?? ""}:${ccStatus ?? ""}:${dateBy}:${resolved.label}`}
         workspaceId={active.id}
         stages={pipeline.stages}
         cardsByStage={pipeline.cardsByStage}
@@ -155,6 +159,7 @@ export default async function PipelinePage({
           agents,
           start: resolved.start?.toISOString() ?? null,
           end: resolved.end?.toISOString() ?? null,
+          dateBy,
         }}
       />
     </div>

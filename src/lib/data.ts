@@ -1407,6 +1407,12 @@ export interface PipelineFilters {
   start?: Date | null;
   end?: Date | null;
   /**
+   * What the date window applies to: when the lead was created (default) or
+   * when it entered the stage it sits in now — "what did the team move
+   * yesterday", which created_at can't answer for leads that are weeks old.
+   */
+  dateBy?: PipelineDateBasis;
+  /**
    * Narrow the Contractor Compliance column to one sub-status. Other columns
    * and the header breakdown are untouched — the badges stay a full picture.
    */
@@ -1426,8 +1432,33 @@ function agentFilterSql(agents: string[]): SQL<unknown> {
   )`;
 }
 
-/** Shared lead slice: location (via the ad set's targeting) + created date. */
+export type PipelineDateBasis = "created" | "stage";
+
+/**
+ * When the lead entered its current stage: the latest status_change into
+ * that stage, or its creation for leads that never moved (still "New").
+ * Bulk backfills logged status_change too, so history is complete.
+ */
+const stageEnteredAtSql = sql`coalesce(
+  (select max(e.created_at) from lead_events e
+    where e.lead_id = ${schema.leads.id}
+      and e.type = 'status_change'
+      and e.payload->>'toStageId' = ${schema.leads.stageId}),
+  ${schema.leads.createdAt})`;
+
+/** Shared lead slice: location (via the ad set's targeting) + date window. */
 function pipelineLeadFilters(workspaceId: string, opts: PipelineFilters) {
+  // Dates go through the column's own mapping for created_at; the raw
+  // stage-entry expression needs them as ISO text (same as drizzle emits).
+  const byStage = opts.dateBy === "stage";
+  const after = (d: Date) =>
+    byStage
+      ? sql`${stageEnteredAtSql} >= ${d.toISOString()}::timestamp`
+      : gte(schema.leads.createdAt, d);
+  const before = (d: Date) =>
+    byStage
+      ? sql`${stageEnteredAtSql} <= ${d.toISOString()}::timestamp`
+      : lte(schema.leads.createdAt, d);
   return [
     eq(schema.leads.workspaceId, workspaceId),
     opts.regions?.length
@@ -1437,8 +1468,8 @@ function pipelineLeadFilters(workspaceId: string, opts: PipelineFilters) {
       ? cityFilterSql(opts.cities)
       : undefined,
     opts.agents?.length ? agentFilterSql(opts.agents) : undefined,
-    opts.start ? gte(schema.leads.createdAt, opts.start) : undefined,
-    opts.end ? lte(schema.leads.createdAt, opts.end) : undefined,
+    opts.start ? after(opts.start) : undefined,
+    opts.end ? before(opts.end) : undefined,
   ];
 }
 

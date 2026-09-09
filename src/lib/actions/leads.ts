@@ -20,6 +20,7 @@ import {
   searchPipelineLeads as searchPipelineLeadsData,
   type LeadRow,
   type PipelineCard,
+  type PipelineDateBasis,
 } from "@/lib/data";
 import {
   LEAD_CLAIM_TTL_MS,
@@ -1122,6 +1123,7 @@ export interface PipelineSearchFilters {
   agents?: string[];
   start?: string | null;
   end?: string | null;
+  dateBy?: PipelineDateBasis;
 }
 
 /**
@@ -1144,5 +1146,6 @@ export async function searchPipelineLeads(
     agents: filters.agents,
     start: filters.start ? new Date(filters.start) : null,
     end: filters.end ? new Date(filters.end) : null,
+    dateBy: filters.dateBy === "stage" ? "stage" : "created",
   });
 }

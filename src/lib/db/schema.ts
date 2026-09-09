@@ -589,16 +589,24 @@ export const geocache = pgTable("geocache", {
 });
 
 /** Append-only activity log per lead: notes, status changes, calls. */
-export const leadEvents = pgTable("lead_events", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  leadId: text("lead_id")
-    .notNull()
-    .references(() => leads.id, { onDelete: "cascade" }),
-  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
-  type: text("type").notNull(), // note | status_change | call | sms | whatsapp | email
-  payload: jsonb("payload"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const leadEvents = pgTable(
+  "lead_events",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    leadId: text("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    type: text("type").notNull(), // note | status_change | call | sms | whatsapp | email
+    payload: jsonb("payload"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Per-lead lookups (latest event, latest stage entry, "worked by" agent).
+    // Created by scripts/migrate-lead-events-index.ts.
+    index("lead_events_lead_type_created_idx").on(t.leadId, t.type, t.createdAt),
+  ],
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // AI insights & reporting

@@ -55,6 +55,7 @@ async function requireLeadAccess(leadId: string) {
       workspaceId: schema.leads.workspaceId,
       phone: schema.leads.phone,
       stageId: schema.leads.stageId,
+      callBackAt: schema.leads.callBackAt,
     })
     .from(schema.leads)
     .where(eq(schema.leads.id, leadId))
@@ -558,6 +559,52 @@ export async function addLeadNote(
   }
 }
 
+/**
+ * Records "call me back at …" from a connected call: the queue parks the lead
+ * until then and brings it back as a due callback. Logged as a note too so
+ * the promise shows in the lead's history. The next logged touch clears it.
+ */
+export async function scheduleLeadCallback(
+  leadId: string,
+  input: { at: string; note?: string },
+): Promise<LeadLogResult> {
+  const at = new Date(input.at);
+  if (Number.isNaN(at.getTime()))
+    return { ok: false, message: "Pick a valid date and time." };
+  if (at.getTime() < Date.now() - 60_000)
+    return { ok: false, message: "The callback time is in the past." };
+  const { userId } = await requireLeadAccess(leadId);
+  const note = input.note?.trim() || null;
+  if (note && note.length > 2000)
+    return { ok: false, message: "Note is too long (2000 chars max)." };
+  try {
+    await db()
+      .update(schema.leads)
+      .set({ callBackAt: at, updatedAt: new Date() })
+      .where(eq(schema.leads.id, leadId));
+    const [event] = await db()
+      .insert(schema.leadEvents)
+      .values({
+        leadId,
+        userId,
+        type: "note",
+        payload: {
+          text: `Callback scheduled for ${at.toLocaleString("en-US", {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })}${note ? ` — ${note}` : ""}`,
+          callbackAt: at.toISOString(),
+        },
+      })
+      .returning({ id: schema.leadEvents.id });
+    revalidatePath("/leads");
+    revalidatePath("/leads/queue");
+    return { ok: true, eventId: event.id };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export type LeadUpdateResult = { ok: true } | { ok: false; message: string };
 
 /** Empty/whitespace → null, so cleared fields are stored as NULL not "". */
@@ -637,6 +684,12 @@ export async function logLeadOutreach(
         payload: { manual: true, outcome: input.outcome, note },
       })
       .returning({ id: schema.leadEvents.id });
+    // A new touch fulfils (or supersedes) any callback the lead asked for.
+    if (lead.callBackAt)
+      await db()
+        .update(schema.leads)
+        .set({ callBackAt: null })
+        .where(eq(schema.leads.id, leadId));
     // Terminal outcomes go through the disqualification flow instead; every
     // other outcome proves at least an attempt and climbs the funnel.
     if (input.outcome !== "not_interested" && input.outcome !== "wrong_number")

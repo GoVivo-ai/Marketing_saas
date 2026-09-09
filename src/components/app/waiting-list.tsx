@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { formatDistanceToNow } from "date-fns";
-import { Clock, Loader2, Phone } from "lucide-react";
+import { format, formatDistanceToNow } from "date-fns";
+import { Clock, Loader2, Phone, PhoneCall } from "lucide-react";
 import { toast } from "sonner";
 import {
   Table,
@@ -107,10 +107,21 @@ export function WaitingList({ items }: { items: WaitingItem[] }) {
                   {formatDistanceToNow(item.lastTouchAt, { addSuffix: true })}
                 </TableCell>
                 <TableCell className="text-right text-sm">
-                  <span className="inline-flex items-center gap-1 text-muted-foreground">
-                    <Clock className="h-3.5 w-3.5" />
-                    {formatDistanceToNow(item.dueAt, { addSuffix: true })}
-                  </span>
+                  {item.reason === "callback" ? (
+                    /* The lead asked for this time — show it exactly. */
+                    <span
+                      className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400"
+                      title="Callback the lead asked for"
+                    >
+                      <PhoneCall className="h-3.5 w-3.5" />
+                      Callback · {format(item.dueAt, "EEE MMM d, h:mm a")}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-muted-foreground">
+                      <Clock className="h-3.5 w-3.5" />
+                      {formatDistanceToNow(item.dueAt, { addSuffix: true })}
+                    </span>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

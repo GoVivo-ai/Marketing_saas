@@ -515,6 +515,12 @@ export const leads = pgTable(
      * re-scores.
      */
     autoContactedAt: timestamp("auto_contacted_at"),
+    /**
+     * "Call me back at …" — set from the queue's follow-up flow. The queue
+     * parks the lead until then and surfaces it as a due callback after;
+     * cleared by the next logged touch.
+     */
+    callBackAt: timestamp("call_back_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

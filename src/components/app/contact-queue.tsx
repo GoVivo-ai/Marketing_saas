@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
+import { addHours, format, formatDistanceToNow, setHours, setMinutes, startOfTomorrow } from "date-fns";
 import {
   PhoneCall,
   MessageSquare,
@@ -33,6 +33,7 @@ import {
   addLeadNote,
   getLeadDetail,
   claimLead,
+  scheduleLeadCallback,
   logLeadOutreach,
   markLeadCcActivated,
   markLeadInterested,
@@ -133,6 +134,25 @@ const FOLLOWUP_REASONS = [
   "Email Sent / SMS Sent",
 ] as const;
 
+/** "Requested a callback" asks WHEN — the queue parks the lead until then. */
+const CALLBACK_REASON = "Requested a callback";
+
+/** One-click callback times; "Custom" opens a date-time field. */
+function callbackPresets(): { label: string; at: Date }[] {
+  const now = new Date();
+  const tomorrow = startOfTomorrow();
+  const later = setMinutes(setHours(now, 15), 0); // this afternoon, 3 PM
+  return [
+    { label: "In 1 hour", at: addHours(now, 1) },
+    { label: "In 3 hours", at: addHours(now, 3) },
+    ...(later.getTime() > now.getTime() + 30 * 60_000
+      ? [{ label: "Today 3 PM", at: later }]
+      : []),
+    { label: "Tomorrow 9 AM", at: setMinutes(setHours(tomorrow, 9), 0) },
+    { label: "Tomorrow 2 PM", at: setMinutes(setHours(tomorrow, 14), 0) },
+  ];
+}
+
 /**
  * Dispositions that mean the offer info went out to a lead who answered —
  * expressed interest, so they also move the lead to the Interested stage.
@@ -172,9 +192,32 @@ function AnswerFollowUp({
   const [saving, startSave] = useTransition();
   const [pending, setPending] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  /** "Requested a callback" picked — asking for the time. */
+  const [askingWhen, setAskingWhen] = useState(false);
+  const [customAt, setCustomAt] = useState("");
+
+  const schedule = (at: Date) =>
+    startSave(async () => {
+      setPending(CALLBACK_REASON);
+      const r = await scheduleLeadCallback(leadId, {
+        at: at.toISOString(),
+        note: note.trim() || undefined,
+      });
+      setPending(null);
+      if (!r.ok) {
+        toast.error(r.message);
+        return;
+      }
+      toast.success(`Callback set for ${format(at, "EEE MMM d, h:mm a")} — it'll come back then.`);
+      onDone();
+    });
 
   const pick = (reason: string) =>
     startSave(async () => {
+      if (reason === CALLBACK_REASON) {
+        setAskingWhen(true);
+        return;
+      }
       setPending(reason);
       // Any note the agent typed is appended to the disposition so it comes
       // through in the lead's history alongside the reason.
@@ -226,6 +269,59 @@ function AnswerFollowUp({
         placeholder="Optional note — add details before picking a disposition below."
         className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
       />
+      {askingWhen ? (
+        /* The lead said "call me back" — capture when, so the queue does the
+           remembering instead of the agent. */
+        <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Call back when?
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {callbackPresets().map((p) => (
+              <Button
+                key={p.label}
+                size="sm"
+                variant="outline"
+                disabled={saving}
+                className="h-8 font-normal"
+                onClick={() => schedule(p.at)}
+              >
+                {saving && pending === CALLBACK_REASON ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : null}
+                {p.label}
+              </Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="datetime-local"
+              value={customAt}
+              onChange={(e) => setCustomAt(e.target.value)}
+              disabled={saving}
+              className="h-8 w-auto text-xs"
+              aria-label="Custom callback time"
+            />
+            <Button
+              size="sm"
+              disabled={saving || !customAt}
+              className="h-8"
+              onClick={() => schedule(new Date(customAt))}
+            >
+              Set callback
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={saving}
+              className="h-8 text-muted-foreground"
+              onClick={() => setAskingWhen(false)}
+            >
+              Back
+            </Button>
+          </div>
+        </div>
+      ) : (
       <div className="flex flex-wrap items-center gap-2">
         {FOLLOWUP_REASONS.map((reason) => (
           <Button
@@ -261,6 +357,7 @@ function AnswerFollowUp({
           </SelectContent>
         </Select>
       </div>
+      )}
       <div className="flex justify-end">
         <Button
           size="sm"
@@ -523,7 +620,14 @@ function lastTouchLine(item: QueueItem): string {
 }
 
 /** Subtle status pill, matching the table's "● New" stage badges. */
-function DueBadge({ due }: { due: QueueItem["due"] }) {
+function DueBadge({
+  due,
+  callBackAt,
+}: {
+  due: QueueItem["due"];
+  callBackAt?: Date | null;
+}) {
+  const at = callBackAt ? new Date(callBackAt) : null;
   return (
     <Badge variant="outline" className="gap-1.5 font-normal">
       <span
@@ -532,7 +636,11 @@ function DueBadge({ due }: { due: QueueItem["due"] }) {
           due === "follow_up" ? "bg-amber-500" : "bg-success",
         )}
       />
-      {due === "follow_up" ? "Follow-up due" : "New lead"}
+      {at
+        ? `Callback due · ${format(at, "EEE h:mm a")}`
+        : due === "follow_up"
+          ? "Follow-up due"
+          : "New lead"}
     </Badge>
   );
 }
@@ -852,7 +960,7 @@ export function ContactQueue({
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                       )}
                     </button>
-                    <DueBadge due={current.due} />
+                    <DueBadge due={current.due} callBackAt={current.callBackAt} />
                   </CardTitle>
                   <CardDescription className="mt-1.5">
                     {current.phone ?? "No phone"}
@@ -1132,7 +1240,7 @@ export function ContactQueue({
                           {item.aiScore != null ? ` · Score ${item.aiScore}` : ""}
                         </p>
                       </div>
-                      <DueBadge due={item.due} />
+                      <DueBadge due={item.due} callBackAt={item.callBackAt} />
                     </button>
                   </li>
                 ))}

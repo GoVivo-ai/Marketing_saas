@@ -1741,6 +1741,8 @@ export interface QueueItem {
   lastBy: string | null;
   /** Why the lead is queued: never touched vs. follow-up window elapsed. */
   due: "new" | "follow_up";
+  /** The callback the lead asked for — when set, that's why it's due now. */
+  callBackAt: Date | null;
 }
 
 /** A contacted lead still inside the follow-up window — not workable yet. */
@@ -1756,6 +1758,8 @@ export interface WaitingItem {
   lastBy: string | null;
   /** When it re-enters the queue as a due follow-up (lastTouch + window). */
   dueAt: Date;
+  /** Parked by the follow-up window, or until a callback the lead asked for. */
+  reason: "window" | "callback";
 }
 
 export interface ContactQueueData {
@@ -1924,6 +1928,7 @@ export async function getContactQueue(
       email: schema.leads.email,
       aiScore: schema.leads.aiScore,
       aiSuggestedAction: schema.leads.aiSuggestedAction,
+      callBackAt: schema.leads.callBackAt,
       // The agent-facing digest when available, else the raw prompt.
       criteria: sql<
         string | null
@@ -2032,7 +2037,28 @@ export async function getContactQueue(
     const lastTouchAt = a ? new Date(a.lastAt) : null;
 
     let due: QueueItem["due"];
-    if (touches === 0) {
+    const callBackAt = r.callBackAt ? new Date(r.callBackAt) : null;
+    if (callBackAt) {
+      // The lead named a time: park it until then, then it's a due follow-up
+      // regardless of the last outcome or the follow-up window.
+      if (callBackAt.getTime() > now) {
+        coolingDown++;
+        waiting.push({
+          id: r.id,
+          name: r.name ?? "Unknown",
+          phone: r.phone,
+          campaign: formatCampaignName(r.campaign) || null,
+          aiScore: r.aiScore,
+          lastTouchAt: lastTouchAt ?? callBackAt,
+          lastChannel: last?.type ?? null,
+          lastBy: last?.actor ?? null,
+          dueAt: callBackAt,
+          reason: "callback",
+        });
+        continue;
+      }
+      due = "follow_up";
+    } else if (touches === 0) {
       due = "new";
     } else if (lastOutcome && RESOLVED_OUTCOMES.has(lastOutcome)) {
       continue; // conversation resolved — advance the stage or disqualify instead
@@ -2051,6 +2077,7 @@ export async function getContactQueue(
           lastChannel: last?.type ?? null,
           lastBy: last?.actor ?? null,
           dueAt: new Date(lastTouchAt.getTime() + windowMs),
+          reason: "window",
         });
       }
       continue;
@@ -2078,15 +2105,21 @@ export async function getContactQueue(
       lastOutcome,
       lastBy: last?.actor ?? null,
       due,
+      callBackAt,
     });
   }
 
-  // Overdue follow-ups first (longest-waiting first), then fresh leads by
-  // score — the queue decides the order so the agent doesn't have to.
+  // Due callbacks first (a promise to the lead, earliest first), then
+  // overdue follow-ups (longest-waiting first), then fresh leads by score —
+  // the queue decides the order so the agent doesn't have to.
   items.sort((x, y) => {
     if (x.due !== y.due) return x.due === "follow_up" ? -1 : 1;
-    if (x.due === "follow_up")
+    if (x.due === "follow_up") {
+      if (!!x.callBackAt !== !!y.callBackAt) return x.callBackAt ? -1 : 1;
+      if (x.callBackAt && y.callBackAt)
+        return x.callBackAt.getTime() - y.callBackAt.getTime();
       return (x.lastTouchAt?.getTime() ?? 0) - (y.lastTouchAt?.getTime() ?? 0);
+    }
     return (
       (y.aiScore ?? -1) - (x.aiScore ?? -1) ||
       y.createdAt.getTime() - x.createdAt.getTime()

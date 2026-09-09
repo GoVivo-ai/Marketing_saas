@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Sparkles } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -11,14 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { AdSetExplorer } from "@/components/app/adset-explorer";
-import { CampaignScoringForm } from "@/components/app/campaign-scoring-form";
-import {
-  getAdSetRows,
-  getCampaignById,
-  getCampaignFormFields,
-  getPromptTemplates,
-  getWorkspaceContext,
-} from "@/lib/data";
+import { getAdSetRows, getCampaignById, getWorkspaceContext } from "@/lib/data";
 import { requireFullAccess } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 
@@ -58,14 +51,10 @@ export default async function CampaignDetailPage({
   const campaign = await getCampaignById(active.id, id);
   if (!campaign) redirect("/campaigns");
 
-  const [adsets, formFields, templates] = await Promise.all([
-    getAdSetRows(active.id, id, {
-      start: resolved.start!,
-      end: resolved.end!,
-    }),
-    getCampaignFormFields(active.id, id),
-    getPromptTemplates(active.id),
-  ]);
+  const adsets = await getAdSetRows(active.id, id, {
+    start: resolved.start!,
+    end: resolved.end!,
+  });
   const totals = adsets.reduce(
     (acc, a) => ({ spend: acc.spend + a.spend, leads: acc.leads + a.leads }),
     { spend: 0, leads: 0 },
@@ -125,23 +114,27 @@ export default async function CampaignDetailPage({
         </CardContent>
       </Card>
 
+      {/* The scoring prompt is managed where the team works — the Contact
+          Queue — so supervisors find it next to the leads it orders. */}
       <Card>
         <CardHeader>
-          <CardTitle>AI lead scoring</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="h-4 w-4 text-primary" />
+            AI lead scoring
+          </CardTitle>
           <CardDescription>
-            Define how the AI should score leads from this campaign. This prompt
-            overrides the workspace-wide criteria for this campaign only.
+            {campaign.scoringCriteria
+              ? "This campaign scores leads with its own prompt."
+              : "This campaign scores leads with the workspace criteria."}{" "}
+            <Link
+              href={`/leads/queue/scoring?campaign=${campaign.id}`}
+              className="text-primary hover:underline"
+            >
+              Edit it in the Contact Queue
+            </Link>
+            .
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <CampaignScoringForm
-            campaignId={campaign.id}
-            workspaceId={active.id}
-            scoringCriteria={campaign.scoringCriteria}
-            formFields={formFields}
-            templates={templates}
-          />
-        </CardContent>
       </Card>
     </div>
   );

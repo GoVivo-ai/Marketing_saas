@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import {
   saveCampaignScoringCriteria,
+  saveWorkspaceScoringCriteria,
   rescoreCampaign,
   type CampaignScoringState,
 } from "@/lib/actions/campaigns";
@@ -45,6 +46,11 @@ function Feedback({ state }: { state: CampaignScoringState }) {
   );
 }
 
+/**
+ * The AI lead-scoring prompt editor. Edits one campaign's prompt, or — with
+ * `campaignId` null — the workspace-wide prompt every other campaign scores
+ * with. Saving never re-scores; that stays an explicit, per-campaign button.
+ */
 export function CampaignScoringForm({
   campaignId,
   workspaceId,
@@ -52,16 +58,18 @@ export function CampaignScoringForm({
   formFields,
   templates = [],
 }: {
-  campaignId: string;
+  /** Null = the workspace default prompt. */
+  campaignId: string | null;
   workspaceId: string;
   scoringCriteria: string | null;
   formFields: CampaignFormField[];
   templates?: PromptTemplate[];
 }) {
   const router = useRouter();
+  const isWorkspace = campaignId == null;
   const [criteria, setCriteria] = useState(scoringCriteria ?? "");
   const [saveState, saveAction, saving] = useActionState(
-    saveCampaignScoringCriteria,
+    isWorkspace ? saveWorkspaceScoringCriteria : saveCampaignScoringCriteria,
     initial,
   );
   const [rescoreState, rescoreAction, rescoring] = useActionState(
@@ -233,22 +241,34 @@ export function CampaignScoringForm({
       </div>
 
       <form action={saveAction} className="space-y-3">
-        <input type="hidden" name="campaignId" value={campaignId} />
+        {isWorkspace ? (
+          <input type="hidden" name="workspaceId" value={workspaceId} />
+        ) : (
+          <input type="hidden" name="campaignId" value={campaignId} />
+        )}
         <div className="space-y-2">
-          <Label htmlFor="scoring-criteria">Scoring criteria for this campaign</Label>
+          <Label htmlFor="scoring-criteria">
+            {isWorkspace
+              ? "Workspace scoring criteria"
+              : "Scoring criteria for this campaign"}
+          </Label>
           <textarea
             id="scoring-criteria"
             name="scoringCriteria"
             value={criteria}
             onChange={(e) => setCriteria(e.target.value)}
-            rows={4}
-            placeholder="What makes a good lead for THIS campaign (budget, location, intent, role…). This prompt guides the AI score for its leads. Leave empty to use the workspace-wide criteria."
+            rows={isWorkspace ? 8 : 4}
+            placeholder={
+              isWorkspace
+                ? "What makes a good lead for this client (vehicle, availability, background check, location…). Every campaign without its own prompt scores with this."
+                : "What makes a good lead for THIS campaign (budget, location, intent, role…). This prompt guides the AI score for its leads. Leave empty to use the workspace-wide criteria."
+            }
             className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
           />
           <p className="text-xs text-muted-foreground">
-            Overrides the workspace criteria for this campaign&apos;s leads. New
-            leads are scored with it automatically; existing leads keep their
-            score until you re-score them.
+            {isWorkspace
+              ? "New leads are scored with it automatically; existing leads keep their score. Re-scoring is done per campaign, so you never re-score the whole database by accident."
+              : "Overrides the workspace criteria for this campaign's leads. New leads are scored with it automatically; existing leads keep their score until you re-score them."}
           </p>
         </div>
         <Feedback state={saveState} />
@@ -258,6 +278,7 @@ export function CampaignScoringForm({
         </Button>
       </form>
 
+      {!isWorkspace && (
       <form
         action={rescoreAction}
         className="flex flex-wrap items-center gap-3 border-t pt-4"
@@ -279,6 +300,7 @@ export function CampaignScoringForm({
           <Feedback state={rescoreState} />
         </div>
       </form>
+      )}
     </div>
   );
 }

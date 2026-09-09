@@ -62,6 +62,8 @@ export async function saveCampaignScoringCriteria(
     );
 
   revalidatePath(`/campaigns/${campaignId}`);
+  revalidatePath("/leads/queue");
+  revalidatePath("/leads/queue/scoring");
   return {
     success: scoringCriteria
       ? "Scoring criteria saved. Re-score existing leads to apply it to them."
@@ -87,8 +89,44 @@ export async function rescoreCampaign(
 
   revalidatePath(`/campaigns/${campaignId}`);
   revalidatePath("/leads");
+  revalidatePath("/leads/queue");
   if (total === 0) return { success: "No leads to re-score for this campaign." };
   return {
     success: `Re-scored ${scored} of ${total} lead${total === 1 ? "" : "s"}.`,
+  };
+}
+
+/**
+ * Saves the workspace-wide scoring prompt — what every campaign without its
+ * own prompt scores with. Same rule as the per-campaign one: saving never
+ * re-scores anything.
+ */
+export async function saveWorkspaceScoringCriteria(
+  _prev: CampaignScoringState,
+  formData: FormData,
+): Promise<CampaignScoringState> {
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  if (!workspaceId || !(await canManageWorkspace(workspaceId)))
+    return { error: "You don't have permission to edit the scoring criteria." };
+  if (await isDemoSession()) return { error: DEMO_BLOCKED_MSG };
+
+  const qualificationCriteria =
+    String(formData.get("scoringCriteria") ?? "").trim() || null;
+  const qualificationCriteriaSummary = qualificationCriteria
+    ? await summarizeCriteria(workspaceId, qualificationCriteria)
+    : null;
+
+  await db()
+    .update(schema.workspaces)
+    .set({ qualificationCriteria, qualificationCriteriaSummary })
+    .where(eq(schema.workspaces.id, workspaceId));
+
+  revalidatePath("/leads/queue");
+  revalidatePath("/leads/queue/scoring");
+  revalidatePath("/settings/general");
+  return {
+    success: qualificationCriteria
+      ? "Workspace scoring criteria saved. New leads use it from now on."
+      : "Workspace scoring criteria cleared.",
   };
 }

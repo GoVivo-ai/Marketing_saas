@@ -1082,6 +1082,53 @@ export async function getLeadCampaignOptions(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export interface ScoringTarget {
+  id: string;
+  name: string;
+  status: string | null;
+  /** Leads this campaign has brought in — the audience a re-score touches. */
+  leads: number;
+  /** The campaign has its own prompt (else it scores with the workspace's). */
+  hasCriteria: boolean;
+}
+
+/**
+ * Campaigns a supervisor can point the AI scoring prompt at, from the Contact
+ * Queue's scoring panel. Only campaigns with leads — a prompt on an empty
+ * campaign has nothing to score.
+ */
+export async function getScoringTargets(
+  workspaceId: string,
+): Promise<ScoringTarget[]> {
+  const rows = await db()
+    .select({
+      id: schema.campaigns.id,
+      name: schema.campaigns.name,
+      status: schema.campaigns.status,
+      leads: sql<number>`count(${schema.leads.id})::int`,
+      hasCriteria: sql<boolean>`(${schema.campaigns.scoringCriteria} is not null)`,
+    })
+    .from(schema.campaigns)
+    .innerJoin(schema.leads, eq(schema.leads.campaignId, schema.campaigns.id))
+    .where(eq(schema.campaigns.workspaceId, workspaceId))
+    .groupBy(schema.campaigns.id);
+  return rows
+    .map((r) => ({ ...r, name: formatCampaignName(r.name) }))
+    .sort((a, b) => b.leads - a.leads);
+}
+
+/** The workspace-wide scoring prompt as written (not the agent digest). */
+export async function getWorkspaceScoringCriteria(
+  workspaceId: string,
+): Promise<string | null> {
+  const [w] = await db()
+    .select({ criteria: schema.workspaces.qualificationCriteria })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, workspaceId))
+    .limit(1);
+  return w?.criteria ?? null;
+}
+
 /** Pipeline stages for the leads stage filter (ordered, with color). */
 export async function getLeadStageOptions(
   workspaceId: string,
@@ -1671,6 +1718,8 @@ export interface QueueItem {
   phone: string | null;
   email: string | null;
   campaign: string | null;
+  /** For the supervisor's "edit prompt" link on the criteria card. */
+  campaignId: string | null;
   stageName: string | null;
   stageColor: string | null;
   aiScore: number | null;
@@ -1881,6 +1930,7 @@ export async function getContactQueue(
       >`coalesce(${schema.campaigns.scoringCriteriaSummary}, ${schema.campaigns.scoringCriteria})`,
       createdAt: schema.leads.createdAt,
       campaign: schema.campaigns.name,
+      campaignId: schema.leads.campaignId,
       stageName: schema.stages.name,
       stageColor: schema.stages.color,
       leadCity: schema.leads.geoCity,
@@ -2012,6 +2062,7 @@ export async function getContactQueue(
       phone: r.phone,
       email: r.email,
       campaign: formatCampaignName(r.campaign) || null,
+      campaignId: r.campaignId,
       stageName: r.stageName,
       stageColor: r.stageColor,
       aiScore: r.aiScore,

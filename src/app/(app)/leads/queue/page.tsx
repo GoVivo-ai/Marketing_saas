@@ -14,7 +14,9 @@ import {
   getWorkspaceContext,
 } from "@/lib/data";
 import { resolveDateRange } from "@/lib/date-range";
-import { requireLeadsAccess } from "@/lib/permissions";
+import { canManageWorkspace, requireLeadsAccess } from "@/lib/permissions";
+import { Button } from "@/components/ui/button";
+import { Sparkles } from "lucide-react";
 import { getScoreAutomation } from "@/lib/automations";
 import { cn } from "@/lib/utils";
 
@@ -117,7 +119,7 @@ export default async function ContactQueuePage({
           message: automation.message,
         }
       : null;
-  const [queue, adsets, geo, workspaceCriteria] = active
+  const [queue, adsets, geo, workspaceCriteria, canManage] = active
     ? await Promise.all([
         getContactQueue(active.id, {
           adsetId,
@@ -130,6 +132,7 @@ export default async function ContactQueuePage({
         getQueueAdsetOptions(active.id),
         getQueueGeoOptions(active.id),
         getWorkspaceCriteria(active.id),
+        canManageWorkspace(active.id),
       ])
     : [
         {
@@ -143,6 +146,7 @@ export default async function ContactQueuePage({
         [],
         [],
         null,
+        false,
       ];
 
   // Location filter options: states from every geo pair; cities narrowed to
@@ -195,6 +199,18 @@ export default async function ContactQueuePage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Supervisors/admins tune the prompt that orders this queue. */}
+          {canManage && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              render={<Link href="/leads/queue/scoring" />}
+            >
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              AI scoring
+            </Button>
+          )}
           <LeadsSearch initialValue={q ?? ""} />
           {/* Slice today's session to one ad set (e.g. only Redondo Beach). */}
           <LeadsFilter
@@ -286,6 +302,7 @@ export default async function ContactQueuePage({
           automation={queueAutomation}
           defaultCriteria={workspaceCriteria}
           workspaceId={active?.id ?? null}
+          canManage={canManage}
         />
       )}
     </div>

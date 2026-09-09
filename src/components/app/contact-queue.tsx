@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import {
   PhoneCall,
@@ -564,6 +565,7 @@ export function ContactQueue({
   automation,
   defaultCriteria,
   workspaceId,
+  canManage = false,
 }: {
   data: ContactQueueData;
   automation?: QueueAutomation | null;
@@ -571,6 +573,8 @@ export function ContactQueue({
   defaultCriteria?: string | null;
   /** Scopes the persisted session so workspaces don't cross-restore. */
   workspaceId?: string | null;
+  /** Supervisor/admin: the criteria card links to the prompt editor. */
+  canManage?: boolean;
 }) {
   const [items, setItems] = useState(data.items);
   const [channel, setChannel] = useState<OutreachChannel>("call");
@@ -1197,6 +1201,21 @@ export function ContactQueue({
               <CardDescription>
                 For {current.name}
                 {current.criteria == null ? " · workspace default" : ""}
+                {canManage && (
+                  <>
+                    {" · "}
+                    <Link
+                      href={
+                        current.criteria == null || !current.campaignId
+                          ? "/leads/queue/scoring"
+                          : `/leads/queue/scoring?campaign=${current.campaignId}`
+                      }
+                      className="text-primary hover:underline"
+                    >
+                      Edit prompt
+                    </Link>
+                  </>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>

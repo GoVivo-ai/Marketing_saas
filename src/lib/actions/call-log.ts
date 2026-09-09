@@ -21,6 +21,7 @@ export async function syncCallLogsNow(): Promise<SyncCallLogsResult> {
   try {
     const stats = await syncAllCallLogs();
     revalidatePath("/reports/agents");
+    revalidatePath("/reports/calls");
     return { ok: true, stats };
   } catch (err) {
     return {

@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Filter, Headset } from "lucide-react";
+import { Filter, Headset, PhoneCall } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const TABS = [
   { href: "/reports", label: "Funnel", icon: Filter },
   { href: "/reports/agents", label: "Agent Activity", icon: Headset },
+  { href: "/reports/calls", label: "Daily Calls", icon: PhoneCall },
 ];
 
 /** Sub-navigation shared by every page under Reports. */

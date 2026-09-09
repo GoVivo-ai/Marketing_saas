@@ -4,6 +4,7 @@ import {
   asc,
   desc,
   eq,
+  gt,
   gte,
   ilike,
   inArray,
@@ -15,6 +16,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { haversineKm } from "@/lib/geo";
@@ -1129,6 +1131,92 @@ export async function getWorkspaceScoringCriteria(
   return w?.criteria ?? null;
 }
 
+export interface ContactPriority {
+  id: string;
+  name: string;
+  prompt: string;
+  campaignId: string | null;
+  campaignName: string | null;
+  regions: string[];
+  sinceDays: number | null;
+  agentId: string | null;
+  agentName: string | null;
+  active: boolean;
+  appliedAt: Date | null;
+  appliedCount: number;
+  /** Leads currently boosted (> 0) by this priority. */
+  matched: number;
+  createdBy: string | null;
+  createdAt: Date;
+}
+
+/** The workspace's contact priorities, newest first. */
+export async function getContactPriorities(
+  workspaceId: string,
+): Promise<ContactPriority[]> {
+  const creator = alias(schema.users, "creator");
+  const rows = await db()
+    .select({
+      id: schema.contactPriorities.id,
+      name: schema.contactPriorities.name,
+      prompt: schema.contactPriorities.prompt,
+      campaignId: schema.contactPriorities.campaignId,
+      campaignName: schema.campaigns.name,
+      regions: schema.contactPriorities.regions,
+      sinceDays: schema.contactPriorities.sinceDays,
+      agentId: schema.contactPriorities.agentId,
+      agentName: schema.users.name,
+      active: schema.contactPriorities.active,
+      appliedAt: schema.contactPriorities.appliedAt,
+      appliedCount: schema.contactPriorities.appliedCount,
+      matched: sql<number>`(
+        select count(*)::int from lead_priorities lp
+        where lp.priority_id = ${schema.contactPriorities.id} and lp.boost > 0)`,
+      createdBy: creator.name,
+      createdAt: schema.contactPriorities.createdAt,
+    })
+    .from(schema.contactPriorities)
+    .leftJoin(schema.campaigns, eq(schema.contactPriorities.campaignId, schema.campaigns.id))
+    .leftJoin(schema.users, eq(schema.contactPriorities.agentId, schema.users.id))
+    .leftJoin(creator, eq(schema.contactPriorities.createdById, creator.id))
+    .where(eq(schema.contactPriorities.workspaceId, workspaceId))
+    .orderBy(desc(schema.contactPriorities.createdAt));
+  return rows.map((r) => ({
+    ...r,
+    campaignName: r.campaignName ? formatCampaignName(r.campaignName) : null,
+    regions: r.regions ?? [],
+  }));
+}
+
+/**
+ * Active priorities that apply to this user's queue: team-wide ones plus
+ * the ones aimed at them. Shown as a banner so agents know what's on top.
+ */
+export async function getActivePrioritiesFor(
+  workspaceId: string,
+  userId: string,
+): Promise<{ id: string; name: string; mine: boolean }[]> {
+  const rows = await db()
+    .select({
+      id: schema.contactPriorities.id,
+      name: schema.contactPriorities.name,
+      agentId: schema.contactPriorities.agentId,
+    })
+    .from(schema.contactPriorities)
+    .where(
+      and(
+        eq(schema.contactPriorities.workspaceId, workspaceId),
+        eq(schema.contactPriorities.active, true),
+        or(
+          isNull(schema.contactPriorities.agentId),
+          eq(schema.contactPriorities.agentId, userId),
+        ),
+      ),
+    )
+    .orderBy(desc(schema.contactPriorities.createdAt));
+  return rows.map((r) => ({ id: r.id, name: r.name, mine: r.agentId === userId }));
+}
+
 /** Pipeline stages for the leads stage filter (ordered, with color). */
 export async function getLeadStageOptions(
   workspaceId: string,
@@ -1743,6 +1831,10 @@ export interface QueueItem {
   due: "new" | "follow_up";
   /** The callback the lead asked for — when set, that's why it's due now. */
   callBackAt: Date | null;
+  /** Points added by the active contact priorities that apply to this agent. */
+  priorityBoost: number;
+  /** Names of the priorities that boosted the lead (for the card badge). */
+  priorityNames: string[];
 }
 
 /** A contacted lead still inside the follow-up window — not workable yet. */
@@ -2020,6 +2112,38 @@ export async function getContactQueue(
   const aggById = new Map(agg.map((a) => [a.leadId, a]));
   const latestById = new Map(latest.map((l) => [l.leadId, l]));
 
+  // Contact priorities in force for THIS agent: team-wide + aimed at them.
+  // Summed per lead and added to the score when ordering new leads.
+  const boostRows = await db()
+    .select({
+      leadId: schema.leadPriorities.leadId,
+      boost: schema.leadPriorities.boost,
+      name: schema.contactPriorities.name,
+    })
+    .from(schema.leadPriorities)
+    .innerJoin(
+      schema.contactPriorities,
+      eq(schema.leadPriorities.priorityId, schema.contactPriorities.id),
+    )
+    .where(
+      and(
+        eq(schema.contactPriorities.workspaceId, workspaceId),
+        eq(schema.contactPriorities.active, true),
+        gt(schema.leadPriorities.boost, 0),
+        or(
+          isNull(schema.contactPriorities.agentId),
+          eq(schema.contactPriorities.agentId, me),
+        ),
+      ),
+    );
+  const boostById = new Map<string, { boost: number; names: string[] }>();
+  for (const b of boostRows) {
+    const cur = boostById.get(b.leadId) ?? { boost: 0, names: [] };
+    cur.boost += b.boost;
+    cur.names.push(b.name);
+    boostById.set(b.leadId, cur);
+  }
+
   const windowMs = FOLLOW_UP_AFTER_DAYS * 24 * 60 * 60 * 1000;
   const now = Date.now();
   const items: QueueItem[] = [];
@@ -2106,6 +2230,8 @@ export async function getContactQueue(
       lastBy: last?.actor ?? null,
       due,
       callBackAt,
+      priorityBoost: boostById.get(r.id)?.boost ?? 0,
+      priorityNames: boostById.get(r.id)?.names ?? [],
     });
   }
 
@@ -2120,10 +2246,9 @@ export async function getContactQueue(
         return x.callBackAt.getTime() - y.callBackAt.getTime();
       return (x.lastTouchAt?.getTime() ?? 0) - (y.lastTouchAt?.getTime() ?? 0);
     }
-    return (
-      (y.aiScore ?? -1) - (x.aiScore ?? -1) ||
-      y.createdAt.getTime() - x.createdAt.getTime()
-    );
+    // New leads: score plus the supervisor's priority boost, then newest.
+    const rank = (i: QueueItem) => (i.aiScore ?? -1) + i.priorityBoost;
+    return rank(y) - rank(x) || y.createdAt.getTime() - x.createdAt.getTime();
   });
 
   waiting.sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());

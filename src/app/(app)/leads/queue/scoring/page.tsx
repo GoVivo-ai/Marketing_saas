@@ -9,12 +9,16 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CampaignScoringForm } from "@/components/app/campaign-scoring-form";
+import { ContactPrioritiesPanel } from "@/components/app/contact-priorities-panel";
 import {
   getCampaignById,
   getCampaignFormFields,
+  getContactPriorities,
   getPromptTemplates,
   getScoringTargets,
+  getWorkspaceAgentOptions,
   getWorkspaceContext,
+  getWorkspaceGeoOptions,
   getWorkspaceScoringCriteria,
 } from "@/lib/data";
 import { requireFullAccess } from "@/lib/permissions";
@@ -49,11 +53,18 @@ export default async function QueueScoringPage({
   }
 
   const sp = await searchParams;
-  const [targets, workspaceCriteria, templates] = await Promise.all([
-    getScoringTargets(active.id),
-    getWorkspaceScoringCriteria(active.id),
-    getPromptTemplates(active.id),
-  ]);
+  const [targets, workspaceCriteria, templates, priorities, agents, geo] =
+    await Promise.all([
+      getScoringTargets(active.id),
+      getWorkspaceScoringCriteria(active.id),
+      getPromptTemplates(active.id),
+      getContactPriorities(active.id),
+      getWorkspaceAgentOptions(active.id),
+      getWorkspaceGeoOptions(active.id),
+    ]);
+  const stateOptions = [
+    ...new Set(geo.map((g) => g.region).filter((r): r is string => !!r)),
+  ].sort();
 
   // A stale ?campaign= (other workspace, deleted) falls back to the default.
   const campaign = sp.campaign
@@ -79,11 +90,38 @@ export default async function QueueScoringPage({
           AI lead scoring
         </h1>
         <p className="text-sm text-muted-foreground">
-          The prompt the AI scores new leads with. The Contact Queue orders
-          new leads by that score, so this is where you decide what the team
-          calls first.
+          Two layers. The <strong>scoring prompt</strong> says what a good lead
+          is — fixed per campaign. A <strong>contact priority</strong> says who
+          to call first this week, and only reorders the queue.
         </p>
       </div>
+
+      {/* ── Layer 2: contact priorities (who first, this week) ──────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="h-4 w-4 text-primary" />
+            Contact priorities
+          </CardTitle>
+          <CardDescription>
+            Reorder the Contact Queue without changing scores: &quot;Redondo
+            leads first&quot;, &quot;already licensed&quot;, &quot;California
+            over Florida&quot;. Team-wide or for one agent. Applying rates only
+            the priority&apos;s audience — never the whole lead base.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ContactPrioritiesPanel
+            workspaceId={active.id}
+            priorities={priorities}
+            campaigns={targets.map((t) => ({ id: t.id, name: t.name }))}
+            agents={agents}
+            states={stateOptions}
+          />
+        </CardContent>
+      </Card>
+
+      <h2 className="text-lg font-semibold tracking-tight">Scoring prompt</h2>
 
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         {/* Which prompt: the workspace default, or one campaign's override. */}

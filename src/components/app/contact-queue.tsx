@@ -992,6 +992,14 @@ export function ContactQueue({
                   <p className="text-xs text-muted-foreground">AI Score</p>
                   <p className="mt-0.5 text-sm font-medium">
                     {current.aiScore != null ? current.aiScore : "—"}
+                    {current.priorityBoost > 0 && (
+                      <span
+                        className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary"
+                        title={`Priority: ${current.priorityNames.join(", ")}`}
+                      >
+                        +{current.priorityBoost} priority
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div>
@@ -1238,6 +1246,9 @@ export function ContactQueue({
                           {item.geo?.leadCity ?? "—"}
                           {item.geo?.targetCity ? ` → ${item.geo.targetCity}` : ""}
                           {item.aiScore != null ? ` · Score ${item.aiScore}` : ""}
+                          {item.priorityBoost > 0 ? (
+                            <span className="text-primary"> +{item.priorityBoost}</span>
+                          ) : null}
                         </p>
                       </div>
                       <DueBadge due={item.due} callBackAt={item.callBackAt} />

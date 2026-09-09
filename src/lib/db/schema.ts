@@ -615,6 +615,70 @@ export const leadEvents = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────
+// Contact priorities — the "slave" layer of lead scoring (ops meeting
+// 2026-09-09). The campaign prompt (master) says what a good lead IS and
+// never changes day to day; a priority says who to call FIRST this week —
+// "Redondo leads", "already licensed", "California over Florida" — for the
+// whole team or one agent. Applying one asks the AI how well each lead in
+// its audience matches and stores a boost the Contact Queue adds on top of
+// the score for ordering. Nothing here touches ai_score.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const contactPriorities = pgTable(
+  "contact_priorities",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** What to prioritize, in the supervisor's words. */
+    prompt: text("prompt").notNull(),
+    /** Audience: one campaign, or every campaign when null. */
+    campaignId: text("campaign_id").references(() => campaigns.id, {
+      onDelete: "cascade",
+    }),
+    /** Audience: leads whose ad set targets one of these states (null = any). */
+    regions: jsonb("regions").$type<string[]>(),
+    /** Audience: leads created in the last N days (null = any age). */
+    sinceDays: integer("since_days"),
+    /** Only this agent's queue is reordered (null = the whole team). */
+    agentId: text("agent_id").references(() => users.id, { onDelete: "cascade" }),
+    active: boolean("active").notNull().default(true),
+    createdById: text("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /** Last time the boosts were computed, and over how many leads. */
+    appliedAt: timestamp("applied_at"),
+    appliedCount: integer("applied_count").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("contact_priority_workspace_idx").on(t.workspaceId)],
+);
+
+/** Per-lead result of applying a priority: how well it matches, as a boost. */
+export const leadPriorities = pgTable(
+  "lead_priorities",
+  {
+    priorityId: text("priority_id")
+      .notNull()
+      .references(() => contactPriorities.id, { onDelete: "cascade" }),
+    leadId: text("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    /** 0–50 points added to the lead's score when ordering the queue. */
+    boost: integer("boost").notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("lead_priority_unique").on(t.priorityId, t.leadId),
+    index("lead_priority_lead_idx").on(t.leadId),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────
 // AI insights & reporting
 // ─────────────────────────────────────────────────────────────────────────
 

@@ -5,8 +5,10 @@ import { WaitingList } from "@/components/app/waiting-list";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { LeadsFilter, LeadsMultiFilter } from "@/components/app/leads-filter";
 import { LeadsSearch } from "@/components/app/leads-search";
+import { auth } from "@/lib/auth";
 import {
   FOLLOW_UP_AFTER_DAYS,
+  getActivePrioritiesFor,
   getContactQueue,
   getQueueAdsetOptions,
   getQueueGeoOptions,
@@ -119,6 +121,10 @@ export default async function ContactQueuePage({
           message: automation.message,
         }
       : null;
+  const session = await auth();
+  const activePriorities = active
+    ? await getActivePrioritiesFor(active.id, session?.user?.id ?? "")
+    : [];
   const [queue, adsets, geo, workspaceCriteria, canManage] = active
     ? await Promise.all([
         getContactQueue(active.id, {
@@ -252,6 +258,28 @@ export default async function ContactQueuePage({
           </label>
         </div>
       </div>
+
+      {/* What the supervisor put on top this week — so the order makes sense. */}
+      {activePriorities.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <span className="font-medium">Priority this week:</span>
+          {activePriorities.map((p) => (
+            <span
+              key={p.id}
+              className="rounded-full border border-primary/40 bg-background px-2 py-0.5 text-xs"
+            >
+              {p.name}
+              {p.mine ? " · for you" : ""}
+            </span>
+          ))}
+          {canManage && (
+            <Link href="/leads/queue/scoring" className="ml-auto text-xs text-primary hover:underline">
+              Manage
+            </Link>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard

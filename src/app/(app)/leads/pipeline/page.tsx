@@ -10,6 +10,7 @@ import { PipelineBoard } from "@/components/app/pipeline-board";
 import { AutoRefresh } from "@/components/app/auto-refresh";
 import { LeadsMultiFilter } from "@/components/app/leads-filter";
 import { DateRangePicker } from "@/components/app/date-range-picker";
+import { isCcStatus } from "@/lib/cc";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export default async function PipelinePage({
     state?: string;
     city?: string;
     agent?: string;
+    cc?: string;
   }>;
 }) {
   await requireLeadsAccess();
@@ -54,6 +56,8 @@ export default async function PipelinePage({
   const states = sp.state ? sp.state.split(",").filter(Boolean) : [];
   const cities = sp.city ? sp.city.split(",").filter(Boolean) : [];
   const agents = sp.agent ? sp.agent.split(",").filter(Boolean) : [];
+  // Contractor Compliance sub-status — set by clicking a badge on the column.
+  const ccStatus = isCcStatus(sp.cc) ? sp.cc : null;
 
   const [pipeline, canManage, geo, agentOptions] = await Promise.all([
     getPipeline(active.id, {
@@ -62,6 +66,7 @@ export default async function PipelinePage({
       agents,
       start: resolved.start,
       end: resolved.end,
+      ccStatus,
     }),
     canManageWorkspace(active.id),
     getWorkspaceGeoOptions(active.id),
@@ -135,12 +140,13 @@ export default async function PipelinePage({
       <PipelineBoard
         /* The board keeps its own drag state — remount it when the slice
            changes so it doesn't render stale cards. */
-        key={`${sp.state ?? ""}:${sp.city ?? ""}:${sp.agent ?? ""}:${resolved.label}`}
+        key={`${sp.state ?? ""}:${sp.city ?? ""}:${sp.agent ?? ""}:${ccStatus ?? ""}:${resolved.label}`}
         workspaceId={active.id}
         stages={pipeline.stages}
         cardsByStage={pipeline.cardsByStage}
         counts={pipeline.counts}
         ccCounts={pipeline.ccCounts}
+        ccFilter={ccStatus}
         cap={pipeline.cap}
         canManage={canManage}
         filters={{

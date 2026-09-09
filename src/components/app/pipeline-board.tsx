@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -30,7 +31,13 @@ import {
   type PipelineSearchFilters,
 } from "@/lib/actions/leads";
 import { Button } from "@/components/ui/button";
-import { CC_STATUSES, CC_STATUS_COLOR, CC_STATUS_LABEL, isCcStatus } from "@/lib/cc";
+import {
+  CC_STATUSES,
+  CC_STATUS_COLOR,
+  CC_STATUS_LABEL,
+  isCcStatus,
+  type CcStatus,
+} from "@/lib/cc";
 import type { Stage, PipelineCard, LeadRow } from "@/lib/data";
 import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
 import { StageManager } from "@/components/app/stage-manager";
@@ -66,6 +73,7 @@ export function PipelineBoard({
   cardsByStage,
   counts,
   ccCounts = {},
+  ccFilter = null,
   cap,
   canManage,
   filters = {},
@@ -76,6 +84,8 @@ export function PipelineBoard({
   counts: Record<string, number>;
   /** CC sub-pipeline breakdown (cc_status → count) for the compliance column. */
   ccCounts?: Record<string, number>;
+  /** Active CC sub-status filter (URL `cc=`); the compliance column shows only it. */
+  ccFilter?: CcStatus | null;
   cap: number;
   canManage: boolean;
   /** The page's location/date slice — column search applies the same one. */
@@ -89,6 +99,19 @@ export function PipelineBoard({
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [activeCard, setActiveCard] = useState<PipelineCard | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // Clicking a CC badge toggles the `cc` URL param — routed so the server
+  // narrows the column past the card cap, like the other filters.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const toggleCcFilter = (st: CcStatus) => {
+    const next = new URLSearchParams(searchParams.toString());
+    if (ccFilter === st) next.delete("cc");
+    else next.set("cc", st);
+    const qs = next.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  };
 
   // Fresh server data (auto-refresh polling, another agent's action) flows
   // into the board — except mid-drag or while a move is saving, where the
@@ -352,6 +375,8 @@ export function PipelineBoard({
                 cards={q ? (visibleByStage[stage.id] ?? []) : (board[stage.id] ?? [])}
                 total={count[stage.id] ?? 0}
                 ccCounts={ccCounts}
+                ccFilter={ccFilter}
+                onCcFilter={toggleCcFilter}
                 cap={cap}
                 query={q ? query.trim() : null}
                 highlight={q ? (matchCount[stage.id] ?? 0) > 0 : false}
@@ -386,6 +411,8 @@ function StageColumn({
   cards,
   total,
   ccCounts,
+  ccFilter,
+  onCcFilter,
   cap,
   conversion,
   onCardClick,
@@ -399,6 +426,10 @@ function StageColumn({
   total: number;
   /** CC sub-pipeline breakdown — rendered only under the compliance column. */
   ccCounts?: Record<string, number>;
+  /** Sub-status the compliance column is narrowed to (null = all). */
+  ccFilter: CcStatus | null;
+  /** Toggle the compliance sub-status filter. */
+  onCcFilter: (st: CcStatus) => void;
   cap: number;
   /** Formatted conversion rate from the previous stage (null on the first). */
   conversion: string | null;
@@ -456,19 +487,42 @@ function StageColumn({
           </p>
         )}
         {/* CC sub-pipeline at a glance — the morning "who to chase" counts. */}
+        {/* Each badge is a toggle: click to see only that sub-status
+            (server-filtered, so it reaches past the card cap), click again
+            to clear. The badge counts always show the full breakdown. */}
         {isCcColumn && Object.keys(ccCounts ?? {}).length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1 pl-[18px]">
-            {CC_STATUSES.filter((st) => (ccCounts?.[st] ?? 0) > 0).map((st) => (
-              <span
-                key={st}
-                title={CC_STATUS_LABEL[st]}
-                className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
-                style={{ color: CC_STATUS_COLOR[st], borderColor: `${CC_STATUS_COLOR[st]}66` }}
-              >
-                {CC_STATUS_LABEL[st]}
-                <span className="font-semibold">{ccCounts?.[st]}</span>
-              </span>
-            ))}
+            {CC_STATUSES.filter(
+              (st) => (ccCounts?.[st] ?? 0) > 0 || ccFilter === st,
+            ).map((st) => {
+              const active = ccFilter === st;
+              const color = CC_STATUS_COLOR[st];
+              return (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => onCcFilter(st)}
+                  aria-pressed={active}
+                  title={
+                    active
+                      ? `Showing only ${CC_STATUS_LABEL[st]} — click to show all`
+                      : `Show only ${CC_STATUS_LABEL[st]}`
+                  }
+                  className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium tabular-nums transition-colors hover:bg-muted ${
+                    ccFilter && !active ? "opacity-50" : ""
+                  }`}
+                  style={{
+                    color: active ? "#fff" : color,
+                    borderColor: active ? color : `${color}66`,
+                    backgroundColor: active ? color : undefined,
+                  }}
+                >
+                  {CC_STATUS_LABEL[st]}
+                  <span className="font-semibold">{ccCounts?.[st] ?? 0}</span>
+                  {active && <X className="h-2.5 w-2.5" />}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

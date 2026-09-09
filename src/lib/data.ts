@@ -1406,6 +1406,11 @@ export interface PipelineFilters {
   /** Restrict to leads created inside this window (inclusive). */
   start?: Date | null;
   end?: Date | null;
+  /**
+   * Narrow the Contractor Compliance column to one sub-status. Other columns
+   * and the header breakdown are untouched — the badges stay a full picture.
+   */
+  ccStatus?: string | null;
 }
 
 /**
@@ -1570,10 +1575,20 @@ export async function getPipeline(
   const ccCounts: Record<string, number> = {};
   for (const r of ccRows) if (r.ccStatus) ccCounts[r.ccStatus] = r.count;
 
+  // A sub-status filter applies to the CC column only; its total becomes
+  // that sub-status count so "N / cap" reads right.
+  if (ccStage && opts.ccStatus) {
+    counts[ccStage.id] = ccCounts[opts.ccStatus] ?? 0;
+  }
+
   const cardsByStage: Record<string, PipelineCard[]> = {};
   for (const st of stages) {
+    const ccFilter =
+      ccStage && opts.ccStatus && st.id === ccStage.id
+        ? eq(schema.leads.ccStatus, opts.ccStatus)
+        : undefined;
     const rows = await pipelineCardQuery()
-      .where(and(...leadFilters, eq(schema.leads.stageId, st.id)))
+      .where(and(...leadFilters, eq(schema.leads.stageId, st.id), ccFilter))
       .orderBy(desc(schema.leads.createdAt))
       .limit(PIPELINE_CARD_CAP);
     cardsByStage[st.id] = rows.map(mapPipelineCard);

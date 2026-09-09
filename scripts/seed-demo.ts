@@ -23,6 +23,8 @@ process.loadEnvFile(".env.local");
 import postgres from "postgres";
 
 const DEMO_SLUG = "demo";
+/** Demo accent — deliberately not the source client's color so the two are told apart at a glance. */
+const DEMO_ACCENT = "#7c3aed";
 const DEMO_EMAIL = "demo@govivo.ai";
 
 const FIRST = [
@@ -146,7 +148,7 @@ async function main() {
     INSERT INTO workspaces (id, name, slug, industry, result_label, qualification_criteria, accent_color, is_active)
     VALUES (${wsId}, 'Demo Company', ${DEMO_SLUG}, ${src.industry},
             ${src.result_label}, ${src.qualification_criteria ? scrubCompany(src.qualification_criteria) : null},
-            ${src.accent_color}, true)`;
+            ${DEMO_ACCENT}, true)`;
 
   const [demoUser] = await sql`
     INSERT INTO users (id, name, email, password_hash, role)

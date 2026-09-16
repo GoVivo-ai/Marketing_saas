@@ -275,6 +275,156 @@ export async function ringOut(
 }
 
 /** One voice call from the user's RingCentral extension call log. */
+// ── JWT (server-to-server) ─────────────────────────────────────────────────
+
+/**
+ * Exchanges the app's JWT credential for an access token.
+ *
+ * The per-user OAuth flow above needs a human to click "connect" and hands
+ * back a refresh token that expires if it goes unused — fine for an agent
+ * dialling, wrong for a nightly job that must never silently stop. A JWT
+ * credential is issued once against an admin extension and never expires, so
+ * the account-level call log sync authenticates on its own.
+ *
+ * The token it returns is short-lived and not worth storing: each sync run
+ * asks for a fresh one.
+ */
+export async function jwtAccessToken(): Promise<string> {
+  const assertion = process.env.RINGCENTRAL_JWT;
+  if (!assertion) throw new RingCentralNotConnectedError();
+  const { access_token } = await tokenRequest({
+    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+    assertion,
+  });
+  return access_token;
+}
+
+/** Whether this deployment can talk to RingCentral without a connected user. */
+export async function isAccountSyncConfigured(): Promise<boolean> {
+  return Boolean(process.env.RINGCENTRAL_JWT) && (await isRingCentralConfigured());
+}
+
+export interface RcExtension {
+  id: string;
+  extensionNumber: string | null;
+  name: string | null;
+  email: string | null;
+  type: string | null;
+  status: string | null;
+}
+
+/** Every extension on the account — the directory the call log's ids point into. */
+export async function fetchAccountExtensions(
+  accessToken: string,
+): Promise<RcExtension[]> {
+  const cfg = await rcConfig();
+  const out: RcExtension[] = [];
+  let url: string | null =
+    `${cfg.server}/restapi/v1.0/account/~/extension?perPage=250`;
+  for (let page = 0; url && page < 20; page++) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new RingCentralError(
+        `Extensions ${res.status}: ${text.slice(0, 300)}`,
+      );
+    }
+    const data = (await res.json()) as {
+      records?: {
+        id?: number | string;
+        extensionNumber?: string;
+        name?: string;
+        contact?: { email?: string; firstName?: string; lastName?: string };
+        type?: string;
+        status?: string;
+      }[];
+      navigation?: { nextPage?: { uri?: string } };
+    };
+    for (const r of data.records ?? []) {
+      if (r.id == null) continue;
+      out.push({
+        id: String(r.id),
+        extensionNumber: r.extensionNumber ?? null,
+        name:
+          r.name ||
+          [r.contact?.firstName, r.contact?.lastName].filter(Boolean).join(" ") ||
+          null,
+        email: r.contact?.email ?? null,
+        type: r.type ?? null,
+        status: r.status ?? null,
+      });
+    }
+    url = data.navigation?.nextPage?.uri ?? null;
+  }
+  return out;
+}
+
+export interface RcAccountCallLogRecord extends RcCallLogRecord {
+  /** Which extension placed or received the call — how a row finds its agent. */
+  extensionId: string | null;
+}
+
+/**
+ * The whole company's call log, not one extension's.
+ *
+ * This is the endpoint that closes the gap the widget leaves: it reports every
+ * call RingCentral saw, including the ones an agent made from the desk phone or
+ * the mobile app, which never touch the browser. Needs the app to hold
+ * ReadCallLog and the JWT's extension to be an account admin.
+ */
+export async function fetchAccountCallLog(
+  accessToken: string,
+  opts: { dateFrom: Date; dateTo?: Date },
+): Promise<RcAccountCallLogRecord[]> {
+  const cfg = await rcConfig();
+  const params = new URLSearchParams({
+    view: "Simple",
+    type: "Voice",
+    perPage: "1000",
+    dateFrom: opts.dateFrom.toISOString(),
+  });
+  if (opts.dateTo) params.set("dateTo", opts.dateTo.toISOString());
+
+  const out: RcAccountCallLogRecord[] = [];
+  let url: string | null =
+    `${cfg.server}/restapi/v1.0/account/~/call-log?${params.toString()}`;
+  // Hard page cap so a pathological navigation loop can't hang the sync.
+  for (let page = 0; url && page < 100; page++) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new RingCentralError(
+        `Account call log ${res.status}: ${text.slice(0, 300)}`,
+      );
+    }
+    const data = (await res.json()) as RcCallLogPage & {
+      records?: { extension?: { id?: number | string } }[];
+    };
+    for (const r of (data.records ?? []) as (NonNullable<
+      RcCallLogPage["records"]
+    >[number] & { extension?: { id?: number | string } })[]) {
+      if (!r.id || !r.startTime) continue;
+      out.push({
+        // Same key the widget reports, so both writers land on one row.
+        id: r.telephonySessionId ?? r.id,
+        direction: r.direction ?? null,
+        from: r.from?.phoneNumber ?? r.from?.extensionNumber ?? null,
+        to: r.to?.phoneNumber ?? r.to?.extensionNumber ?? null,
+        startTime: new Date(r.startTime),
+        durationSec: r.duration ?? 0,
+        result: r.result ?? null,
+        extensionId: r.extension?.id != null ? String(r.extension.id) : null,
+      });
+    }
+    url = data.navigation?.nextPage?.uri ?? null;
+  }
+  return out;
+}
+
 export interface RcCallLogRecord {
   id: string;
   direction: string | null; // "Inbound" | "Outbound"

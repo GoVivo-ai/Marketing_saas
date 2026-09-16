@@ -791,6 +791,38 @@ export const callLogs = pgTable(
   ],
 );
 
+/**
+ * RingCentral extension → platform user.
+ *
+ * The account-level call log names the caller only by extension id, so
+ * without this table every synced call is an orphan. Auto-populated by
+ * matching the extension's name/email against users, then correctable by
+ * hand — a mismatch would silently credit an agent's calls to someone else,
+ * which is worse than leaving them unassigned.
+ */
+export const rcExtensions = pgTable(
+  "rc_extensions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    /** RingCentral's own extension id (what the call log reports). */
+    extensionId: text("extension_id").notNull(),
+    extensionNumber: text("extension_number"),
+    /** Name and email as RingCentral has them — shown when mapping by hand. */
+    rcName: text("rc_name"),
+    rcEmail: text("rc_email"),
+    /** Null while unmatched: its calls sync but belong to nobody yet. */
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    /** "auto" when matched by name/email, "manual" once a human confirmed it. */
+    matchedBy: text("matched_by").notNull().default("auto"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("rc_extension_unique").on(t.extensionId),
+    index("rc_extension_user_idx").on(t.userId),
+  ],
+);
+
 // ─────────────────────────────────────────────────────────────────────────
 // Dispatch module — replaces the ops team's loose spreadsheets. The MDD
 // (EverDriven driver id) is the thread that joins drivers to their covers,

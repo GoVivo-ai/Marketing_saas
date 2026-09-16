@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import type { OutreachOutcome } from "@/lib/outreach";
+import { businessDay } from "@/lib/business-time";
 
 /**
  * Per-agent activity report: outreach touches logged in the app
@@ -65,21 +66,22 @@ export function buildDailySeries(
     }
   }
   if (byDay.size === 0) return [];
-  const dayKey = (d: Date) => d.toISOString().slice(0, 10);
   const days = [...byDay.keys()].sort();
-  const first = opts.start ? dayKey(opts.start) : days[0];
+  const first = opts.start ? businessDay(opts.start) : days[0];
   const last =
     opts.end && opts.end.getTime() <= Date.now()
-      ? dayKey(opts.end)
-      : dayKey(new Date());
+      ? businessDay(opts.end)
+      : businessDay(new Date());
   const out: { day: string; touches: number; calls: number }[] = [];
-  // Fill gaps so quiet days render as real zeros, not missing columns.
+  // Fill gaps so quiet days render as real zeros, not missing columns. The
+  // keys are already business days, so step them as plain calendar dates.
+  const calendarKey = (d: Date) => d.toISOString().slice(0, 10);
   for (
     let d = new Date(`${first}T00:00:00Z`);
-    dayKey(d) <= last && out.length < 366;
+    calendarKey(d) <= last && out.length < 366;
     d.setUTCDate(d.getUTCDate() + 1)
   ) {
-    const key = dayKey(d);
+    const key = calendarKey(d);
     out.push({ day: key, ...(byDay.get(key) ?? { touches: 0, calls: 0 }) });
   }
   return out;
@@ -235,7 +237,8 @@ export async function getAgentPerformance(
   }
 
   // ── Per-agent daily activity ───────────────────────────────────────────
-  const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+  // Bucketed on the business calendar, like every other day in the reports.
+  const dayKey = businessDay;
   const bumpDay = (
     userId: string,
     day: string,

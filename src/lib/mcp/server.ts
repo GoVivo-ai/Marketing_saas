@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { endOfDay, parseISO, startOfDay, subDays, isValid } from "date-fns";
+import { parseISO, subDays, isValid } from "date-fns";
+import { businessDay, endOfBusinessDay, startOfBusinessDay } from "@/lib/business-time";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db, schema } from "@/lib/db";
@@ -132,10 +133,16 @@ function resolveRange(a: { from?: string; to?: string; days?: number }) {
     const start = a.from ? parseISO(a.from) : subDays(new Date(), 365);
     const end = a.to ? parseISO(a.to) : new Date();
     if (!isValid(start) || !isValid(end)) throw new ToolError("Invalid date.");
-    return { start: startOfDay(start), end: endOfDay(end) };
+    return {
+      start: startOfBusinessDay(a.from?.slice(0, 10) ?? businessDay(start)),
+      end: endOfBusinessDay(a.to?.slice(0, 10) ?? businessDay(end)),
+    };
   }
   const days = a.days ?? 30;
-  return { start: startOfDay(subDays(new Date(), days)), end: endOfDay(new Date()) };
+  return {
+    start: startOfBusinessDay(businessDay(subDays(new Date(), days))),
+    end: endOfBusinessDay(businessDay(new Date())),
+  };
 }
 
 const wsArg = z
@@ -276,8 +283,8 @@ export function createMcpServer(principal: ApiKeyPrincipal) {
         stageId,
         city: a.city ?? null,
         campaignId: a.campaign_id ?? null,
-        start: a.from ? startOfDay(parseISO(a.from)) : null,
-        end: a.to ? endOfDay(parseISO(a.to)) : null,
+        start: a.from ? startOfBusinessDay(a.from.slice(0, 10)) : null,
+        end: a.to ? endOfBusinessDay(a.to.slice(0, 10)) : null,
         page: a.page,
         pageSize: a.page_size ?? 25,
       });
@@ -351,8 +358,8 @@ export function createMcpServer(principal: ApiKeyPrincipal) {
       const data = await getPipeline(w.id, {
         cities: a.cities ?? null,
         regions: a.regions ?? null,
-        start: a.from ? startOfDay(parseISO(a.from)) : null,
-        end: a.to ? endOfDay(parseISO(a.to)) : null,
+        start: a.from ? startOfBusinessDay(a.from.slice(0, 10)) : null,
+        end: a.to ? endOfBusinessDay(a.to.slice(0, 10)) : null,
       });
       const perStage = a.cards_per_stage ?? 10;
       const stages = data.stages.map((s) => ({

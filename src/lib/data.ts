@@ -29,6 +29,7 @@ import {
 import { MIN_VEHICLE_YEAR, vehicleAnswer } from "@/lib/vehicle";
 import { scheduleAnswer, type ScheduleAnswer } from "@/lib/schedule";
 import { LEAD_CLAIM_TTL_MS } from "@/lib/outreach";
+import { businessDay } from "@/lib/business-time";
 
 /**
  * Ad platforms deliver campaign names in snake/underscore case
@@ -200,6 +201,8 @@ function vehicleFit(formData: Record<string, unknown> | null): VehicleFit {
 }
 
 const dateStr = (d: Date) => d.toISOString().slice(0, 10);
+/** A filter bound as the metrics day it falls on (Meta's clock, not UTC). */
+const rangeDay = businessDay;
 const daysAgo = (n: number) => daysBefore(new Date(), n);
 const daysBefore = (from: Date, n: number) => {
   const d = new Date(from);
@@ -290,13 +293,13 @@ export async function getOverview(
 ): Promise<OverviewData> {
   // Current window is [start, end]; the delta compares against the
   // equal-length window immediately before it.
-  const startStr = dateStr(range.start);
-  const endStr = dateStr(range.end);
+  const startStr = rangeDay(range.start);
+  const endStr = rangeDay(range.end);
   const lengthDays = Math.max(
     1,
     Math.round((Date.parse(endStr) - Date.parse(startStr)) / 86_400_000) + 1,
   );
-  const prevStartStr = dateStr(daysBefore(range.start, lengthDays));
+  const prevStartStr = rangeDay(daysBefore(range.start, lengthDays));
 
   const rows = await db()
     .select({
@@ -436,11 +439,11 @@ export async function getCampaignRows(
   workspaceId: string,
   range: { start: Date; end: Date },
 ): Promise<CampaignRow[]> {
-  const startStr = dateStr(range.start);
-  const endStr = dateStr(range.end);
+  const startStr = rangeDay(range.start);
+  const endStr = rangeDay(range.end);
   // Split the window in half so "trend" compares CPL in the recent half vs the
   // earlier half — the same idea as the 15-vs-15 split, generalized to any range.
-  const midStr = dateStr(
+  const midStr = rangeDay(
     new Date((range.start.getTime() + range.end.getTime()) / 2),
   );
 
@@ -629,8 +632,8 @@ export async function getAdSetRows(
   campaignId: string,
   range: { start: Date; end: Date },
 ): Promise<AdSetRow[]> {
-  const startStr = dateStr(range.start);
-  const endStr = dateStr(range.end);
+  const startStr = rangeDay(range.start);
+  const endStr = rangeDay(range.end);
 
   const [adsets, rows] = await Promise.all([
     db()

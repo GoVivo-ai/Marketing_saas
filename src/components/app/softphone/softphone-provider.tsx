@@ -21,7 +21,7 @@ export function SoftphoneProvider({
 }: {
   /** Whether this user has RingCentral connected — no tokens, no phone. */
   connected: boolean;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }) {
   const phone = useSoftphone(connected);
   return (

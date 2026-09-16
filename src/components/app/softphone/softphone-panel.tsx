@@ -65,7 +65,37 @@ export function SoftphonePanel({ phone }: { phone: Softphone }) {
     );
   }
 
-  if (!call) return null;
+  // Idle: a small presence pill. Without it an agent has no way to tell a
+  // registered phone from a dead one until a call fails to go out.
+  if (!call) {
+    if (phone.status !== "registered" && phone.status !== "connecting") return null;
+    const connecting = phone.status === "connecting";
+    return (
+      <div
+        className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full border bg-background/95 px-3 py-1.5 text-xs shadow-sm backdrop-blur"
+        title={
+          connecting
+            ? "Registering with RingCentral…"
+            : `Ready to call and receive${phone.extensionNumber ? ` on extension ${phone.extensionNumber}` : ""}`
+        }
+      >
+        <span
+          className={cn(
+            "h-2 w-2 shrink-0 rounded-full",
+            connecting ? "animate-pulse bg-amber-500" : "bg-success",
+          )}
+        />
+        <span className="font-medium">
+          {connecting ? "Connecting…" : "Phone ready"}
+        </span>
+        {!connecting && phone.extensionNumber && (
+          <span className="text-muted-foreground">
+            ext {phone.extensionNumber}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   const ringingInbound = call.direction === "inbound" && call.state === "ringing";
   const live = call.state === "answered";

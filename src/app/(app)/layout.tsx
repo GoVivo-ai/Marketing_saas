@@ -174,9 +174,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           agent who has connected here gets our own softphone; everyone else
           keeps the embedded widget until they do. */}
       {softphone ? (
-        <SoftphoneProvider connected>
-          <span className="sr-only">Softphone ready</span>
-        </SoftphoneProvider>
+        <SoftphoneProvider connected />
       ) : (
         <RingCentralDialer workspaceId={active?.id ?? "none"} />
       )}

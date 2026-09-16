@@ -28,9 +28,10 @@ export function SoftphoneProvider({
   children?: React.ReactNode;
 }) {
   const phone = useSoftphone(connected);
-  // Two registrations for one extension fight, so the widget only comes back
-  // when ours has definitively failed — at which point an agent with no way
-  // to dial is a worse problem than a redundant dialer.
+  // Only one registration per extension may be live — RingCentral gives the
+  // calls to whichever registered last — so the embedded widget stays away
+  // while ours is connecting or working. It comes back when there is no
+  // softphone to use: an agent who cannot dial at all is the worse failure.
   const fallback = phone.status === "failed" || phone.status === "unconfigured";
   return (
     <SoftphoneContext.Provider value={phone}>

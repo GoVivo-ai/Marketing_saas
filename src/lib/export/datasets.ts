@@ -5,7 +5,11 @@ import {
   type PipelineDateBasis,
 } from "@/lib/data";
 import { getDispatchDirectory } from "@/lib/dispatch-data";
-import { getDailyCallReport } from "@/lib/call-report";
+import {
+  CALL_LOG_PARTIAL_NOTE,
+  getDailyCallReport,
+  isCallLogAuthoritative,
+} from "@/lib/call-report";
 import { getAgentPerformance } from "@/lib/agent-report";
 import { CC_STATUS_LABEL, isCcStatus } from "@/lib/cc";
 import { leadSourceLabel } from "@/lib/lead-source";
@@ -244,14 +248,21 @@ export async function buildExportTable(
         defaultPreset: "7",
         allowAllTime: false,
       });
-      const report = await getDailyCallReport(workspaceId, {
-        start: range.start,
-        end: range.end,
-      });
+      const [report, authoritative] = await Promise.all([
+        getDailyCallReport(workspaceId, { start: range.start, end: range.end }),
+        isCallLogAuthoritative(),
+      ]);
       return {
-        filename: `daily-calls-${slug}-${stamp()}`,
+        // CSV has nowhere to put a caveat — no subtitle, and a note row ahead
+        // of the header breaks every parser. The file name carries it instead,
+        // and survives being forwarded.
+        filename: `daily-calls${authoritative ? "" : "-INCOMPLETE"}-${slug}-${stamp()}`,
         title: `${workspaceName} — Daily Calls`,
-        subtitle: `${range.label} · one row per agent per day`,
+        // A downloaded file outlives its context and gets forwarded, so the
+        // caveat travels with it.
+        subtitle:
+          `${range.label} · one row per agent per day` +
+          (authoritative ? "" : ` · INCOMPLETE — ${CALL_LOG_PARTIAL_NOTE}`),
         columns: [
           { key: "day", label: "Day", width: 10 },
           { key: "name", label: "Agent", width: 16 },

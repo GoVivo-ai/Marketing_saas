@@ -12,6 +12,33 @@ import { db, schema } from "@/lib/db";
  * drivers on California hours), not the server's UTC.
  */
 
+/**
+ * Whether these numbers are the whole truth.
+ *
+ * `call_logs` has two possible writers: the RingCentral Embeddable widget,
+ * which posts each call from the agent's browser, and `syncAllCallLogs`,
+ * which pulls the authoritative log over OAuth. Nobody has connected OAuth
+ * yet, so today only the widget writes — and it misses whatever happens
+ * outside the browser tab (a measured ~20% on 2026-09-03, skewed towards the
+ * long calls, which are exactly the ones the KPIs care about).
+ *
+ * Reported alongside the numbers so a screen or a downloaded file never
+ * passes itself off as complete. It clears itself: the moment one account
+ * connects OAuth, this returns true and the warning disappears.
+ */
+export async function isCallLogAuthoritative(): Promise<boolean> {
+  const [row] = await db()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.users)
+    .where(sql`${schema.users.rcAccessTokenEnc} IS NOT NULL`)
+    .limit(1);
+  return (row?.n ?? 0) > 0;
+}
+
+/** One sentence for the screen and for the header of every export. */
+export const CALL_LOG_PARTIAL_NOTE =
+  "Counts only calls placed through the platform's dialer — calls made elsewhere in RingCentral are missing until account-level sync is connected";
+
 /** The operation's local timezone for "what day was that call". */
 export const CALL_REPORT_TZ = "America/Los_Angeles";
 

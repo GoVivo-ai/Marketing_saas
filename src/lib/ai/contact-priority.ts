@@ -2,6 +2,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { and, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { leadRegionSql } from "@/lib/data";
 import { scoringModel } from "./provider";
 import {
   PRIORITY_AUDIENCE_CAP,
@@ -87,7 +88,7 @@ export async function applyContactPriority(
 
   const filters = [eligibleWhere(p.workspaceId)];
   if (p.campaignId) filters.push(eq(schema.leads.campaignId, p.campaignId));
-  if (p.regions?.length) filters.push(inArray(schema.adsets.cityRegion, p.regions));
+  if (p.regions?.length) filters.push(inArray(leadRegionSql, p.regions));
   if (p.sinceDays)
     filters.push(
       gte(schema.leads.createdAt, new Date(Date.now() - p.sinceDays * 86_400_000)),

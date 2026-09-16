@@ -219,6 +219,10 @@ export const campaigns = pgTable(
     externalId: text("external_id").notNull(),
     name: text("name").notNull(),
     status: text("status").notNull().default("ACTIVE"),
+    /** Delivery as Ads Manager reports it — see the ad set columns above. */
+    effectiveStatus: text("effective_status"),
+    startTime: timestamp("start_time"),
+    endTime: timestamp("end_time"),
     objective: text("objective"),
     dailyBudget: numeric("daily_budget", { precision: 12, scale: 2 }),
     /**
@@ -301,6 +305,17 @@ export const adsets = pgTable(
     externalId: text("external_id").notNull(),
     name: text("name").notNull(),
     status: text("status").notNull().default("ACTIVE"),
+    /**
+     * Delivery, as Ads Manager reports it. `status` above is only the on/off
+     * switch; these say whether it's actually spending — `effectiveStatus`
+     * folds in inherited and review states, `learningStage` whether Meta is
+     * still stabilising, and `endTime` whether the schedule already ran out.
+     * See `deliveryStatus()` in lib/delivery.ts.
+     */
+    effectiveStatus: text("effective_status"),
+    learningStage: text("learning_stage"),
+    startTime: timestamp("start_time"),
+    endTime: timestamp("end_time"),
     // Audience location (first targeted city) — null when the ad set isn't
     // city-targeted (e.g. region/country-level or custom locations).
     cityName: text("city_name"),
@@ -451,6 +466,13 @@ export const leads = pgTable(
       onDelete: "set null",
     }),
     platform: platformEnum("platform").notNull(),
+    /**
+     * Acquisition channel ("meta_ads" | "website" | "manual" | …). Broader
+     * than `platform`, which only names the ad network: a website form and a
+     * hand-entered referral are both platform "manual" but different
+     * channels. See lib/lead-source.ts.
+     */
+    source: text("source"),
     externalId: text("external_id"),
     name: text("name"),
     email: text("email"),
@@ -461,7 +483,10 @@ export const leads = pgTable(
     }),
     /** City the lead reported in the form (raw), and its geocoded position. */
     geoCity: text("geo_city"),
-    /** State/region the lead reported (e.g. "Florida") — manual/public leads. */
+    /**
+     * The lead's own state ("Florida"): reported in the form, or derived from
+     * the ZIP / geocoded city / phone area code (see lib/lead-region.ts).
+     */
     geoRegion: text("geo_region"),
     geoLat: numeric("geo_lat", { precision: 9, scale: 6 }),
     geoLng: numeric("geo_lng", { precision: 9, scale: 6 }),
@@ -591,6 +616,8 @@ export const geocache = pgTable("geocache", {
   lng: numeric("lng", { precision: 9, scale: 6 }).notNull(),
   /** Resolved place name (e.g. the city a ZIP code belongs to). */
   name: text("name"),
+  /** State/region the place sits in ("California"), when the geocoder knows. */
+  region: text("region"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

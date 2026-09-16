@@ -20,6 +20,12 @@ import { alias } from "drizzle-orm/pg-core";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { haversineKm } from "@/lib/geo";
+import { deliveryStatus, type Delivery } from "@/lib/delivery";
+import {
+  deriveLeadSource,
+  LEAD_SOURCES,
+  type LeadSource,
+} from "@/lib/lead-source";
 import { MIN_VEHICLE_YEAR, vehicleAnswer } from "@/lib/vehicle";
 import { scheduleAnswer, type ScheduleAnswer } from "@/lib/schedule";
 import { LEAD_CLAIM_TTL_MS } from "@/lib/outreach";
@@ -76,6 +82,8 @@ export interface CampaignRow {
   name: string;
   platform: string;
   status: string;
+  /** What Ads Manager shows under "Delivery" — see lib/delivery.ts. */
+  delivery: Delivery;
   objective: string | null;
   spend: number;
   impressions: number;
@@ -91,6 +99,8 @@ export interface CampaignDetail {
   name: string;
   platform: string;
   status: string;
+  /** What Ads Manager shows under "Delivery" — see lib/delivery.ts. */
+  delivery: Delivery;
   objective: string | null;
   scoringCriteria: string | null;
 }
@@ -100,6 +110,8 @@ export interface AdSetRow {
   id: string;
   name: string;
   status: string;
+  /** What Ads Manager shows under "Delivery" — see lib/delivery.ts. */
+  delivery: Delivery;
   spend: number;
   impressions: number;
   clicks: number;
@@ -121,6 +133,8 @@ export interface LeadRow {
   phone: string;
   campaign: string;
   platform: string;
+  /** Acquisition channel — see lib/lead-source.ts. */
+  source: string;
   externalId: string | null;
   status: string;
   stageId: string | null;
@@ -437,6 +451,8 @@ export async function getCampaignRows(
         name: schema.campaigns.name,
         platform: schema.campaigns.platform,
         status: schema.campaigns.status,
+        effectiveStatus: schema.campaigns.effectiveStatus,
+        endTime: schema.campaigns.endTime,
         objective: schema.campaigns.objective,
       })
       .from(schema.campaigns)
@@ -486,6 +502,9 @@ export async function getCampaignRows(
         name: formatCampaignName(c.name),
         platform: c.platform,
         status: c.status,
+        // Campaigns have no learning stage of their own — that lives on the
+        // ad sets below them.
+        delivery: deliveryStatus(c.effectiveStatus ?? c.status, null, c.endTime),
         objective: c.objective,
         spend: Math.round(sum.spend * 100) / 100,
         impressions: sum.impressions,
@@ -516,6 +535,8 @@ export async function getCampaignById(
       name: schema.campaigns.name,
       platform: schema.campaigns.platform,
       status: schema.campaigns.status,
+      effectiveStatus: schema.campaigns.effectiveStatus,
+      endTime: schema.campaigns.endTime,
       objective: schema.campaigns.objective,
       scoringCriteria: schema.campaigns.scoringCriteria,
     })
@@ -527,7 +548,13 @@ export async function getCampaignById(
       ),
     )
     .limit(1);
-  return c ? { ...c, name: formatCampaignName(c.name) } : null;
+  return c
+    ? {
+        ...c,
+        name: formatCampaignName(c.name),
+        delivery: deliveryStatus(c.effectiveStatus ?? c.status, null, c.endTime),
+      }
+    : null;
 }
 
 export interface CampaignFormField {
@@ -611,6 +638,9 @@ export async function getAdSetRows(
         id: schema.adsets.id,
         name: schema.adsets.name,
         status: schema.adsets.status,
+        effectiveStatus: schema.adsets.effectiveStatus,
+        learningStage: schema.adsets.learningStage,
+        endTime: schema.adsets.endTime,
         city: schema.adsets.cityName,
         region: schema.adsets.cityRegion,
         country: schema.adsets.cityCountry,
@@ -660,6 +690,11 @@ export async function getAdSetRows(
         id: a.id,
         name: a.name,
         status: a.status,
+        delivery: deliveryStatus(
+          a.effectiveStatus ?? a.status,
+          a.learningStage,
+          a.endTime,
+        ),
         spend: Math.round(sum.spend * 100) / 100,
         impressions: sum.impressions,
         clicks: sum.clicks,
@@ -1251,6 +1286,27 @@ export async function getLeadCityOptions(
     .sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * The acquisition channels this workspace has actually received leads
+ * through, so the filter never offers an empty bucket.
+ */
+export async function getLeadSourceOptions(
+  workspaceId: string,
+): Promise<LeadSource[]> {
+  const rows = await db()
+    .selectDistinct({ source: schema.leads.source })
+    .from(schema.leads)
+    .where(
+      and(
+        eq(schema.leads.workspaceId, workspaceId),
+        isNotNull(schema.leads.source),
+      ),
+    );
+  const present = new Set(rows.map((r) => r.source));
+  // Keep the canonical order rather than whatever the scan returned.
+  return LEAD_SOURCES.filter((s) => present.has(s));
+}
+
 export async function getLeadsPage(
   workspaceId: string,
   opts: {
@@ -1261,11 +1317,13 @@ export async function getLeadsPage(
     campaignId?: string | null;
     stageId?: string | null;
     city?: string | null;
+    /** Acquisition channel — see lib/lead-source.ts. */
+    source?: string | null;
     /** Free-text search over the lead's name, email and phone. */
     q?: string | null;
   } = {},
 ): Promise<LeadsPage> {
-  const { start, end, pageSize = 25, campaignId, stageId, city, q } = opts;
+  const { start, end, pageSize = 25, campaignId, stageId, city, source, q } = opts;
   // start/end null or omitted → unbounded on that side (all time when both).
   // Filtered against the lead's createdAt timestamp.
   const filters = [eq(schema.leads.workspaceId, workspaceId)];
@@ -1274,6 +1332,7 @@ export async function getLeadsPage(
   if (campaignId) filters.push(eq(schema.leads.campaignId, campaignId));
   if (stageId) filters.push(eq(schema.leads.stageId, stageId));
   if (city) filters.push(eq(schema.leads.geoCity, city));
+  if (source) filters.push(eq(schema.leads.source, source));
   // Find a specific lead by name, email or phone (case-insensitive substring).
   if (q) {
     const like = `%${q}%`;
@@ -1321,6 +1380,7 @@ function leadRowQuery() {
       formData: schema.leads.formData,
       formQuestions: schema.campaigns.formQuestions,
       platform: schema.leads.platform,
+      source: schema.leads.source,
       externalId: schema.leads.externalId,
       createdAt: schema.leads.createdAt,
       updatedAt: schema.leads.updatedAt,
@@ -1358,6 +1418,9 @@ function mapLeadRow(
     phone: r.phone ?? "—",
     campaign: formatCampaignName(r.campaign) || "—",
     platform: r.platform,
+    source:
+      r.source ??
+      deriveLeadSource(r.platform, r.formData as Record<string, unknown> | null),
     externalId: r.externalId,
     status: r.status,
     stageId: r.stageId,
@@ -1519,6 +1582,17 @@ export const PIPELINE_CARD_CAP = 100;
  * insensitive so hand-typed values ("LAS VEGAS ") still match. Requires the
  * query to left-join `adsets`.
  */
+/**
+ * The state a lead belongs to for location filters: its own (reported or
+ * derived, see lib/lead-region.ts), else the state its ad set targeted.
+ * Requires `adsets` to be left-joined on the query.
+ */
+export const leadRegionSql = sql<string | null>`coalesce(${schema.leads.geoRegion}, ${schema.adsets.cityRegion})`;
+
+function regionFilterSql(regions: string[]): SQL<unknown> {
+  return inArray(leadRegionSql, regions);
+}
+
 function cityFilterSql(cities: string[]): SQL<unknown> {
   const wanted = cities.map((c) => c.trim().toLowerCase());
   return or(
@@ -1596,9 +1670,7 @@ function pipelineLeadFilters(workspaceId: string, opts: PipelineFilters) {
       : lte(schema.leads.createdAt, d);
   return [
     eq(schema.leads.workspaceId, workspaceId),
-    opts.regions?.length
-      ? inArray(schema.adsets.cityRegion, opts.regions)
-      : undefined,
+    opts.regions?.length ? regionFilterSql(opts.regions) : undefined,
     opts.cities?.length
       ? cityFilterSql(opts.cities)
       : undefined,
@@ -1761,6 +1833,76 @@ export async function getPipeline(
   }
 
   return { stages, cardsByStage, counts, ccCounts, cap: PIPELINE_CARD_CAP };
+}
+
+/** One pipeline lead, flattened for a download. */
+export interface PipelineExportRow {
+  name: string;
+  email: string;
+  phone: string;
+  stage: string;
+  ccStatus: string | null;
+  campaign: string;
+  source: string;
+  region: string | null;
+  city: string | null;
+  aiScore: number | null;
+  agentName: string | null;
+  createdAt: Date;
+}
+
+/**
+ * Every lead in the board's current slice — no per-column cap, because an
+ * export that silently stopped at 100 cards a column would be worse than no
+ * export. Same filters as `getPipeline`, so what downloads is what's on
+ * screen.
+ */
+export async function getPipelineLeadsForExport(
+  workspaceId: string,
+  opts: PipelineFilters = {},
+): Promise<PipelineExportRow[]> {
+  const rows = await db()
+    .select({
+      name: schema.leads.name,
+      email: schema.leads.email,
+      phone: schema.leads.phone,
+      stage: schema.stages.name,
+      stagePosition: schema.stages.position,
+      ccStatus: schema.leads.ccStatus,
+      campaign: schema.campaigns.name,
+      platform: schema.leads.platform,
+      source: schema.leads.source,
+      formData: schema.leads.formData,
+      region: leadRegionSql,
+      city: sql<string | null>`coalesce(${schema.leads.geoCity}, ${schema.adsets.cityName})`,
+      aiScore: schema.leads.aiScore,
+      agentName: schema.users.name,
+      createdAt: schema.leads.createdAt,
+    })
+    .from(schema.leads)
+    .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+    .leftJoin(schema.stages, eq(schema.leads.stageId, schema.stages.id))
+    .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
+    .leftJoin(schema.users, eq(schema.leads.assignedToId, schema.users.id))
+    .where(and(...pipelineLeadFilters(workspaceId, opts)))
+    .orderBy(asc(schema.stages.position), desc(schema.leads.createdAt));
+
+  return rows.map((r) => ({
+    name: r.name ?? "Unknown",
+    email: r.email ?? "",
+    phone: r.phone ?? "",
+    stage: r.stage ?? "No stage",
+    ccStatus: r.ccStatus,
+    campaign: formatCampaignName(r.campaign),
+    source:
+      r.source ??
+      deriveLeadSource(r.platform, r.formData as Record<string, unknown> | null),
+    region: r.region,
+    city: r.city,
+    aiScore: r.aiScore,
+    agentName: r.agentName,
+    createdAt: r.createdAt,
+  }));
 }
 
 /**
@@ -2054,9 +2196,7 @@ export async function getContactQueue(
         queueCandidateWhere(workspaceId),
         notClaimedByOther,
         opts.adsetId ? eq(schema.leads.adsetId, opts.adsetId) : undefined,
-        opts.regions?.length
-          ? inArray(schema.adsets.cityRegion, opts.regions)
-          : undefined,
+        opts.regions?.length ? regionFilterSql(opts.regions) : undefined,
         opts.cities?.length
           ? cityFilterSql(opts.cities)
           : undefined,
@@ -2322,8 +2462,11 @@ export async function getWorkspaceGeoOptions(
       ),
     // The lead's own reported city — what the team actually manages by.
     // Title-cased so hand-typed variants ("LAS VEGAS", "las vegas") collapse.
+    // Paired with the lead's own state so the state picker offers every
+    // state leads actually live in, not only the ones ad sets target.
     db()
       .selectDistinct({
+        region: schema.leads.geoRegion,
         city: sql<string>`initcap(btrim(${schema.leads.geoCity}))`,
       })
       .from(schema.leads)
@@ -2334,20 +2477,29 @@ export async function getWorkspaceGeoOptions(
         ),
       ),
   ]);
-  // Dedupe case-insensitively; ad-set entries win (they carry the region).
+  // Dedupe (state, city) case-insensitively; ad-set entries first.
   const seen = new Set(
-    fromAdsets.map((r) => r.city?.trim().toLowerCase()).filter(Boolean),
+    fromAdsets.map((r) => `${r.region ?? ""}|${r.city?.trim().toLowerCase()}`),
   );
   const extras: { region: string | null; city: string | null }[] = [];
-  for (const r of [...fromManual, ...fromLeads]) {
-    const key = r.city?.trim().toLowerCase();
-    if (!key || seen.has(key)) continue;
+  for (const r of [
+    ...fromManual.map((m) => ({ region: null as string | null, city: m.city })),
+    ...fromLeads,
+  ]) {
+    const city = r.city?.trim();
+    if (!city) continue;
+    const key = `${r.region ?? ""}|${city.toLowerCase()}`;
+    if (seen.has(key)) continue;
     seen.add(key);
-    extras.push({ region: null, city: r.city });
+    extras.push({ region: r.region ?? null, city });
   }
   return [
     ...fromAdsets,
-    ...extras.sort((a, b) => (a.city ?? "").localeCompare(b.city ?? "")),
+    ...extras.sort(
+      (a, b) =>
+        (a.region ?? "").localeCompare(b.region ?? "") ||
+        (a.city ?? "").localeCompare(b.city ?? ""),
+    ),
   ];
 }
 
@@ -2384,7 +2536,7 @@ export async function getFunnelReport(
   if (opts.end) leadFilters.push(lte(schema.leads.createdAt, opts.end));
   // Location slice — via the lead's ad set targeting (state/city).
   if (opts.regions?.length)
-    leadFilters.push(inArray(schema.adsets.cityRegion, opts.regions));
+    leadFilters.push(regionFilterSql(opts.regions));
   if (opts.cities?.length)
     leadFilters.push(cityFilterSql(opts.cities));
 

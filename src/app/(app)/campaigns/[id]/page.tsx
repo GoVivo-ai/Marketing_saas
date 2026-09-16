@@ -8,7 +8,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { DeliveryBadge } from "@/components/app/delivery-badge";
+import { isDelivering } from "@/lib/delivery";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { AdSetExplorer } from "@/components/app/adset-explorer";
 import { getAdSetRows, getCampaignById, getWorkspaceContext } from "@/lib/data";
@@ -59,7 +60,7 @@ export default async function CampaignDetailPage({
     (acc, a) => ({ spend: acc.spend + a.spend, leads: acc.leads + a.leads }),
     { spend: 0, leads: 0 },
   );
-  const cities = adsets.filter((a) => a.city).length;
+  const delivering = adsets.filter((a) => isDelivering(a.delivery)).length;
   const cpl = totals.leads > 0 ? totals.spend / totals.leads : 0;
 
   return (
@@ -76,23 +77,23 @@ export default async function CampaignDetailPage({
             <h1 className="text-2xl font-semibold tracking-tight">
               {campaign.name}
             </h1>
-            <Badge variant={campaign.status === "ACTIVE" ? "default" : "secondary"}>
-              {campaign.status}
-            </Badge>
+            <DeliveryBadge delivery={campaign.delivery} />
           </div>
           <p className="text-sm text-muted-foreground">
-            {cities} cities · {usd(totals.spend)} spent · {totals.leads} leads ·
-            CPL {cpl ? usd(cpl) : "—"} · {resolved.label.toLowerCase()}
+            {delivering} of {adsets.length} ad sets delivering ·{" "}
+            {usd(totals.spend)} spent · {totals.leads} leads · CPL{" "}
+            {cpl ? usd(cpl) : "—"} · {resolved.label.toLowerCase()}
           </p>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Ad sets by city</CardTitle>
+          <CardTitle>Ad sets</CardTitle>
           <CardDescription>
-            Each ad set targets a city with an audience radius. The map shows
-            that radius; the table shows performance.
+            One row per ad set, with the delivery state Ads Manager reports.
+            Each targets an area with an audience radius — the map shows that
+            radius, the table shows performance.
           </CardDescription>
         </CardHeader>
         <CardContent>

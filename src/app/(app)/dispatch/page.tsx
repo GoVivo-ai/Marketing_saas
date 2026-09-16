@@ -28,6 +28,7 @@ import { Pagination } from "@/components/app/pagination";
 import { format } from "date-fns";
 import { getWorkspaceContext } from "@/lib/data";
 import { getDispatchDirectory } from "@/lib/dispatch-data";
+import { ExportMenu } from "@/components/app/export-menu";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,7 @@ export default async function DispatchPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <ExportMenu dataset="dispatch" />
           <Link
             href="/dispatch/schedule"
             className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-accent"

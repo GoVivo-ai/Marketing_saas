@@ -80,8 +80,8 @@ export function CityRadiusMap({ adsets, selectedId, onSelect }: Props) {
             ? `${a.radius} ${a.distanceUnit === "kilometer" ? "km" : "mi"}`
             : "no radius";
         circle.bindPopup(
-          `<strong>${a.city ?? a.name}</strong><br/>` +
-            `${a.region ?? ""}<br/>` +
+          `<strong>${a.name}</strong><br/>` +
+            `${[a.city, a.region].filter(Boolean).join(", ")}<br/>` +
             `Radius: ${radiusLabel}<br/>` +
             `Spend: ${usd(a.spend)} · Leads: ${a.leads}`,
         );

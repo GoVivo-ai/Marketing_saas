@@ -7,6 +7,7 @@ import { db, schema } from "@/lib/db";
 import { currentUser, isAgency, getWorkspaceRole } from "@/lib/permissions";
 import { isDemoSession, DEMO_BLOCKED_MSG } from "@/lib/demo";
 import { geocodeCityCached } from "@/lib/integrations/geocode";
+import { resolveLeadRegion } from "@/lib/lead-region";
 import {
   placeCall,
   sendText,
@@ -1055,12 +1056,21 @@ async function insertManualLead(
     .limit(1);
 
   const geo = p.city ? await geocodeCityCached(p.city, p.state || null) : null;
+  const geoRegion = resolveLeadRegion({
+    formState: p.state,
+    city: p.city,
+    geocodedRegion: geo?.region,
+    phone: p.phone,
+  });
 
   const [lead] = await db()
     .insert(schema.leads)
     .values({
       workspaceId,
       platform: "manual",
+      // "public_form" marks the shareable /join form — a website capture,
+      // not something an agent typed in.
+      source: source === "public_form" ? "website" : "manual",
       name: p.name,
       // Keep the explicit split: "Juan Pablo" + "Rivas" can't be recovered
       // from the joined name, and leadNameParts prefers these fields.
@@ -1072,7 +1082,7 @@ async function insertManualLead(
       phone: p.phone || null,
       email: p.email || null,
       geoCity: p.city || null,
-      geoRegion: p.state || null,
+      geoRegion,
       geoLat: geo ? geo.lat.toFixed(6) : null,
       geoLng: geo ? geo.lng.toFixed(6) : null,
       stageId: defaultStage?.id ?? null,

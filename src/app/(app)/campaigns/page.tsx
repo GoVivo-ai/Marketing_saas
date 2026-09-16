@@ -14,11 +14,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { DeliveryBadge } from "@/components/app/delivery-badge";
 import Link from "next/link";
 import { TrendingDown, TrendingUp, Minus, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { SyncNowButton } from "@/components/app/sync-now-button";
+import { ExportMenu } from "@/components/app/export-menu";
 import { getCampaignRows, getWorkspaceContext } from "@/lib/data";
 import { requireFullAccess } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
@@ -65,6 +67,7 @@ export default async function CampaignsPage({
         </div>
         <div className="flex items-center gap-2">
           {active && <SyncNowButton workspaceId={active.id} />}
+          <ExportMenu dataset="campaigns" />
           <DateRangePicker
             presets={RANGES}
             defaultValue={DEFAULT_RANGE}
@@ -77,8 +80,9 @@ export default async function CampaignsPage({
         <CardHeader>
           <CardTitle>All campaigns</CardTitle>
           <CardDescription>
-            {resolved.label} · CPL trend compares the recent half of the range
-            vs the earlier half
+            {resolved.label} · Delivery is the live state in Ads Manager, not
+            the date range · CPL trend compares the recent half of the range vs
+            the earlier half
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -93,7 +97,7 @@ export default async function CampaignsPage({
                 <TableRow>
                   <TableHead>Campaign</TableHead>
                   <TableHead>Platform</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Delivery</TableHead>
                   <TableHead className="text-right">Spend</TableHead>
                   <TableHead className="text-right">Impressions</TableHead>
                   <TableHead className="text-right">Clicks</TableHead>
@@ -122,9 +126,7 @@ export default async function CampaignsPage({
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={c.status === "ACTIVE" ? "default" : "secondary"}>
-                        {c.status}
-                      </Badge>
+                      <DeliveryBadge delivery={c.delivery} />
                     </TableCell>
                     <TableCell className="text-right">{usd(c.spend)}</TableCell>
                     <TableCell className="text-right">

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
+import { LeadSourceBadge } from "@/components/app/lead-source-badge";
 import type { LeadRow } from "@/lib/data";
 
 export function LeadsTable({
@@ -48,6 +49,7 @@ export function LeadsTable({
           <TableRow>
             <TableHead>Lead</TableHead>
             <TableHead>Campaign</TableHead>
+            <TableHead>Source</TableHead>
             <TableHead>AI Score</TableHead>
             <TableHead>Stage</TableHead>
             <TableHead className="text-right">Received</TableHead>
@@ -68,6 +70,9 @@ export function LeadsTable({
               </TableCell>
               <TableCell className="max-w-[220px] truncate text-sm">
                 {lead.campaign}
+              </TableCell>
+              <TableCell>
+                <LeadSourceBadge source={lead.source} />
               </TableCell>
               <TableCell>
                 {lead.aiScore != null ? (

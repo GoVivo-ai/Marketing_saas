@@ -7,6 +7,8 @@ import {
   fetchLeadFormQuestions,
 } from "@/lib/integrations/meta";
 import { geocodeCity, geocodeCityCached, geocodeZipCached } from "@/lib/integrations/geocode";
+import { findFormState, resolveLeadRegion } from "@/lib/lead-region";
+import { deriveLeadSource } from "@/lib/lead-source";
 import { decryptSecret } from "@/lib/crypto";
 import { getSecret } from "@/lib/settings";
 import {
@@ -31,6 +33,13 @@ export interface SyncStats {
 }
 
 const dateStr = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Platform timestamps arrive as ISO strings, or not at all (no end date set). */
+const parseDate = (iso: string | undefined): Date | null => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
 
 /** Pull the lead's self-reported city from its form answers, if present. */
 function findCity(formData: Record<string, unknown> | null | undefined): string | null {
@@ -110,6 +119,15 @@ export async function syncConnection(
   // 1) Campaigns
   const campaigns = leadsOnly ? [] : await connector.listCampaigns(creds);
   for (const c of campaigns) {
+    const fields = {
+      name: c.name,
+      status: c.status,
+      effectiveStatus: c.effectiveStatus ?? null,
+      startTime: parseDate(c.startTime),
+      endTime: parseDate(c.endTime),
+      objective: c.objective,
+      dailyBudget: c.dailyBudget?.toFixed(2),
+    };
     await db()
       .insert(schema.campaigns)
       .values({
@@ -117,19 +135,11 @@ export async function syncConnection(
         connectionId: conn.id,
         platform: conn.platform,
         externalId: c.externalId,
-        name: c.name,
-        status: c.status,
-        objective: c.objective,
-        dailyBudget: c.dailyBudget?.toFixed(2),
+        ...fields,
       })
       .onConflictDoUpdate({
         target: [schema.campaigns.connectionId, schema.campaigns.externalId],
-        set: {
-          name: c.name,
-          status: c.status,
-          objective: c.objective,
-          dailyBudget: c.dailyBudget?.toFixed(2),
-        },
+        set: fields,
       });
   }
   const campaignRows = await db()
@@ -269,6 +279,10 @@ export async function syncConnection(
       const fields = {
         name: a.name,
         status: a.status,
+        effectiveStatus: a.effectiveStatus ?? null,
+        learningStage: a.learningStage ?? null,
+        startTime: parseDate(a.startTime),
+        endTime: parseDate(a.endTime),
         cityName: a.city?.name ?? null,
         cityRegion: a.city?.region ?? null,
         cityCountry: a.city?.country ?? null,
@@ -338,7 +352,12 @@ export async function syncConnection(
   let leadsError: string | undefined;
   // Leads that were actually inserted this run (not duplicates), so we only
   // pay for an AI score once per lead instead of on every re-sync.
-  const freshLeads: { id: string; formData: Record<string, unknown> }[] = [];
+  const freshLeads: {
+    id: string;
+    formData: Record<string, unknown>;
+    platform: string;
+    source: string;
+  }[] = [];
   // Newly-synced leads land in the workspace's first open stage.
   const [defaultStage] = await db()
     .select({ id: schema.stages.id })
@@ -391,26 +410,36 @@ export async function syncConnection(
       let cityRaw = findCity(l.formData);
       let geoLat: string | null = null;
       let geoLng: string | null = null;
+      let geocodedRegion: string | null = null;
       const hint = l.adsetExternalId ? adsetGeoByExternal.get(l.adsetExternalId) : undefined;
+      const zip = findZip(l.formData);
       if (cityRaw) {
         const geo = await geocodeCityCached(cityRaw, hint?.region, hint?.country);
         if (geo) {
           geoLat = geo.lat.toFixed(6);
           geoLng = geo.lng.toFixed(6);
+          geocodedRegion = geo.region;
         }
-      } else {
+      } else if (zip) {
         // Newer forms ask for a ZIP code instead of a city — resolve it so the
         // lead still gets a location and a radius verdict.
-        const zip = findZip(l.formData);
-        if (zip) {
-          const geo = await geocodeZipCached(zip, hint?.country);
-          if (geo) {
-            cityRaw = geo.city ?? `ZIP ${zip}`;
-            geoLat = geo.lat.toFixed(6);
-            geoLng = geo.lng.toFixed(6);
-          }
+        const geo = await geocodeZipCached(zip, hint?.country);
+        if (geo) {
+          cityRaw = geo.city ?? `ZIP ${zip}`;
+          geoLat = geo.lat.toFixed(6);
+          geoLng = geo.lng.toFixed(6);
+          geocodedRegion = geo.region;
         }
       }
+      // The lead's own state, so location filters don't depend on the ad set.
+      const geoRegion = resolveLeadRegion({
+        formState: findFormState(l.formData),
+        city: cityRaw,
+        zip,
+        geocodedRegion,
+        phone: l.phone,
+        adsetRegion: hint?.region,
+      });
 
       const [inserted] = await db()
         .insert(schema.leads)
@@ -419,9 +448,11 @@ export async function syncConnection(
           campaignId,
           adsetId,
           geoCity: cityRaw,
+          geoRegion,
           geoLat,
           geoLng,
           platform: conn.platform,
+          source: deriveLeadSource(conn.platform, l.formData),
           externalId: l.externalId,
           name: l.name,
           email: l.email,
@@ -444,8 +475,10 @@ export async function syncConnection(
             campaignId: sql`coalesce(${schema.leads.campaignId}, excluded.campaign_id)`,
             adsetId: sql`coalesce(excluded.adset_id, ${schema.leads.adsetId})`,
             geoCity: sql`coalesce(excluded.geo_city, ${schema.leads.geoCity})`,
+            geoRegion: sql`coalesce(${schema.leads.geoRegion}, excluded.geo_region)`,
             geoLat: sql`coalesce(excluded.geo_lat, ${schema.leads.geoLat})`,
             geoLng: sql`coalesce(excluded.geo_lng, ${schema.leads.geoLng})`,
+            source: sql`coalesce(${schema.leads.source}, excluded.source)`,
           },
         })
         // xmax = 0 marks a fresh INSERT (vs. an ON CONFLICT update), so we
@@ -456,6 +489,8 @@ export async function syncConnection(
         freshLeads.push({
           id: inserted.id,
           formData: (l.formData ?? {}) as Record<string, unknown>,
+          platform: conn.platform,
+          source: deriveLeadSource(conn.platform, l.formData),
         });
       }
     }

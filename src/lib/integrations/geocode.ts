@@ -23,6 +23,11 @@ export interface LatLng {
   lng: number;
 }
 
+export interface GeoCity extends LatLng {
+  /** State/region Nominatim placed the city in ("California"), if known. */
+  region: string | null;
+}
+
 /**
  * Resolve a city to coordinates. Returns null when nothing is found so callers
  * can persist the ad set without a map pin rather than failing the sync.
@@ -31,18 +36,26 @@ export async function geocodeCity(
   city: string,
   region?: string | null,
   country?: string | null,
-): Promise<LatLng | null> {
+): Promise<GeoCity | null> {
   const q = [city, region, country].filter(Boolean).join(", ");
   if (!q) return null;
   await throttle();
   try {
-    const url = `${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&limit=1`;
+    const url = `${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&addressdetails=1&limit=1`;
     const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
     if (!res.ok) return null;
-    const data = (await res.json()) as Array<{ lat: string; lon: string }>;
+    const data = (await res.json()) as Array<{
+      lat: string;
+      lon: string;
+      address?: Record<string, string>;
+    }>;
     const hit = data[0];
     if (!hit) return null;
-    return { lat: Number(hit.lat), lng: Number(hit.lon) };
+    return {
+      lat: Number(hit.lat),
+      lng: Number(hit.lon),
+      region: hit.address?.state ?? null,
+    };
   } catch {
     return null;
   }
@@ -57,7 +70,15 @@ export async function geocodeCityCached(
   city: string,
   region?: string | null,
   country?: string | null,
-): Promise<LatLng | null> {
+  opts: {
+    /**
+     * Entries cached before the state was recorded come back with region
+     * null; pass true to re-resolve those once (a Nominatim call) so the
+     * lead's state can be derived. Off by default so the sync stays fast.
+     */
+    wantRegion?: boolean;
+  } = {},
+): Promise<GeoCity | null> {
   const q = [city, region, country].filter(Boolean).join(", ").toLowerCase().trim();
   if (!q) return null;
 
@@ -65,23 +86,52 @@ export async function geocodeCityCached(
   const { eq } = await import("drizzle-orm");
 
   const [cached] = await db()
-    .select({ lat: schema.geocache.lat, lng: schema.geocache.lng })
+    .select({
+      lat: schema.geocache.lat,
+      lng: schema.geocache.lng,
+      region: schema.geocache.region,
+      name: schema.geocache.name,
+    })
     .from(schema.geocache)
     .where(eq(schema.geocache.query, q))
     .limit(1);
-  if (cached) return { lat: Number(cached.lat), lng: Number(cached.lng) };
+  if (cached) {
+    // "-" marks a lookup that answered without a state, so we don't retry it.
+    const settled = cached.region != null;
+    if (settled || !opts.wantRegion)
+      return {
+        lat: Number(cached.lat),
+        lng: Number(cached.lng),
+        region: cached.region === "-" ? null : cached.region,
+      };
+    const fresh = await geocodeCity(city, region, country);
+    await db()
+      .update(schema.geocache)
+      .set({ region: fresh?.region ?? "-" })
+      .where(eq(schema.geocache.query, q));
+    return {
+      lat: Number(cached.lat),
+      lng: Number(cached.lng),
+      region: fresh?.region ?? null,
+    };
+  }
 
   const geo = await geocodeCity(city, region, country);
   if (!geo) return null;
 
   await db()
     .insert(schema.geocache)
-    .values({ query: q, lat: geo.lat.toFixed(6), lng: geo.lng.toFixed(6) })
+    .values({
+      query: q,
+      lat: geo.lat.toFixed(6),
+      lng: geo.lng.toFixed(6),
+      region: geo.region ?? "-",
+    })
     .onConflictDoNothing();
   return geo;
 }
 
-export interface GeoPlace extends LatLng {
+export interface GeoPlace extends GeoCity {
   /** The city/town the place resolves to, when Nominatim knows it. */
   city: string | null;
 }
@@ -111,7 +161,12 @@ export async function geocodeZip(
     const a = hit.address ?? {};
     const city =
       a.city ?? a.town ?? a.village ?? a.suburb ?? a.county ?? null;
-    return { lat: Number(hit.lat), lng: Number(hit.lon), city };
+    return {
+      lat: Number(hit.lat),
+      lng: Number(hit.lon),
+      city,
+      region: a.state ?? null,
+    };
   } catch {
     return null;
   }
@@ -132,12 +187,18 @@ export async function geocodeZipCached(
       lat: schema.geocache.lat,
       lng: schema.geocache.lng,
       name: schema.geocache.name,
+      region: schema.geocache.region,
     })
     .from(schema.geocache)
     .where(eq(schema.geocache.query, q))
     .limit(1);
   if (cached)
-    return { lat: Number(cached.lat), lng: Number(cached.lng), city: cached.name };
+    return {
+      lat: Number(cached.lat),
+      lng: Number(cached.lng),
+      city: cached.name,
+      region: cached.region === "-" ? null : cached.region,
+    };
 
   const geo = await geocodeZip(zip, country);
   if (!geo) return null;
@@ -149,6 +210,7 @@ export async function geocodeZipCached(
       lat: geo.lat.toFixed(6),
       lng: geo.lng.toFixed(6),
       name: geo.city,
+      region: geo.region ?? "-",
     })
     .onConflictDoNothing();
   return geo;

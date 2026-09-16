@@ -47,8 +47,11 @@ export async function getDispatchDirectory(
     area?: string | null;
     status?: string | null;
     page?: number;
+    /** Override the page size — exports read the whole filtered set. */
+    pageSize?: number;
   } = {},
 ): Promise<DispatchDirectory> {
+  const pageSize = opts.pageSize ?? DISPATCH_PAGE_SIZE;
   const filters = [
     eq(schema.dispatchDrivers.workspaceId, workspaceId),
     opts.q
@@ -102,15 +105,15 @@ export async function getDispatchDirectory(
       .from(schema.dispatchDrivers)
       .where(and(...filters))
       .orderBy(schema.dispatchDrivers.name)
-      .limit(DISPATCH_PAGE_SIZE)
-      .offset((Math.max(1, opts.page ?? 1) - 1) * DISPATCH_PAGE_SIZE),
+      .limit(pageSize)
+      .offset((Math.max(1, opts.page ?? 1) - 1) * pageSize),
     db()
       .selectDistinct({ area: schema.dispatchDrivers.area })
       .from(schema.dispatchDrivers)
       .where(eq(schema.dispatchDrivers.workspaceId, workspaceId)),
   ]);
 
-  const totalPages = Math.max(1, Math.ceil(total / DISPATCH_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, opts.page ?? 1), totalPages);
   // Out-of-range ?page= (stale link, shrunk filter) → serve the last page
   // instead of an empty table.

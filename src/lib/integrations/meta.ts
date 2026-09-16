@@ -101,17 +101,24 @@ export const metaConnector: MarketingConnector = {
       id: string;
       name: string;
       status: string;
+      effective_status?: string;
+      start_time?: string;
+      stop_time?: string;
       objective?: string;
       daily_budget?: string;
     };
     const rows = await graphGetAll<Row>(
-      `${GRAPH}/${creds.accountId}/campaigns?fields=id,name,status,objective,daily_budget&limit=100`,
+      `${GRAPH}/${creds.accountId}/campaigns` +
+        `?fields=id,name,status,effective_status,start_time,stop_time,objective,daily_budget&limit=100`,
       creds.accessToken,
     );
     return rows.map((r) => ({
       externalId: r.id,
       name: r.name,
       status: r.status,
+      effectiveStatus: r.effective_status,
+      startTime: r.start_time,
+      endTime: r.stop_time,
       objective: r.objective,
       // Meta returns budgets in minor units (cents).
       dailyBudget: r.daily_budget ? Number(r.daily_budget) / 100 : undefined,
@@ -247,6 +254,11 @@ export interface NormalizedAdSet {
   campaignExternalId: string;
   name: string;
   status: string;
+  /** Delivery inputs — see `deliveryStatus()` in lib/delivery.ts. */
+  effectiveStatus?: string;
+  learningStage?: string;
+  startTime?: string;
+  endTime?: string;
   /** First targeted city (Meta allows several, but geo-per-city accounts use one). */
   city?: {
     name: string;
@@ -381,6 +393,10 @@ export async function listAdSets(
     id: string;
     name: string;
     status: string;
+    effective_status?: string;
+    learning_stage_info?: { status?: string };
+    start_time?: string;
+    end_time?: string;
     campaign_id: string;
     targeting?: {
       geo_locations?: {
@@ -392,7 +408,8 @@ export async function listAdSets(
   };
   const rows = await graphGetAll<Row>(
     `${GRAPH}/${creds.accountId}/adsets` +
-      `?fields=id,name,status,campaign_id,targeting{geo_locations}` +
+      `?fields=id,name,status,effective_status,learning_stage_info,start_time,end_time` +
+      `,campaign_id,targeting{geo_locations}` +
       `&effective_status=${ADSET_STATUSES}&limit=200`,
     creds.accessToken,
   );
@@ -461,6 +478,10 @@ export async function listAdSets(
       campaignExternalId: r.campaign_id,
       name: r.name,
       status: r.status,
+      effectiveStatus: r.effective_status,
+      learningStage: r.learning_stage_info?.status,
+      startTime: r.start_time,
+      endTime: r.end_time,
       city: c
         ? {
             name: c.name,

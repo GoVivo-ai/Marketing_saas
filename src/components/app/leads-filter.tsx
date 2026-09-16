@@ -9,6 +9,7 @@ import {
   Layers,
   Loader2,
   MapPin,
+  Radio,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -31,7 +32,12 @@ export interface FilterOption {
  * can't be passed as a prop from a Server Component (functions aren't
  * serializable across the boundary).
  */
-const ICONS = { stage: Layers, city: MapPin, adset: Crosshair } as const;
+const ICONS = {
+  stage: Layers,
+  city: MapPin,
+  adset: Crosshair,
+  source: Radio,
+} as const;
 export type FilterIcon = keyof typeof ICONS;
 
 /**

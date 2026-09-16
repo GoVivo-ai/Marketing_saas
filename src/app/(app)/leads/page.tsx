@@ -11,18 +11,21 @@ import { LeadsCampaignFilter } from "@/components/app/leads-campaign-filter";
 import { LeadsFilter } from "@/components/app/leads-filter";
 import { LeadsSearch } from "@/components/app/leads-search";
 import { Pagination } from "@/components/app/pagination";
+import { ExportMenu } from "@/components/app/export-menu";
 import { auth } from "@/lib/auth";
 import { requireLeadsAccess } from "@/lib/permissions";
 import { isAnyTelephonyConnected } from "@/lib/integrations/telephony";
 import {
   getLeadCampaignOptions,
   getLeadCityOptions,
+  getLeadSourceOptions,
   getLeadStageOptions,
   getLeadsPage,
   getLeadRowById,
   getWorkspaceContext,
 } from "@/lib/data";
 import { resolveDateRange } from "@/lib/date-range";
+import { isLeadSource, LEAD_SOURCE_LABELS } from "@/lib/lead-source";
 import { LeadsTable } from "./leads-table";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +49,7 @@ export default async function LeadsPage({
     campaign?: string;
     stage?: string;
     city?: string;
+    source?: string;
     q?: string;
     /** Deep link: auto-open this lead's detail sheet (e.g. from the queue). */
     lead?: string;
@@ -62,6 +66,7 @@ export default async function LeadsPage({
   const campaignId = sp.campaign ?? null;
   const stageId = sp.stage ?? null;
   const city = sp.city ?? null;
+  const source = isLeadSource(sp.source ?? null) ? sp.source! : null;
   const q = sp.q?.trim() || null;
 
   const session = await auth();
@@ -70,7 +75,7 @@ export default async function LeadsPage({
     : false;
 
   const { active } = await getWorkspaceContext();
-  const [result, campaigns, stages, cities] = active
+  const [result, campaigns, stages, cities, sources] = active
     ? await Promise.all([
         getLeadsPage(active.id, {
           start: resolved.start,
@@ -79,14 +84,17 @@ export default async function LeadsPage({
           campaignId,
           stageId,
           city,
+          source,
           q,
         }),
         getLeadCampaignOptions(active.id),
         getLeadStageOptions(active.id),
         getLeadCityOptions(active.id),
+        getLeadSourceOptions(active.id),
       ])
     : [
         { rows: [], total: 0, page: 1, pageSize: 25, totalPages: 1 },
+        [],
         [],
         [],
         [],
@@ -102,6 +110,7 @@ export default async function LeadsPage({
     campaignId != null ||
     stageId != null ||
     city != null ||
+    source != null ||
     q != null;
 
   return (
@@ -132,6 +141,17 @@ export default async function LeadsPage({
             }))}
           />
           <LeadsFilter
+            param="source"
+            icon="source"
+            title="Source"
+            allLabel="All sources"
+            activeValue={source}
+            options={sources.map((s) => ({
+              value: s,
+              label: LEAD_SOURCE_LABELS[s],
+            }))}
+          />
+          <LeadsFilter
             param="city"
             icon="city"
             title="Area"
@@ -144,6 +164,7 @@ export default async function LeadsPage({
             defaultValue={DEFAULT_RANGE}
             label={resolved.label}
           />
+          <ExportMenu dataset="leads" />
           {active && <AddLeadDialog workspaceId={active.id} />}
         </div>
       </div>
@@ -152,7 +173,7 @@ export default async function LeadsPage({
         <CardHeader>
           <CardTitle>Incoming leads</CardTitle>
           <CardDescription>
-            Synced from Meta Lead Ads · {resolved.label} · {result.total} total
+            Every channel in one place · {resolved.label} · {result.total} total
           </CardDescription>
         </CardHeader>
         <CardContent>

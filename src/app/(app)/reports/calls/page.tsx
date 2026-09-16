@@ -26,6 +26,7 @@ import { DateRangePicker } from "@/components/app/date-range-picker";
 import { LeadsMultiFilter } from "@/components/app/leads-filter";
 import { ReportsNav } from "@/components/app/reports-nav";
 import { SyncCallsButton } from "@/components/app/sync-calls-button";
+import { ExportMenu } from "@/components/app/export-menu";
 import { getWorkspaceContext } from "@/lib/data";
 import {
   CALL_REPORT_TZ,
@@ -148,6 +149,7 @@ export default async function DailyCallsPage({
           <ReportsNav />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <ExportMenu dataset="calls" />
           <SyncCallsButton />
           <LeadsMultiFilter
             param="agent"

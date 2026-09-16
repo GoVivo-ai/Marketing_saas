@@ -25,6 +25,13 @@ export interface NormalizedCampaign {
   externalId: string;
   name: string;
   status: string;
+  /**
+   * Delivery as the platform reports it — `status` is only the on/off switch.
+   * See `deliveryStatus()` in lib/delivery.ts. Dates are ISO strings.
+   */
+  effectiveStatus?: string;
+  startTime?: string;
+  endTime?: string;
   objective?: string;
   dailyBudget?: number;
 }

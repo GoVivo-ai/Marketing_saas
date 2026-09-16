@@ -321,9 +321,11 @@ export function PipelineBoard({
                 </button>
               )}
             </div>
+            {/* The funnel summary — stage counts and conversion. The page's
+                Export menu downloads the leads themselves. */}
             <Button variant="outline" size="sm" onClick={exportCsv}>
               <Download className="mr-1 h-3.5 w-3.5" />
-              Export CSV
+              Funnel CSV
             </Button>
             {canManage && <StageManager workspaceId={workspaceId} stages={stages} />}
           </div>

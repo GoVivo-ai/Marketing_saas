@@ -20,6 +20,7 @@ import { LeadsMultiFilter } from "@/components/app/leads-filter";
 import { ReportsNav } from "@/components/app/reports-nav";
 import { SyncCallsButton } from "@/components/app/sync-calls-button";
 import { AgentActivityCharts } from "@/components/app/agent-activity-charts";
+import { ExportMenu } from "@/components/app/export-menu";
 import { getWorkspaceContext } from "@/lib/data";
 import { buildDailySeries, getAgentPerformance } from "@/lib/agent-report";
 import { requireFullAccess } from "@/lib/permissions";
@@ -117,6 +118,9 @@ export default async function AgentActivityPage({
           <ReportsNav />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* The charted PDF below is purpose-built for this report, so the
+              menu only offers the data formats. */}
+          <ExportMenu dataset="agents" formats={["csv", "xlsx"]} />
           <SyncCallsButton />
           <LeadsMultiFilter
             param="agent"

@@ -12,6 +12,7 @@ import { LeadsMultiFilter } from "@/components/app/leads-filter";
 import { DateRangePicker } from "@/components/app/date-range-picker";
 import { isCcStatus } from "@/lib/cc";
 import { DateBasisToggle } from "@/components/app/date-basis-toggle";
+import { ExportMenu } from "@/components/app/export-menu";
 import type { PipelineDateBasis } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -131,6 +132,7 @@ export default async function PipelinePage({
             options={agentOptions.map((a) => ({ value: a.id, label: a.name }))}
           />
           <div className="flex items-center gap-1.5">
+            <ExportMenu dataset="pipeline" />
             <DateBasisToggle value={dateBy} />
             <DateRangePicker
               presets={RANGES}

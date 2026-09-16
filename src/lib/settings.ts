@@ -66,7 +66,18 @@ function defaultRingCentralEnv(): RingCentralEnv {
     : "production";
 }
 
+/**
+ * Which RingCentral environment this deployment talks to.
+ *
+ * The stored setting is global — it lives in the database, which preview and
+ * production share — so flipping it to test a preview deploy would flip it for
+ * the live client too. `RINGCENTRAL_ENV` overrides it per deployment, which is
+ * what lets preview run against the real RingCentral while production stays
+ * exactly as it is.
+ */
 export async function getRingCentralEnv(): Promise<RingCentralEnv> {
+  const override = process.env.RINGCENTRAL_ENV;
+  if (override === "sandbox" || override === "production") return override;
   if (isDatabaseConfigured()) {
     const [row] = await db()
       .select({ valueEnc: schema.appSettings.valueEnc })

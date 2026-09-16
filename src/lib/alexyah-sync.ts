@@ -11,10 +11,10 @@ import { resolveLeadRegion } from "@/lib/lead-region";
 /**
  * Mirrors AlexYah's driver applications into the lead pipeline.
  *
- * These people applied on the client's own website, which makes them the
- * strongest-intent leads in the system — they came looking, rather than
- * tapping a form inside a feed. They land as `source: "website"`, which is
- * what the AI scorer weighs the channel by.
+ * These people applied on the client's own hiring portal, unprompted. They
+ * land as `source: "hiring_portal"` rather than "website": the /join form is
+ * also "website", but those leads come out of the team's ad-comment work, and
+ * the two have to stay apart to tell what we produced from what arrived alone.
  *
  * Their portal owns the applicant record; we own the sales pipeline. So this
  * writes on first sight and afterwards refreshes only the facts they are
@@ -182,7 +182,7 @@ export async function syncAlexYahApplications(
     await db().insert(schema.leads).values({
       workspaceId: ws.id,
       platform: "manual",
-      source: "website",
+      source: "hiring_portal",
       externalId: a.id,
       name: fullName(a),
       email,

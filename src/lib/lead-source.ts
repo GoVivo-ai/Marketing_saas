@@ -15,6 +15,7 @@ export const LEAD_SOURCES = [
   "tiktok_ads",
   "linkedin_ads",
   "website",
+  "hiring_portal",
   "manual",
 ] as const;
 
@@ -26,11 +27,12 @@ export const LEAD_SOURCE_LABELS: Record<LeadSource, string> = {
   tiktok_ads: "TikTok Ads",
   linkedin_ads: "LinkedIn Ads",
   website: "Website",
+  hiring_portal: "Hiring portal",
   manual: "Manual",
 };
 
 /** The channels a lead can actually arrive through today. */
-export const ACTIVE_LEAD_SOURCES: LeadSource[] = ["meta_ads", "website", "manual"];
+export const ACTIVE_LEAD_SOURCES: LeadSource[] = ["meta_ads", "website", "hiring_portal", "manual"];
 
 export function leadSourceLabel(source: string | null): string {
   return LEAD_SOURCE_LABELS[source as LeadSource] ?? "Unknown";
@@ -77,5 +79,6 @@ export const LEAD_SOURCE_INTENT: Record<LeadSource, string> = {
   google_ads: "clicked a search ad, so they were actively looking",
   tiktok_ads: "filled in a lead form inside the TikTok feed — weak intent",
   linkedin_ads: "filled in a lead form on LinkedIn",
+  hiring_portal: "submitted a full job application on the client's own hiring portal, unprompted — high intent, and more effort than a short lead form",
   manual: "was entered by the team (a referral or a phone call), so intent is only as good as that conversation",
 };

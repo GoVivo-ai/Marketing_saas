@@ -48,14 +48,24 @@ export async function setMaintenanceMode(
     if (end <= start) {
       return { error: "The window must end after it starts." };
     }
-    if (end <= Date.now()) {
-      return { error: "The scheduled window is entirely in the past." };
-    }
     scheduledStart = new Date(start).toISOString();
     scheduledEnd = new Date(end).toISOString();
   }
 
   const current = await getMaintenance();
+
+  if (scheduledEnd && Date.parse(scheduledEnd) <= Date.now()) {
+    // The form pre-fills the stored window, so an expired one comes back on
+    // every save. Rejecting it would block turning the switch off — drop it
+    // instead. A window typed in fresh that is already over is still an error.
+    const isStoredWindow =
+      current.scheduledStart === scheduledStart && current.scheduledEnd === scheduledEnd;
+    if (!isStoredWindow) {
+      return { error: "The scheduled window is entirely in the past." };
+    }
+    scheduledStart = null;
+    scheduledEnd = null;
+  }
   if (
     current.enabled === enabled &&
     current.message === message &&

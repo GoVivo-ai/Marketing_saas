@@ -1,4 +1,5 @@
-import { endOfDay, format, isValid, parseISO, startOfDay, subDays } from "date-fns";
+import { format, isValid, parseISO, subDays } from "date-fns";
+import { endOfBusinessDay, startOfBusinessDay } from "@/lib/business-time";
 
 /** A date-range filter resolved from URL params, ready for queries + UI. */
 export interface ResolvedRange {
@@ -37,17 +38,24 @@ export function resolveDateRange(
   params: { range?: string; from?: string; to?: string },
   opts: { presets: number[]; defaultPreset: string; allowAllTime: boolean },
 ): ResolvedRange {
-  const fromD = params.from ? parseISO(params.from) : null;
-  const toD = params.to ? parseISO(params.to) : null;
-  if (fromD && toD && isValid(fromD) && isValid(toD)) {
-    let start = startOfDay(fromD);
-    let end = startOfDay(toD);
-    if (start > end) [start, end] = [end, start];
-    const sameYear = start.getFullYear() === end.getFullYear();
+  const fromDay = params.from?.slice(0, 10);
+  const toDay = params.to?.slice(0, 10);
+  const fromD = fromDay ? parseISO(fromDay) : null;
+  const toD = toDay ? parseISO(toDay) : null;
+  if (fromDay && toDay && fromD && toD && isValid(fromD) && isValid(toD)) {
+    // Picked days are business-calendar days (Meta's clock), not the
+    // server's UTC ones — see lib/business-time.ts.
+    let [first, last] = [fromDay, toDay];
+    let [firstD, lastD] = [fromD, toD];
+    if (first > last) {
+      [first, last] = [last, first];
+      [firstD, lastD] = [lastD, firstD];
+    }
+    const sameYear = firstD.getFullYear() === lastD.getFullYear();
     return {
-      start,
-      end: endOfDay(end),
-      label: `${format(start, sameYear ? "MMM d" : "MMM d, yyyy")} – ${format(end, "MMM d, yyyy")}`,
+      start: startOfBusinessDay(first),
+      end: endOfBusinessDay(last),
+      label: `${format(firstD, sameYear ? "MMM d" : "MMM d, yyyy")} – ${format(lastD, "MMM d, yyyy")}`,
       preset: "custom",
     };
   }

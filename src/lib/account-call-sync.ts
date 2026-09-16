@@ -52,8 +52,18 @@ export interface AccountSyncReport {
   to: Date | null;
 }
 
+/**
+ * Accent-insensitive, so "María Alejandra" still finds "Maria Alejandra" —
+ * RingCentral extensions are routinely typed without diacritics, and two of
+ * the three agents on the phones have an accented name.
+ */
 const norm = (s: string | null | undefined) =>
-  (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  (s ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 
 /**
  * Pairs RingCentral extensions with platform users: email first because it's

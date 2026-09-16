@@ -14,11 +14,12 @@ const csp = [
   // data: covers the stored workspace logos; https: covers map tiles.
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  // The ports matter: a CSP source with no port means the scheme's default
-  // (443), and RingCentral serves SIP-over-WebSocket on 8083 and STUN on
-  // 19302. Without ":*" the browser blocks the softphone's socket before it
-  // leaves, which looks exactly like a firewall from the inside.
-  "connect-src 'self' https://*.ringcentral.com wss://*.ringcentral.com:* stun:*.ringcentral.com:*",
+  // The port wildcard matters: a CSP source with no port means the scheme's
+  // default (443), and RingCentral serves SIP-over-WebSocket on 8083. Without
+  // ":*" the browser blocks the softphone's socket before it leaves, which
+  // from the inside looks exactly like a firewall. STUN needs no entry — ICE
+  // servers are not fetches and connect-src does not govern them.
+  "connect-src 'self' https://*.ringcentral.com wss://*.ringcentral.com:*",
   `frame-src 'self' ${RC_ORIGIN}`,
   "media-src 'self' blob: https://*.ringcentral.com",
   "worker-src 'self' blob:",

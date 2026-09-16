@@ -75,10 +75,15 @@ async function rcConfig(): Promise<RcConfig> {
   return cfg;
 }
 
-/** Whether the *active* environment has all credentials needed to connect. */
+/**
+ * Whether the active environment can start an OAuth connect.
+ *
+ * The secret is optional on purpose: a public (PKCE) app has none, and
+ * requiring one here is what kept the "Connect RingCentral" button dark.
+ */
 export async function isRingCentralConfigured(): Promise<boolean> {
   const cfg = envConfig(await getRingCentralEnv());
-  return Boolean(cfg.clientId && cfg.clientSecret && cfg.server);
+  return Boolean(cfg.clientId && cfg.server);
 }
 
 const basicAuthHeader = (cfg: RcConfig) =>
@@ -126,15 +131,28 @@ interface TokenResponse {
   token_type: string;
 }
 
+/**
+ * Posts to the token endpoint, authenticating the client the way its type
+ * allows.
+ *
+ * A confidential app proves itself with its secret over Basic auth. A public
+ * one — the browser dialer's app is public, because a SPA cannot keep a
+ * secret — has none, so it names itself in the body and leans on PKCE for
+ * proof. Sending an empty Basic header for a public client is rejected, hence
+ * the branch rather than a default.
+ */
 async function tokenRequest(body: Record<string, string>): Promise<TokenResponse> {
   const cfg = await rcConfig();
+  const publicClient = !cfg.clientSecret;
   const res = await fetch(`${cfg.server}/restapi/oauth/token`, {
     method: "POST",
     headers: {
-      Authorization: basicAuthHeader(cfg),
+      ...(publicClient ? {} : { Authorization: basicAuthHeader(cfg) }),
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: new URLSearchParams(body).toString(),
+    body: new URLSearchParams(
+      publicClient ? { ...body, client_id: cfg.clientId } : body,
+    ).toString(),
   });
   if (!res.ok) {
     const text = await res.text();

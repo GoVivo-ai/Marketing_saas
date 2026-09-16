@@ -169,12 +169,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
       </div>
       <Toaster />
-      {/* Only one of these may run: RingCentral allows a single registration
-          per extension, and whichever registers last takes the calls. An
-          agent who has connected here gets our own softphone; everyone else
-          keeps the embedded widget until they do. */}
+      {/* Only one registration may be live: RingCentral allows one per
+          extension and the later one takes the calls. An agent who has
+          connected OAuth gets our own softphone, and the provider brings the
+          embedded widget back by itself if that fails. Everyone else keeps
+          the widget until they connect. */}
       {softphone ? (
-        <SoftphoneProvider connected />
+        <SoftphoneProvider connected workspaceId={active?.id ?? "none"} />
       ) : (
         <RingCentralDialer workspaceId={active?.id ?? "none"} />
       )}

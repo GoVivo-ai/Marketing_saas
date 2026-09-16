@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
+import { RingCentralDialer } from "@/components/app/ringcentral-dialer";
 import { SoftphonePanel } from "./softphone-panel";
 import { useSoftphone, type Softphone } from "./use-softphone";
 
@@ -17,17 +18,25 @@ const SoftphoneContext = createContext<Softphone | null>(null);
 
 export function SoftphoneProvider({
   connected,
+  workspaceId,
   children,
 }: {
   /** Whether this user has RingCentral connected — no tokens, no phone. */
   connected: boolean;
+  /** Namespaces the fallback widget's session, as the layout does. */
+  workspaceId: string;
   children?: React.ReactNode;
 }) {
   const phone = useSoftphone(connected);
+  // Two registrations for one extension fight, so the widget only comes back
+  // when ours has definitively failed — at which point an agent with no way
+  // to dial is a worse problem than a redundant dialer.
+  const fallback = phone.status === "failed" || phone.status === "unconfigured";
   return (
     <SoftphoneContext.Provider value={phone}>
       {children}
       <SoftphonePanel phone={phone} />
+      {fallback && <RingCentralDialer workspaceId={workspaceId} />}
     </SoftphoneContext.Provider>
   );
 }

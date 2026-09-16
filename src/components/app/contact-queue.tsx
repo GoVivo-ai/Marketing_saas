@@ -840,6 +840,12 @@ export function ContactQueue({
       );
       return;
     }
+    if (softphone?.status === "connecting") {
+      toast.error("Your phone is still connecting — try again in a moment.");
+      return;
+    }
+    // Softphone down: the provider has put the widget back, but it needs a
+    // sign-in of its own, so say that rather than let the call fail silently.
     if (!dialerCall(current.phone)) toast.error(NEEDS_DIALER);
   };
 

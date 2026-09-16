@@ -72,6 +72,40 @@ export interface Softphone {
   reconnect: () => void;
 }
 
+/**
+ * Turns whatever the SDK rejected with into something a person can read.
+ *
+ * The SIP client opens a WebSocket and rejects with the raw `error` Event
+ * when it fails, which has no message at all — stringifying it yields
+ * "[object Event]" and tells nobody anything. The useful facts live on the
+ * socket itself: which URL it was reaching for and how far it got.
+ */
+function describeError(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+
+  if (typeof Event !== "undefined" && e instanceof Event) {
+    const target = e.target as WebSocket | null;
+    const url = target?.url ?? "";
+    const host = url.replace(/^wss?:\/\//, "");
+    if (e instanceof CloseEvent) {
+      return `RingCentral closed the connection to ${host} (code ${e.code}${
+        e.reason ? `: ${e.reason}` : ""
+      })`;
+    }
+    // A browser gives no detail on a failed WebSocket handshake, by design —
+    // so name the likely causes rather than pretend we know which one it was.
+    return host
+      ? `Could not reach ${host}. A firewall blocking WebSocket traffic on that port, or a VPN, will do this.`
+      : "The connection to RingCentral failed";
+  }
+
+  if (e && typeof e === "object" && "message" in e) {
+    return String((e as { message: unknown }).message);
+  }
+  return "Unknown error";
+}
+
 /** A call is worth reporting once it is over; before that it can still change. */
 async function reportCall(call: ActiveCall, endedAt: number) {
   try {
@@ -181,6 +215,9 @@ export function useSoftphone(enabled: boolean): Softphone {
             password: sip.password,
             stunServers: sip.stunServers,
           },
+          // Prints the SIP traffic while developing; the handshake failures
+          // are otherwise invisible.
+          debug: process.env.NODE_ENV === "development",
         });
         phone.on("inboundCall", (session: InboundCallSession) => {
           // One call at a time: a second invite while busy is declined rather
@@ -193,7 +230,24 @@ export function useSoftphone(enabled: boolean): Softphone {
         });
         phone.on("outboundCall", (session: CallSession) => bindSession(session));
 
-        await phone.start();
+        try {
+          await phone.start();
+        } catch (first) {
+          // RingCentral hands out a backup proxy precisely because the primary
+          // is not always reachable — some networks block one port and not the
+          // other. Try it before giving up on the agent's phone.
+          if (cancelled) return;
+          console.warn("[softphone] primary proxy failed:", describeError(first));
+          if (!sip.outboundProxyBackup) throw first;
+          // The concrete SipClient exposes this; the published `SipClient`
+          // type is the narrower interface the WebPhone depends on.
+          (
+            phone.sipClient as unknown as {
+              toggleBackupOutboundProxy: (on?: boolean) => void;
+            }
+          ).toggleBackupOutboundProxy(true);
+          await phone.start();
+        }
         if (cancelled) {
           await phone.dispose();
           return;
@@ -202,8 +256,9 @@ export function useSoftphone(enabled: boolean): Softphone {
         setStatus("registered");
       } catch (err) {
         if (cancelled) return;
+        console.error("[softphone] registration failed:", err);
         setStatus("failed");
-        setError(err instanceof Error ? err.message : String(err));
+        setError(describeError(err));
       }
     })();
 

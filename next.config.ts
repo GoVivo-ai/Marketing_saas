@@ -14,7 +14,11 @@ const csp = [
   // data: covers the stored workspace logos; https: covers map tiles.
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.ringcentral.com wss://*.ringcentral.com",
+  // The ports matter: a CSP source with no port means the scheme's default
+  // (443), and RingCentral serves SIP-over-WebSocket on 8083 and STUN on
+  // 19302. Without ":*" the browser blocks the softphone's socket before it
+  // leaves, which looks exactly like a firewall from the inside.
+  "connect-src 'self' https://*.ringcentral.com wss://*.ringcentral.com:* stun:*.ringcentral.com:*",
   `frame-src 'self' ${RC_ORIGIN}`,
   "media-src 'self' blob: https://*.ringcentral.com",
   "worker-src 'self' blob:",
@@ -30,7 +34,9 @@ const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // Microphone is delegated to the RingCentral frame for WebRTC calls.
+  // Microphone: 'self' is what our own softphone registers with; the
+  // RingCentral origin is for the embedded widget, still used by agents who
+  // have not connected OAuth yet.
   {
     key: "Permissions-Policy",
     value: `camera=(), geolocation=(), microphone=(self "${RC_ORIGIN}")`,

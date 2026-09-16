@@ -3,6 +3,7 @@ import { Wrench, LogOut, Sparkles } from "lucide-react";
 import { isDemoEmail } from "@/lib/demo";
 import { auth, signOut } from "@/lib/auth";
 import { getWorkspaceContext } from "@/lib/data";
+import { isRingCentralConnected } from "@/lib/settings";
 import { getMaintenance } from "@/lib/settings";
 import { canManageWorkspace, isWorkspaceAgent } from "@/lib/permissions";
 import { VivoLogo } from "@/components/app/vivo-logo";
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Toaster } from "@/components/ui/sonner";
 import { RingCentralDialer } from "@/components/app/ringcentral-dialer";
+import { SoftphoneProvider } from "@/components/app/softphone";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -64,6 +66,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const { workspaces, active } = await getWorkspaceContext();
+  // Our own softphone needs server-side OAuth tokens; without them there is
+  // nothing to register and the embedded widget stays in charge.
+  const softphone = session?.user?.id
+    ? await isRingCentralConnected(session.user.id)
+    : false;
   const [canManageActive, isAgent] = active
     ? await Promise.all([canManageWorkspace(active.id), isWorkspaceAgent(active.id)])
     : [false, false];
@@ -162,7 +169,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
       </div>
       <Toaster />
-      <RingCentralDialer workspaceId={active?.id ?? "none"} />
+      {/* Only one of these may run: RingCentral allows a single registration
+          per extension, and whichever registers last takes the calls. An
+          agent who has connected here gets our own softphone; everyone else
+          keeps the embedded widget until they do. */}
+      {softphone ? (
+        <SoftphoneProvider connected>
+          <span className="sr-only">Softphone ready</span>
+        </SoftphoneProvider>
+      ) : (
+        <RingCentralDialer workspaceId={active?.id ?? "none"} />
+      )}
     </div>
   );
 }

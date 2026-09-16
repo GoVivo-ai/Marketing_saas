@@ -519,6 +519,69 @@ export async function fetchCallLog(
   return out;
 }
 
+// ── WebRTC softphone ───────────────────────────────────────────────────────
+
+/** Exactly the shape `ringcentral-web-phone` wants as its `sipInfo`. */
+export interface SipProvision {
+  transport: string;
+  domain: string;
+  outboundProxy: string;
+  /** Fallback proxy — the SDK fails over to it when the primary drops. */
+  outboundProxyBackup: string;
+  /** For NAT traversal; without them audio dies behind some networks. */
+  stunServers: string[];
+  username: string;
+  authorizationId: string;
+  password: string;
+  /** The extension this registration belongs to, for display. */
+  extensionNumber: string | null;
+}
+
+/**
+ * SIP credentials for a browser softphone.
+ *
+ * RingCentral hands these out per registration, not per user, so they are
+ * fetched fresh each time a phone comes up rather than stored. Requires the
+ * app's VoIP Calling permission. Registering the same extension twice takes
+ * the earlier registration down, which is why the dialer must own this and
+ * the embedded widget cannot be running at the same time.
+ */
+export async function sipProvision(userId: string): Promise<SipProvision> {
+  const { accessToken } = await getValidAccessToken(userId);
+  const data = (await apiFetch("/restapi/v1.0/client-info/sip-provision", accessToken, {
+    method: "POST",
+    body: JSON.stringify({ sipInfo: [{ transport: "WSS" }] }),
+  })) as {
+    sipInfo?: {
+      transport?: string;
+      domain?: string;
+      outboundProxy?: string;
+      outboundProxyBackup?: string;
+      stunServers?: string[];
+      username?: string;
+      authorizationId?: string;
+      password?: string;
+    }[];
+    device?: { extension?: { extensionNumber?: string } };
+  };
+
+  const sip = data.sipInfo?.[0];
+  if (!sip?.username || !sip.password || !sip.domain) {
+    throw new RingCentralError("SIP provisioning returned no usable credentials");
+  }
+  return {
+    transport: sip.transport ?? "WSS",
+    domain: sip.domain,
+    outboundProxy: sip.outboundProxy ?? "",
+    outboundProxyBackup: sip.outboundProxyBackup ?? "",
+    username: sip.username,
+    authorizationId: sip.authorizationId ?? "",
+    password: sip.password,
+    stunServers: sip.stunServers ?? [],
+    extensionNumber: data.device?.extension?.extensionNumber ?? null,
+  };
+}
+
 export async function sendSms(
   userId: string,
   to: string,

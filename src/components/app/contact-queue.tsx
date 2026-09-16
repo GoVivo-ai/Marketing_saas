@@ -27,6 +27,7 @@ import {
   dialerSms,
   isDialerConfigured,
 } from "@/components/app/ringcentral-dialer";
+import { useSoftphoneContext } from "@/components/app/softphone";
 import { LeadActivity } from "@/components/app/lead-activity";
 import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
 import {
@@ -686,6 +687,7 @@ export function ContactQueue({
 }) {
   const [items, setItems] = useState(data.items);
   const [channel, setChannel] = useState<OutreachChannel>("call");
+  const softphone = useSoftphoneContext();
   const [showHistory, setShowHistory] = useState(false);
   const [logging, startLog] = useTransition();
   const [done, setDone] = useState(0);
@@ -830,6 +832,14 @@ export function ContactQueue({
   const onCall = () => {
     if (!current?.phone) return;
     setChannel("call");
+    // Our own softphone when the agent has connected RingCentral; the
+    // embedded widget for everyone else, until they do.
+    if (softphone?.status === "registered") {
+      softphone.dial(current.phone).catch((e: unknown) =>
+        toast.error(e instanceof Error ? e.message : "Could not place the call"),
+      );
+      return;
+    }
     if (!dialerCall(current.phone)) toast.error(NEEDS_DIALER);
   };
 

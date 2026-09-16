@@ -11,12 +11,14 @@ import { decryptSecret, encryptSecret } from "@/lib/crypto";
 export type SecretKey =
   | "meta_access_token"
   | "anthropic_api_key"
-  | "openai_api_key";
+  | "openai_api_key"
+  | "alexyah_api_key";
 
 const ENV_FALLBACK: Record<SecretKey, () => string | undefined> = {
   meta_access_token: () => process.env.META_ACCESS_TOKEN,
   anthropic_api_key: () => process.env.ANTHROPIC_API_KEY,
   openai_api_key: () => process.env.OPENAI_API_KEY,
+  alexyah_api_key: () => process.env.ALEXYAH_API_KEY,
 };
 
 export async function getSecret(key: SecretKey): Promise<string | null> {

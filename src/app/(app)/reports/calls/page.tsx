@@ -35,7 +35,9 @@ import {
   REAL_CONVERSATION_SEC,
   REDIAL_MIN_ATTEMPTS,
   REDIAL_WINDOW_MIN,
+  CALL_LOG_PARTIAL_NOTE,
   getDailyCallReport,
+  isCallLogAuthoritative,
   type AgentDayRow,
   type GapLevel,
 } from "@/lib/call-report";
@@ -107,12 +109,15 @@ export default async function DailyCallsPage({
 
   const { active } = await getWorkspaceContext();
   await requireFullAccess(active?.id);
-  const report = active
-    ? await getDailyCallReport(active.id, {
-        start: resolved.start,
-        end: resolved.end,
-      })
-    : { rows: [], totals: null };
+  const [report, authoritative] = active
+    ? await Promise.all([
+        getDailyCallReport(active.id, {
+          start: resolved.start,
+          end: resolved.end,
+        }),
+        isCallLogAuthoritative(),
+      ])
+    : [{ rows: [], totals: null }, true];
 
   const agentOptions = [
     ...new Map(report.rows.map((r) => [r.userId, r.name])).entries(),
@@ -146,6 +151,14 @@ export default async function DailyCallsPage({
               alerts
             </p>
           </div>
+          {!authoritative && (
+            <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                <strong>Partial data.</strong> {CALL_LOG_PARTIAL_NOTE}.
+              </span>
+            </p>
+          )}
           <ReportsNav />
         </div>
         <div className="flex flex-wrap items-center gap-2">

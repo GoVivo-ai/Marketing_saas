@@ -3,6 +3,9 @@ import { eq } from "drizzle-orm";
 import { RefreshCw, Unplug, CircleCheck, KeyRound, Sparkles } from "lucide-react";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { DispatchConnectionCard } from "@/components/app/dispatch-connection-card";
+import { InboundWebhookCard } from "@/components/app/inbound-webhook-card";
+import { getInboundWebhook, inboundWebhookUrl } from "@/lib/inbound-leads";
+import { headers } from "next/headers";
 import { getWorkspaceContext } from "@/lib/data";
 import { canManageWorkspace, requireFullAccess } from "@/lib/permissions";
 import { metaConnector } from "@/lib/integrations/meta";
@@ -42,6 +45,15 @@ const upcomingPlatforms = [
   { name: "TikTok Ads", description: "TikTok campaign performance and lead forms", detail: "Phase 3" },
   { name: "LinkedIn Ads", description: "B2B campaigns and Lead Gen Forms", detail: "Phase 3" },
 ];
+
+/** Public origin of the app, from env or the current request. */
+async function publicAppBase() {
+  const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  if (base) return base;
+  const h = await headers();
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  return `${proto}://${h.get("host") ?? "localhost:3000"}`;
+}
 
 export default async function ConnectionsPage() {
   // Each client has its own credentials; the page works in the context of the
@@ -84,6 +96,10 @@ export default async function ConnectionsPage() {
         lastSyncedAt: dispatchConnRow.lastSyncedAt?.toISOString() ?? null,
       }
     : null;
+
+  // The workspace's inbound lead webhook, shown as the full URL to paste.
+  const inbound = isDatabaseConfigured() && active ? await getInboundWebhook(active.id) : null;
+  const appBase = await publicAppBase();
 
   const metaToken =
     isDatabaseConfigured() && active
@@ -196,6 +212,17 @@ export default async function ConnectionsPage() {
           runs on connect.
         </p>
       </div>
+
+      {active && (
+        <InboundWebhookCard
+          workspaceId={active.id}
+          workspaceName={active.name}
+          url={inbound ? inboundWebhookUrl(appBase, inbound.token) : null}
+          slackWebhookUrl={inbound?.slackWebhookUrl ?? null}
+          receivedCount={inbound?.receivedCount ?? 0}
+          lastReceivedAt={inbound?.lastReceivedAt?.toISOString() ?? null}
+        />
+      )}
 
       {active && (
         <Card>

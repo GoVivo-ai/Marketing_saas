@@ -19,6 +19,7 @@ import {
 import { alias } from "drizzle-orm/pg-core";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
+import { PRIORITY_MATCH_MIN } from "@/lib/contact-priority-config";
 import { haversineKm } from "@/lib/geo";
 import { deliveryStatus, type Delivery } from "@/lib/delivery";
 import {
@@ -1176,6 +1177,7 @@ export interface ContactPriority {
   campaignId: string | null;
   campaignName: string | null;
   regions: string[];
+  cities: string[];
   sinceDays: number | null;
   agentId: string | null;
   agentName: string | null;
@@ -1201,6 +1203,7 @@ export async function getContactPriorities(
       campaignId: schema.contactPriorities.campaignId,
       campaignName: schema.campaigns.name,
       regions: schema.contactPriorities.regions,
+      cities: schema.contactPriorities.cities,
       sinceDays: schema.contactPriorities.sinceDays,
       agentId: schema.contactPriorities.agentId,
       agentName: schema.users.name,
@@ -1223,6 +1226,7 @@ export async function getContactPriorities(
     ...r,
     campaignName: r.campaignName ? formatCampaignName(r.campaignName) : null,
     regions: r.regions ?? [],
+    cities: r.cities ?? [],
   }));
 }
 
@@ -1594,6 +1598,15 @@ export const leadRegionSql = sql<string | null>`coalesce(${schema.leads.geoRegio
 
 function regionFilterSql(regions: string[]): SQL<unknown> {
   return inArray(leadRegionSql, regions);
+}
+
+/**
+ * Leads located in / advertised to one of these cities: the lead's own city,
+ * its ad set's city, or the advertisement area of an imported lead.
+ * Exported for the contact-priority audience (same rule as the queue filter).
+ */
+export function leadCityFilterSql(cities: string[]): SQL<unknown> {
+  return cityFilterSql(cities);
 }
 
 function cityFilterSql(cities: string[]): SQL<unknown> {
@@ -1980,6 +1993,8 @@ export interface QueueItem {
   priorityBoost: number;
   /** Names of the priorities that boosted the lead (for the card badge). */
   priorityNames: string[];
+  /** Boost at or above PRIORITY_MATCH_MIN: the lead is what the supervisor asked for. */
+  priorityMatch: boolean;
 }
 
 /** A contacted lead still inside the follow-up window — not workable yet. */
@@ -2004,6 +2019,8 @@ export interface ContactQueueData {
   total: number;
   newCount: number;
   followUpCount: number;
+  /** Queued leads that match an active priority (shown first). */
+  priorityCount: number;
   /** Touched leads still inside the follow-up window (not queued yet). */
   coolingDown: number;
   /** The waiting leads themselves, soonest to come back first. */
@@ -2375,13 +2392,21 @@ export async function getContactQueue(
       callBackAt,
       priorityBoost: boostById.get(r.id)?.boost ?? 0,
       priorityNames: boostById.get(r.id)?.names ?? [],
+      priorityMatch: (boostById.get(r.id)?.boost ?? 0) >= PRIORITY_MATCH_MIN,
     });
   }
 
-  // Due callbacks first (a promise to the lead, earliest first), then
-  // overdue follow-ups (longest-waiting first), then fresh leads by score —
-  // the queue decides the order so the agent doesn't have to.
+  // Due callbacks first (a promise to the lead, earliest first), then the
+  // leads matching the supervisor's priority this week (best fit first),
+  // then overdue follow-ups (longest-waiting first), then fresh leads by
+  // score — the queue decides the order so the agent doesn't have to.
   items.sort((x, y) => {
+    const xCb = x.due === "follow_up" && !!x.callBackAt;
+    const yCb = y.due === "follow_up" && !!y.callBackAt;
+    if (xCb !== yCb) return xCb ? -1 : 1;
+    if (x.priorityMatch !== y.priorityMatch) return x.priorityMatch ? -1 : 1;
+    if (x.priorityMatch && x.priorityBoost !== y.priorityBoost)
+      return y.priorityBoost - x.priorityBoost;
     if (x.due !== y.due) return x.due === "follow_up" ? -1 : 1;
     if (x.due === "follow_up") {
       if (!!x.callBackAt !== !!y.callBackAt) return x.callBackAt ? -1 : 1;
@@ -2401,6 +2426,7 @@ export async function getContactQueue(
     total: items.length,
     newCount: items.filter((i) => i.due === "new").length,
     followUpCount: items.filter((i) => i.due === "follow_up").length,
+    priorityCount: items.filter((i) => i.priorityMatch).length,
     coolingDown,
     waiting,
   };

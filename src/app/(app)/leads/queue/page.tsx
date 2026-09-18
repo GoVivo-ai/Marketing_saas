@@ -100,7 +100,10 @@ export default async function ContactQueuePage({
   const cities = sp.city ? sp.city.split(",").filter(Boolean) : [];
   const q = sp.q?.trim() || null;
   const filter =
-    sp.filter === "follow_up" || sp.filter === "new" || sp.filter === "waiting"
+    sp.filter === "follow_up" ||
+    sp.filter === "new" ||
+    sp.filter === "waiting" ||
+    sp.filter === "priority"
       ? sp.filter
       : null;
   const resolved = resolveDateRange(sp, {
@@ -146,6 +149,7 @@ export default async function ContactQueuePage({
           total: 0,
           newCount: 0,
           followUpCount: 0,
+          priorityCount: 0,
           coolingDown: 0,
           waiting: [],
         },
@@ -175,7 +179,12 @@ export default async function ContactQueuePage({
   // Clicking a stat tile filters the working queue to that bucket. The tiles
   // keep showing the full totals; only the queue below narrows.
   const viewData = filter
-    ? { ...queue, items: queue.items.filter((i) => i.due === filter) }
+    ? {
+        ...queue,
+        items: queue.items.filter((i) =>
+          filter === "priority" ? i.priorityMatch : i.due === filter,
+        ),
+      }
     : queue;
 
   const hrefWith = (f: string | null) => {
@@ -200,8 +209,9 @@ export default async function ContactQueuePage({
             {active ? `${active.name} — Contact Queue` : "Contact Queue"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Work the list top to bottom — the queue puts overdue follow-ups first,
-            then new leads by score.
+            Work the list top to bottom — the queue puts due callbacks first,
+            then this week&apos;s priority leads, then overdue follow-ups, then
+            new leads by score.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -281,7 +291,21 @@ export default async function ContactQueuePage({
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div
+        className={cn(
+          "grid gap-4",
+          activePriorities.length > 0 ? "md:grid-cols-4" : "md:grid-cols-3",
+        )}
+      >
+        {activePriorities.length > 0 && (
+          <StatCard
+            label="Priority leads"
+            value={queue.priorityCount}
+            hint="Match this week's priority — on top"
+            href={hrefWith("priority")}
+            active={filter === "priority"}
+          />
+        )}
         <StatCard
           label="Follow-ups due"
           value={queue.followUpCount}
@@ -312,7 +336,9 @@ export default async function ContactQueuePage({
               ? `Showing follow-ups only (${viewData.items.length})`
               : filter === "new"
                 ? `Showing new leads only (${viewData.items.length})`
-                : `Showing waiting leads (${queue.waiting.length})`}
+                : filter === "priority"
+                  ? `Showing priority leads only (${viewData.items.length})`
+                  : `Showing waiting leads (${queue.waiting.length})`}
           </span>
           <Link href={hrefWith(null)} className="text-primary hover:underline">
             Show all

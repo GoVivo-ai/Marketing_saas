@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import {
   ChevronDown,
   LayoutDashboard,
@@ -135,8 +135,8 @@ export function AppSidebar({
   })).filter((g) => g.items.length > 0);
 
   // Which modules the user has folded. Persisted per browser so the rail
-  // opens the way they left it; the module holding the current page is
-  // always open so the active link is never hidden behind a fold.
+  // opens the way they left it. Any module folds, including the one you are
+  // in; landing on a page inside a folded module unfolds it (below).
   const collapsed = useSyncExternalStore(
     subscribeCollapsed,
     readCollapsed,
@@ -148,6 +148,18 @@ export function AppSidebar({
     else folded.add(label);
     writeCollapsed([...folded]);
   };
+  // Arriving on a page whose module is folded (a link from inside a page, a
+  // bookmark) opens that module so the active link is visible.
+  const currentGroup = groups.find((g) =>
+    g.items.some((n) => n.href === pathname),
+  )?.label;
+  useEffect(() => {
+    if (!currentGroup) return;
+    const now = new Set(JSON.parse(readCollapsed()) as string[]);
+    if (!now.has(currentGroup)) return;
+    now.delete(currentGroup);
+    writeCollapsed([...now]);
+  }, [pathname, currentGroup]);
 
   // Connections only for those who can manage the active workspace (agency or
   // the client's supervisors/admins). The team link is the agency roster for
@@ -224,12 +236,11 @@ export function AppSidebar({
         <WorkspaceSwitcher workspaces={workspaces} activeId={activeWorkspaceId} />
       </div>
 
-      <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-2">
+      <nav className="flex-1 space-y-2 overflow-y-auto px-3 py-2">
         {groups.map((g) => {
-          const holdsCurrent = g.items.some((n) => n.href === pathname);
-          const open = holdsCurrent || !folded.has(g.label);
+          const open = !folded.has(g.label);
           return (
-            <div key={g.label} className="space-y-1">
+            <div key={g.label}>
               {/* A heading only earns its place when there is more than one
                 module to tell apart. */}
               {groups.length > 1 && (
@@ -237,18 +248,31 @@ export function AppSidebar({
                   type="button"
                   onClick={() => toggle(g.label)}
                   aria-expanded={open}
-                  className="flex w-full items-center justify-between rounded-md px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 transition-colors hover:text-foreground"
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground"
                 >
                   {g.label}
                   <ChevronDown
                     className={cn(
-                      "h-3.5 w-3.5 transition-transform",
+                      "h-3.5 w-3.5 transition-transform duration-200",
                       !open && "-rotate-90",
                     )}
                   />
                 </button>
               )}
-              {open && g.items.map((n) => item(n.href, n.label, n.icon))}
+              {/* Grid-rows trick: animates height between 0 and auto. */}
+              <div
+                className={cn(
+                  "grid transition-[grid-template-rows] duration-200 ease-out",
+                  open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                )}
+              >
+                {/* `inert` keeps the clipped links out of clicks and tab order. */}
+                <div className="min-h-0 overflow-hidden" inert={!open}>
+                  <div className="space-y-1 pt-0.5">
+                    {g.items.map((n) => item(n.href, n.label, n.icon))}
+                  </div>
+                </div>
+              </div>
             </div>
           );
         })}

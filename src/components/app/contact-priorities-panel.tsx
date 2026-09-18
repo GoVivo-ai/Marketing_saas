@@ -22,7 +22,12 @@ import {
   setContactPriorityActive,
   type PriorityInput,
 } from "@/lib/actions/priorities";
-import { PRIORITY_AUDIENCE_CAP, PRIORITY_MAX_BOOST } from "@/lib/contact-priority-config";
+import {
+  PRIORITY_AUDIENCE_CAP,
+  PRIORITY_MATCH_MIN,
+  PRIORITY_MAX_BOOST,
+} from "@/lib/contact-priority-config";
+import type { ApplyPriorityResult } from "@/lib/ai/contact-priority";
 import type { ContactPriority } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +43,14 @@ import {
 import { cn } from "@/lib/utils";
 
 const ANY = "__any__";
+
+/** What an apply did, plus a warning when the cap left leads unrated. */
+function applySummary(name: string, r: ApplyPriorityResult): string {
+  const base = `${name}: ${r.matched} of ${r.audience} lead${r.audience === 1 ? "" : "s"} match — the queue is reordered.`;
+  return r.audienceTotal > r.audience
+    ? `${base} Only the newest ${r.audience} of ${r.audienceTotal} were rated — add cities or a lead age to cover them all.`
+    : base;
+}
 
 /**
  * Contact priorities — the "who first this week" layer over lead scoring.
@@ -82,10 +95,7 @@ export function ContactPrioritiesPanel({
       setBusy(`apply:${p.id}`);
       try {
         const r = await applyContactPriorityAction(workspaceId, p.id);
-        if (r.ok)
-          toast.success(
-            `${p.name}: ${r.matched} of ${r.audience} lead${r.audience === 1 ? "" : "s"} match — the queue is reordered.`,
-          );
+        if (r.ok) toast.success(applySummary(p.name, r), { duration: 8000 });
         else toast.error(r.error ?? "Couldn't apply the priority.");
         router.refresh();
       } finally {
@@ -106,6 +116,7 @@ export function ContactPrioritiesPanel({
           const scope = [
             p.campaignName ?? "All campaigns",
             p.regions.length ? p.regions.join(", ") : null,
+            p.cities.length ? p.cities.join(", ") : null,
             p.sinceDays ? `last ${p.sinceDays} days` : null,
           ]
             .filter(Boolean)
@@ -239,6 +250,7 @@ function NewPriorityForm({
   const [campaignId, setCampaignId] = useState(ANY);
   const [agentId, setAgentId] = useState(ANY);
   const [regions, setRegions] = useState<string[]>([]);
+  const [cities, setCities] = useState("");
   const [sinceDays, setSinceDays] = useState("");
   const [applyNow, setApplyNow] = useState(true);
   const [saving, startSave] = useTransition();
@@ -253,6 +265,7 @@ function NewPriorityForm({
         campaignId: campaignId === ANY ? null : campaignId,
         agentId: agentId === ANY ? null : agentId,
         regions,
+        cities: cities.split(/[,\n;]/).map((c) => c.trim()).filter(Boolean),
         sinceDays: sinceDays ? Number(sinceDays) : null,
       };
       const r = await createContactPriority(workspaceId, input);
@@ -262,10 +275,7 @@ function NewPriorityForm({
       }
       if (applyNow) {
         const a = await applyContactPriorityAction(workspaceId, r.id);
-        if (a.ok)
-          toast.success(
-            `${name}: ${a.matched} of ${a.audience} lead${a.audience === 1 ? "" : "s"} match — the queue is reordered.`,
-          );
+        if (a.ok) toast.success(applySummary(name, a), { duration: 8000 });
         else toast.error(a.error ?? "Saved, but couldn't apply it.");
       } else {
         toast.success("Priority saved. Apply it when you're ready.");
@@ -303,8 +313,9 @@ function NewPriorityForm({
           />
           <p className="text-xs text-muted-foreground">
             Plain words. The AI rates each lead&apos;s fit 0–100 and the queue adds
-            up to +{PRIORITY_MAX_BOOST} to its score. The campaign&apos;s scoring prompt
-            stays as it is.
+            up to +{PRIORITY_MAX_BOOST} to its score. Leads at +{PRIORITY_MATCH_MIN} or
+            more go to the top of the queue, above follow-ups. The campaign&apos;s
+            scoring prompt stays as it is.
           </p>
         </div>
         <div className="space-y-1.5">
@@ -368,6 +379,19 @@ function NewPriorityForm({
             })}
           </div>
           <p className="text-xs text-muted-foreground">None selected = any state.</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cp-cities">Cities</Label>
+          <Input
+            id="cp-cities"
+            value={cities}
+            onChange={(e) => setCities(e.target.value)}
+            placeholder="San Jose, Stockton, El Centro"
+            disabled={saving}
+          />
+          <p className="text-xs text-muted-foreground">
+            Comma-separated; matches the lead&apos;s city or its ad set&apos;s. Empty = any city.
+          </p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="cp-since">Lead age</Label>

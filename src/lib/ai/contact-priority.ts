@@ -2,7 +2,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { and, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { leadRegionSql } from "@/lib/data";
+import { leadCityFilterSql, leadRegionSql } from "@/lib/data";
 import { scoringModel } from "./provider";
 import {
   PRIORITY_AUDIENCE_CAP,
@@ -39,8 +39,10 @@ const chunkSchema = z.object({
 
 export interface ApplyPriorityResult {
   ok: boolean;
-  /** Leads in the audience. */
+  /** Leads sent to the AI (the audience, capped). */
   audience: number;
+  /** Leads the priority's filters select in total — above `audience` means the cap cut it. */
+  audienceTotal: number;
   /** Leads that got a boost written (AI answered). */
   applied: number;
   /** Leads that matched (boost > 0). */
@@ -68,13 +70,15 @@ export async function applyContactPriority(
     .from(schema.contactPriorities)
     .where(eq(schema.contactPriorities.id, priorityId))
     .limit(1);
-  if (!p) return { ok: false, audience: 0, applied: 0, matched: 0, error: "Priority not found." };
+  if (!p)
+    return { ok: false, audience: 0, audienceTotal: 0, applied: 0, matched: 0, error: "Priority not found." };
 
   const resolved = await scoringModel(p.workspaceId);
   if (!resolved)
     return {
       ok: false,
       audience: 0,
+      audienceTotal: 0,
       applied: 0,
       matched: 0,
       error: "No AI key configured (Settings → Connections).",
@@ -89,6 +93,7 @@ export async function applyContactPriority(
   const filters = [eligibleWhere(p.workspaceId)];
   if (p.campaignId) filters.push(eq(schema.leads.campaignId, p.campaignId));
   if (p.regions?.length) filters.push(inArray(leadRegionSql, p.regions));
+  if (p.cities?.length) filters.push(leadCityFilterSql(p.cities));
   if (p.sinceDays)
     filters.push(
       gte(schema.leads.createdAt, new Date(Date.now() - p.sinceDays * 86_400_000)),
@@ -110,6 +115,14 @@ export async function applyContactPriority(
     .where(and(...filters))
     .orderBy(sql`${schema.leads.createdAt} desc`)
     .limit(PRIORITY_AUDIENCE_CAP);
+  // How many the filters select in all — so the operator learns when the cap
+  // left older leads unrated and can narrow the audience (cities, age).
+  const [{ total: audienceTotal }] = await db()
+    .select({ total: sql<number>`count(*)::int` })
+    .from(schema.leads)
+    .leftJoin(schema.stages, eq(schema.leads.stageId, schema.stages.id))
+    .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+    .where(and(...filters));
 
   // Fresh slate: leads that left the audience (moved stage, aged out) drop
   // their old boost instead of lingering at the top of the queue.
@@ -139,6 +152,13 @@ export async function applyContactPriority(
             `each of the ${chunk.length} leads below matches that priority, 0–100.`,
             `Rate every lead independently and return one entry per lead by index.`,
             `This is NOT lead quality — only whether the lead fits the priority.`,
+            `Be strict: when the priority states hard requirements (named cities`,
+            `or areas, a vehicle year, availability, a license...), a lead that`,
+            `misses ANY of them scores 0–20, never higher. 50 or more is only for`,
+            `leads that meet every hard requirement; use 80–100 when they meet`,
+            `them all clearly. Partial credit is for soft preferences only.`,
+            `A lead is in a named area when its own location OR the ad set area`,
+            `is that place or a neighboring one; a different metro is a miss.`,
             ``,
             `<priority>`,
             p.prompt,
@@ -198,9 +218,10 @@ export async function applyContactPriority(
     return {
       ok: false,
       audience: audience.length,
+      audienceTotal,
       applied,
       matched,
       error: `AI provider rejected the request: ${fatal instanceof Error ? fatal.message : String(fatal)}`,
     };
-  return { ok: true, audience: audience.length, applied, matched };
+  return { ok: true, audience: audience.length, audienceTotal, applied, matched };
 }

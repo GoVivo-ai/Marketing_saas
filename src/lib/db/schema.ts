@@ -667,6 +667,11 @@ export const contactPriorities = pgTable(
     }),
     /** Audience: leads whose ad set targets one of these states (null = any). */
     regions: jsonb("regions").$type<string[]>(),
+    /**
+     * Audience: leads in / advertised to one of these cities (null = any).
+     * Keeps a city-specific priority inside the audience cap.
+     */
+    cities: jsonb("cities").$type<string[]>(),
     /** Audience: leads created in the last N days (null = any age). */
     sinceDays: integer("since_days"),
     /** Only this agent's queue is reordered (null = the whole team). */

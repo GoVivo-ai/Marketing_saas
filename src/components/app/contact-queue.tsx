@@ -723,14 +723,20 @@ export function ContactQueue({
     setItems((list) => {
       const pos = new Map(s.order.map((id, i) => [id, i]));
       // Drop leads already logged this session; keep the saved working order,
-      // with leads new since then appended at the end.
-      const next = list
-        .filter((x) => !handled.has(x.id) || x.id === pendingId)
-        .sort(
-          (a, b) =>
-            (pos.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-            (pos.get(b.id) ?? Number.MAX_SAFE_INTEGER),
-        );
+      // with leads new since then appended at the end. Priority leads are the
+      // exception: a priority applied since the order was saved must show up
+      // on top right away, so they keep the server's order ahead of the rest.
+      const kept = list.filter((x) => !handled.has(x.id) || x.id === pendingId);
+      const next = [
+        ...kept.filter((x) => x.priorityMatch),
+        ...kept
+          .filter((x) => !x.priorityMatch)
+          .sort(
+            (a, b) =>
+              (pos.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+              (pos.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+          ),
+      ];
       if (!s.pending) return next;
       // A sub-flow was open — its lead goes back to the front even if the
       // fresh server data no longer includes it.
@@ -994,10 +1000,17 @@ export function ContactQueue({
                     {current.aiScore != null ? current.aiScore : "—"}
                     {current.priorityBoost > 0 && (
                       <span
-                        className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary"
+                        className={cn(
+                          "ml-1.5 rounded-full px-1.5 py-0.5 text-xs font-medium",
+                          current.priorityMatch
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-primary/10 text-primary",
+                        )}
                         title={`Priority: ${current.priorityNames.join(", ")}`}
                       >
-                        +{current.priorityBoost} priority
+                        {current.priorityMatch
+                          ? `Priority · +${current.priorityBoost}`
+                          : `+${current.priorityBoost} priority`}
                       </span>
                     )}
                   </p>
@@ -1247,7 +1260,10 @@ export function ContactQueue({
                           {item.geo?.targetCity ? ` → ${item.geo.targetCity}` : ""}
                           {item.aiScore != null ? ` · Score ${item.aiScore}` : ""}
                           {item.priorityBoost > 0 ? (
-                            <span className="text-primary"> +{item.priorityBoost}</span>
+                            <span className={cn("text-primary", item.priorityMatch && "font-medium")}>
+                              {" "}
+                              {item.priorityMatch ? "★ " : ""}+{item.priorityBoost}
+                            </span>
                           ) : null}
                         </p>
                       </div>

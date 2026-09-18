@@ -20,6 +20,7 @@ export interface PriorityInput {
   prompt: string;
   campaignId: string | null;
   regions: string[];
+  cities: string[];
   sinceDays: number | null;
   agentId: string | null;
 }
@@ -46,6 +47,7 @@ function clean(input: PriorityInput): PriorityInput | string {
     prompt,
     campaignId: input.campaignId || null,
     regions: input.regions.map((r) => r.trim()).filter(Boolean),
+    cities: [...new Set((input.cities ?? []).map((c) => c.trim()).filter(Boolean))],
     sinceDays,
     agentId: input.agentId || null,
   };
@@ -69,6 +71,7 @@ export async function createContactPriority(
       prompt: v.prompt,
       campaignId: v.campaignId,
       regions: v.regions.length ? v.regions : null,
+      cities: v.cities.length ? v.cities : null,
       sinceDays: v.sinceDays,
       agentId: v.agentId,
       createdById: session?.user?.id ?? null,
@@ -94,6 +97,7 @@ export async function updateContactPriority(
       prompt: v.prompt,
       campaignId: v.campaignId,
       regions: v.regions.length ? v.regions : null,
+      cities: v.cities.length ? v.cities : null,
       sinceDays: v.sinceDays,
       agentId: v.agentId,
       updatedAt: new Date(),
@@ -156,7 +160,8 @@ export async function applyContactPriorityAction(
   priorityId: string,
 ): Promise<ApplyPriorityResult> {
   const denied = await authorize(workspaceId);
-  if (denied) return { ok: false, audience: 0, applied: 0, matched: 0, error: denied };
+  if (denied)
+    return { ok: false, audience: 0, audienceTotal: 0, applied: 0, matched: 0, error: denied };
   const [p] = await db()
     .select({ id: schema.contactPriorities.id })
     .from(schema.contactPriorities)
@@ -167,7 +172,8 @@ export async function applyContactPriorityAction(
       ),
     )
     .limit(1);
-  if (!p) return { ok: false, audience: 0, applied: 0, matched: 0, error: "Priority not found." };
+  if (!p)
+    return { ok: false, audience: 0, audienceTotal: 0, applied: 0, matched: 0, error: "Priority not found." };
   const res = await applyContactPriority(priorityId);
   revalidate();
   return res;

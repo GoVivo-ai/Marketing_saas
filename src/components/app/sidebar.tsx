@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSyncExternalStore } from "react";
 import {
+  ChevronDown,
   LayoutDashboard,
   Megaphone,
   Target,
@@ -63,6 +65,38 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+// The folded modules live in localStorage, exposed as a tiny external store
+// so the rail renders the same on the server and on first paint (everything
+// open) and then picks up the saved folds.
+const COLLAPSED_KEY = "vivo.sidebar.collapsed";
+const listeners = new Set<() => void>();
+// In-memory copy so folding still works for the session when storage is
+// blocked (private mode); it just won't survive a reload.
+let memory: string | null = null;
+function readCollapsed(): string {
+  if (memory !== null) return memory;
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) ?? "[]";
+  } catch {
+    return "[]";
+  }
+}
+function writeCollapsed(labels: string[]) {
+  memory = JSON.stringify(labels);
+  try {
+    localStorage.setItem(COLLAPSED_KEY, memory);
+  } catch {
+    // Storage blocked; the in-memory copy carries the session.
+  }
+  listeners.forEach((l) => l());
+}
+function subscribeCollapsed(cb: () => void) {
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
 // Agents only work their leads: the Contact module.
 const AGENT_HREFS = new Set(["/leads", "/leads/queue", "/leads/pipeline"]);
 
@@ -99,6 +133,21 @@ export function AppSidebar({
     ...g,
     items: allowed ? g.items.filter((n) => allowed.has(n.href)) : g.items,
   })).filter((g) => g.items.length > 0);
+
+  // Which modules the user has folded. Persisted per browser so the rail
+  // opens the way they left it; the module holding the current page is
+  // always open so the active link is never hidden behind a fold.
+  const collapsed = useSyncExternalStore(
+    subscribeCollapsed,
+    readCollapsed,
+    () => "[]",
+  );
+  const folded = new Set(JSON.parse(collapsed) as string[]);
+  const toggle = (label: string) => {
+    if (folded.has(label)) folded.delete(label);
+    else folded.add(label);
+    writeCollapsed([...folded]);
+  };
 
   // Connections only for those who can manage the active workspace (agency or
   // the client's supervisors/admins). The team link is the agency roster for
@@ -176,18 +225,33 @@ export function AppSidebar({
       </div>
 
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-2">
-        {groups.map((g) => (
-          <div key={g.label} className="space-y-1">
-            {/* A heading only earns its place when there is more than one
-              module to tell apart. */}
-            {groups.length > 1 && (
-              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                {g.label}
-              </p>
-            )}
-            {g.items.map((n) => item(n.href, n.label, n.icon))}
-          </div>
-        ))}
+        {groups.map((g) => {
+          const holdsCurrent = g.items.some((n) => n.href === pathname);
+          const open = holdsCurrent || !folded.has(g.label);
+          return (
+            <div key={g.label} className="space-y-1">
+              {/* A heading only earns its place when there is more than one
+                module to tell apart. */}
+              {groups.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => toggle(g.label)}
+                  aria-expanded={open}
+                  className="flex w-full items-center justify-between rounded-md px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 transition-colors hover:text-foreground"
+                >
+                  {g.label}
+                  <ChevronDown
+                    className={cn(
+                      "h-3.5 w-3.5 transition-transform",
+                      !open && "-rotate-90",
+                    )}
+                  />
+                </button>
+              )}
+              {open && g.items.map((n) => item(n.href, n.label, n.icon))}
+            </div>
+          );
+        })}
       </nav>
 
       <nav className="space-y-1 border-t px-3 py-3">

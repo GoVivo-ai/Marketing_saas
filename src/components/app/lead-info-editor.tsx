@@ -473,7 +473,20 @@ export function LeadInfoEditor({
             <div key={key} className="space-y-0.5">
               <p className="text-xs capitalize text-muted-foreground">{label}</p>
               {value != null ? (
-                <p className="break-words font-medium">{value}</p>
+                /^https?:\/\//.test(value) ? (
+                  // A link (a resume, a LinkedIn profile) opens instead of
+                  // being copied out by hand.
+                  <a
+                    href={value}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="break-all font-medium text-primary hover:underline"
+                  >
+                    {value}
+                  </a>
+                ) : (
+                  <p className="break-words font-medium">{value}</p>
+                )
               ) : (
                 <p className="text-muted-foreground">Not answered</p>
               )}

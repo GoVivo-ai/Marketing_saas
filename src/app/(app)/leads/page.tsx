@@ -13,7 +13,7 @@ import { LeadsSearch } from "@/components/app/leads-search";
 import { Pagination } from "@/components/app/pagination";
 import { ExportMenu } from "@/components/app/export-menu";
 import { auth } from "@/lib/auth";
-import { requireLeadsAccess } from "@/lib/permissions";
+import { exportAccess, requireLeadsAccess } from "@/lib/permissions";
 import { isAnyTelephonyConnected } from "@/lib/integrations/telephony";
 import {
   getLeadCampaignOptions,
@@ -75,6 +75,7 @@ export default async function LeadsPage({
     : false;
 
   const { active } = await getWorkspaceContext();
+  const exportMode = active ? await exportAccess(active.id) : "none";
   const [result, campaigns, stages, cities, sources] = active
     ? await Promise.all([
         getLeadsPage(active.id, {
@@ -164,7 +165,7 @@ export default async function LeadsPage({
             defaultValue={DEFAULT_RANGE}
             label={resolved.label}
           />
-          <ExportMenu dataset="leads" />
+          <ExportMenu dataset="leads" access={exportMode} />
           {active && <AddLeadDialog workspaceId={active.id} />}
         </div>
       </div>

@@ -41,7 +41,7 @@ import {
   type AgentDayRow,
   type GapLevel,
 } from "@/lib/call-report";
-import { requireFullAccess } from "@/lib/permissions";
+import { exportAccess, requireFullAccess } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 import { cn } from "@/lib/utils";
 
@@ -109,6 +109,7 @@ export default async function DailyCallsPage({
 
   const { active } = await getWorkspaceContext();
   await requireFullAccess(active?.id);
+  const exportMode = active ? await exportAccess(active.id) : "none";
   const [report, authoritative] = active
     ? await Promise.all([
         getDailyCallReport(active.id, {
@@ -162,7 +163,7 @@ export default async function DailyCallsPage({
           <ReportsNav />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <ExportMenu dataset="calls" />
+          <ExportMenu dataset="calls" access={exportMode} />
           <SyncCallsButton />
           <LeadsMultiFilter
             param="agent"

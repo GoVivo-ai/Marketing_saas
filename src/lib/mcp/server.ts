@@ -67,16 +67,21 @@ async function accessibleWorkspaces(p: ApiKeyPrincipal): Promise<McpWorkspace[]>
   }
   const out: McpWorkspace[] = [];
   for (const w of rows) {
-    out.push({ ...w, fullAccess: await hasFullAccess(p, w.id) });
+    if (!(await hasFullAccess(p, w.id))) continue;
+    out.push({ ...w, fullAccess: true });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Same rule as isWorkspaceAgent, evaluated for the key's owner. */
+/**
+ * Same line as canExportPersonalData, evaluated for the key's owner: the API
+ * returns leads with phone and email, so only admins get a workspace here.
+ * Keys minted before this rule simply stop seeing non-admin workspaces.
+ */
 async function hasFullAccess(p: { userId: string; role: Role }, workspaceId: string) {
   if (p.role === "agency_member") return false;
   if (isPlatformAdmin(p.role)) return true;
-  return (await getWorkspaceRole(p.userId, workspaceId)) !== "agent";
+  return (await getWorkspaceRole(p.userId, workspaceId)) === "admin";
 }
 
 class ToolError extends Error {}

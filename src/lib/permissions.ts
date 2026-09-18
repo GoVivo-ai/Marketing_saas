@@ -82,6 +82,38 @@ export async function isWorkspaceAgent(workspaceId: string): Promise<boolean> {
 }
 
 /**
+ * Who may take people's contact details out of the platform: Vivo admins
+ * (developers included) and the client's own admins. Supervisors run the
+ * floor but download plain data — no phone, no email. Agents download
+ * nothing. This is the Admin-vs-Supervisor line Felipe asked for: PII leaves
+ * Martek only in an admin's hands.
+ */
+export async function canExportPersonalData(
+  workspaceId: string,
+): Promise<boolean> {
+  const u = await currentUser();
+  if (!u) return false;
+  if (isPlatformAdmin(u.role)) return true;
+  if (u.role === "agency_member" || u.role === "operations") return false;
+  return (await getWorkspaceRole(u.id, workspaceId)) === "admin";
+}
+
+/**
+ * Whether the current user gets an Export button at all, and whether the
+ * file carries contact details. One answer for pages and the download route
+ * so a hidden button and a refused request never disagree.
+ */
+export type ExportAccess = "full" | "plain" | "none";
+export async function exportAccess(workspaceId: string): Promise<ExportAccess> {
+  const u = await currentUser();
+  if (!u) return "none";
+  // The dispatch team exports its own board (handled per dataset by the route).
+  if (isOperations(u.role)) return "plain";
+  if (await isWorkspaceAgent(workspaceId)) return "none";
+  return (await canExportPersonalData(workspaceId)) ? "full" : "plain";
+}
+
+/**
  * Page guard for everything outside Leads / Contact Queue / Pipeline: agents
  * are sent to their queue, dispatch-only users to their board. Call at the
  * top of each restricted page.

@@ -1853,6 +1853,7 @@ export async function getPipeline(
 
 /** One pipeline lead, flattened for a download. */
 export interface PipelineExportRow {
+  id: string;
   name: string;
   email: string;
   phone: string;
@@ -1879,6 +1880,7 @@ export async function getPipelineLeadsForExport(
 ): Promise<PipelineExportRow[]> {
   const rows = await db()
     .select({
+      id: schema.leads.id,
       name: schema.leads.name,
       email: schema.leads.email,
       phone: schema.leads.phone,
@@ -1904,6 +1906,7 @@ export async function getPipelineLeadsForExport(
     .orderBy(asc(schema.stages.position), desc(schema.leads.createdAt));
 
   return rows.map((r) => ({
+    id: r.id,
     name: r.name ?? "Unknown",
     email: r.email ?? "",
     phone: r.phone ?? "",

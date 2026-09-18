@@ -14,7 +14,11 @@ import {
   getRingCentralEnv,
 } from "@/lib/settings";
 import { isRingCentralConfigured } from "@/lib/integrations/ringcentral";
-import { currentUser, isAgentOnly } from "@/lib/permissions";
+import {
+  canExportPersonalData,
+  currentUser,
+  isAgentOnly,
+} from "@/lib/permissions";
 import { RingCentralConnectCard } from "@/components/app/ringcentral-connect-card";
 import {
   getScoreAutomation,
@@ -56,8 +60,14 @@ async function mcpEndpointUrl() {
 export default async function GeneralSettingsPage() {
   const session = await auth();
   const userId = session?.user?.id;
-  // The demo tour user never gets API keys (the workspace is anonymized data).
-  const showApiAccess = Boolean(userId) && !isDemoEmail(session?.user?.email);
+  // API keys read leads with phone and email, so they follow the same line
+  // as downloads: admins only. The demo tour user never gets them either.
+  const { active: apiWorkspace } = await getWorkspaceContext();
+  const showApiAccess =
+    Boolean(userId) &&
+    !isDemoEmail(session?.user?.email) &&
+    Boolean(apiWorkspace) &&
+    (await canExportPersonalData(apiWorkspace!.id));
   const [apiKeys, connectedApps, mcpUrl] = await Promise.all([
     showApiAccess && userId ? listApiKeys(userId) : Promise.resolve([]),
     showApiAccess && userId ? listConnectedApps(userId) : Promise.resolve([]),

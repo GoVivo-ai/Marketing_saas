@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getWorkspaceContext } from "@/lib/data";
 import {
   currentUser,
+  exportAccess,
   isOperations,
-  isWorkspaceAgent,
+  type ExportAccess,
 } from "@/lib/permissions";
 import {
   buildExportTable,
   isExportDataset,
+  stripPersonalData,
   type ExportDataset,
 } from "@/lib/export/datasets";
 import {
@@ -48,14 +50,18 @@ export async function GET(
   if (!active)
     return NextResponse.json({ error: "No workspace" }, { status: 404 });
 
-  if (!(await canExport(dataset, active.id, u.role)))
+  const access = await exportAccess(active.id);
+  if (!canExport(dataset, access, u.role))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const table = await buildExportTable(
+  const built = await buildExportTable(
     dataset,
     { workspaceId: active.id, workspaceName: active.name },
     req.nextUrl.searchParams,
   );
+  // Supervisors get the same rows without phone or email; only admins take
+  // contact details out of the platform.
+  const table = access === "full" ? built : stripPersonalData(built);
   const body = await serialize(table, format);
 
   return new NextResponse(body as BodyInit, {
@@ -68,18 +74,15 @@ export async function GET(
 }
 
 /** Mirrors each page's own guard — a download can't reveal a page you can't open. */
-async function canExport(
+function canExport(
   dataset: ExportDataset,
-  workspaceId: string,
+  access: ExportAccess,
   role: string,
-): Promise<boolean> {
-  const operations = isOperations(role);
+): boolean {
+  if (access === "none") return false;
   // Dispatch-only users see the driver board and nothing else.
-  if (dataset === "dispatch") return operations || !(await isWorkspaceAgent(workspaceId));
-  if (operations) return false;
-  // Leads and pipeline are open to agents; the rest is supervisors and up.
-  if (dataset === "leads" || dataset === "pipeline") return true;
-  return !(await isWorkspaceAgent(workspaceId));
+  if (isOperations(role)) return dataset === "dispatch";
+  return true;
 }
 
 async function serialize(

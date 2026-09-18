@@ -22,7 +22,7 @@ import { DateRangePicker } from "@/components/app/date-range-picker";
 import { SyncNowButton } from "@/components/app/sync-now-button";
 import { ExportMenu } from "@/components/app/export-menu";
 import { getCampaignRows, getWorkspaceContext } from "@/lib/data";
-import { requireFullAccess } from "@/lib/permissions";
+import { exportAccess, requireFullAccess } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +50,7 @@ export default async function CampaignsPage({
   });
   const { active } = await getWorkspaceContext();
   await requireFullAccess(active?.id);
+  const exportMode = active ? await exportAccess(active.id) : "none";
   const rows = active
     ? await getCampaignRows(active.id, { start: resolved.start!, end: resolved.end! })
     : [];
@@ -67,7 +68,7 @@ export default async function CampaignsPage({
         </div>
         <div className="flex items-center gap-2">
           {active && <SyncNowButton workspaceId={active.id} />}
-          <ExportMenu dataset="campaigns" />
+          <ExportMenu dataset="campaigns" access={exportMode} />
           <DateRangePicker
             presets={RANGES}
             defaultValue={DEFAULT_RANGE}

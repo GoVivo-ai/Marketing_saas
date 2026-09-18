@@ -12,6 +12,8 @@ import {
   Sparkles,
   FileBarChart,
   Bus,
+  Headset,
+  PhoneCall,
   Plug,
   Settings,
   TerminalSquare,
@@ -23,22 +25,48 @@ import { WorkspaceSwitcher } from "./workspace-switcher";
 import { VivoLogo } from "./vivo-logo";
 import type { WorkspaceInfo } from "@/lib/data";
 
-const fullNav = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/planner", label: "Planner", icon: Target },
-  { href: "/campaigns", label: "Campaigns", icon: Megaphone },
-  { href: "/leads", label: "Leads", icon: Inbox },
-  { href: "/leads/queue", label: "Contact Queue", icon: PhoneOutgoing },
-  { href: "/leads/pipeline", label: "Pipeline", icon: Columns3 },
-  { href: "/dispatch", label: "Dispatch", icon: Bus },
-  { href: "/insights", label: "AI Insights", icon: Sparkles },
-  { href: "/reports", label: "Reports", icon: FileBarChart },
+type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
+type NavGroup = { label: string; items: NavItem[] };
+
+// The rail is organised by module. Marketing is the campaign side, Contact is
+// where leads get worked, Reports is read-only analysis, Operations is the
+// dispatch team's world. Roles see whole modules, not scattered links.
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Marketing",
+    items: [
+      { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
+      { href: "/planner", label: "Planner", icon: Target },
+      { href: "/campaigns", label: "Campaigns", icon: Megaphone },
+    ],
+  },
+  {
+    label: "Contact",
+    items: [
+      { href: "/leads", label: "Leads", icon: Inbox },
+      { href: "/leads/queue", label: "Contact Queue", icon: PhoneOutgoing },
+      { href: "/leads/pipeline", label: "Pipeline", icon: Columns3 },
+    ],
+  },
+  {
+    label: "Reports",
+    items: [
+      { href: "/insights", label: "AI Insights", icon: Sparkles },
+      { href: "/reports", label: "Funnel", icon: FileBarChart },
+      { href: "/reports/agents", label: "Agent Activity", icon: Headset },
+      { href: "/reports/calls", label: "Daily Calls", icon: PhoneCall },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [{ href: "/dispatch", label: "Dispatch", icon: Bus }],
+  },
 ];
 
-// Agents only work their leads: Leads, Contact Queue and Pipeline.
+// Agents only work their leads: the Contact module.
 const AGENT_HREFS = new Set(["/leads", "/leads/queue", "/leads/pipeline"]);
 
-// The dispatch team only works the Dispatch module.
+// The dispatch team only works the Operations module.
 const OPERATIONS_HREFS = new Set(["/dispatch"]);
 
 export function AppSidebar({
@@ -60,11 +88,17 @@ export function AppSidebar({
   const clientLogo = active?.logoUrl ?? null;
 
   const isOperations = role === "operations";
-  const nav = isOperations
-    ? fullNav.filter((n) => OPERATIONS_HREFS.has(n.href))
+  const allowed = isOperations
+    ? OPERATIONS_HREFS
     : isAgent
-      ? fullNav.filter((n) => AGENT_HREFS.has(n.href))
-      : fullNav;
+      ? AGENT_HREFS
+      : null;
+  // Filter inside each module, then drop the modules that end up empty so a
+  // role never sees a heading with nothing under it.
+  const groups = NAV_GROUPS.map((g) => ({
+    ...g,
+    items: allowed ? g.items.filter((n) => allowed.has(n.href)) : g.items,
+  })).filter((g) => g.items.length > 0);
 
   // Connections only for those who can manage the active workspace (agency or
   // the client's supervisors/admins). The team link is the agency roster for
@@ -101,8 +135,8 @@ export function AppSidebar({
       href={href}
       className={cn(
         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-        // Reports hosts sub-pages (/reports/agents) — keep it lit inside them.
-        pathname === href || (href === "/reports" && pathname.startsWith("/reports/"))
+        // Exact match only: /reports/agents must not light "Funnel" too.
+        pathname === href
           ? "bg-primary/10 text-primary"
           : "text-muted-foreground hover:bg-muted hover:text-foreground",
       )}
@@ -141,8 +175,19 @@ export function AppSidebar({
         <WorkspaceSwitcher workspaces={workspaces} activeId={activeWorkspaceId} />
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 py-2">
-        {nav.map((n) => item(n.href, n.label, n.icon))}
+      <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-2">
+        {groups.map((g) => (
+          <div key={g.label} className="space-y-1">
+            {/* A heading only earns its place when there is more than one
+              module to tell apart. */}
+            {groups.length > 1 && (
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                {g.label}
+              </p>
+            )}
+            {g.items.map((n) => item(n.href, n.label, n.icon))}
+          </div>
+        ))}
       </nav>
 
       <nav className="space-y-1 border-t px-3 py-3">

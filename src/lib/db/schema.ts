@@ -982,6 +982,27 @@ export const dispatchConnections = pgTable("dispatch_connections", {
 });
 
 /**
+ * One inbound lead webhook per workspace. The token is the whole credential:
+ * it lives in the URL an admin copies out of Settings → Connections and
+ * pastes into whatever tool posts leads (a website form, a hiring portal,
+ * Zapier). Regenerating mints a new token and silently retires the old URL.
+ */
+export const inboundWebhooks = pgTable("inbound_webhooks", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .unique()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  /** Slack incoming-webhook URL; every new lead is announced there. */
+  slackWebhookUrl: text("slack_webhook_url"),
+  receivedCount: integer("received_count").notNull().default(0),
+  lastReceivedAt: timestamp("last_received_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/**
  * EverDriven trip assignments, ingested directly from the sync script's CSV
  * upload (see /upload-schedule). Unlike the bot's Google Sheet — which gets
  * replaced on every upload — rows accumulate per day, so the schedule has

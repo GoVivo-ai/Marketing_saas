@@ -9,7 +9,16 @@ import { Button } from "@/components/ui/button";
  * copy button that works outside secure contexts too — navigator.clipboard
  * is undefined over plain http, which made the old copy-only button a no-op.
  */
-export function CopySecret({ value }: { value: string }) {
+export function CopySecret({
+  value,
+  label = "Temporary password",
+  className = "w-56",
+}: {
+  value: string;
+  label?: string;
+  /** Width of the read-only field; long values (URLs) want more room. */
+  className?: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -40,8 +49,8 @@ export function CopySecret({ value }: { value: string }) {
         value={value}
         onFocus={(e) => e.currentTarget.select()}
         onClick={(e) => e.currentTarget.select()}
-        className="w-56 rounded-md border bg-muted px-2.5 py-1.5 font-mono text-sm"
-        aria-label="Temporary password"
+        className={`${className} min-w-0 rounded-md border bg-muted px-2.5 py-1.5 font-mono text-sm`}
+        aria-label={label}
       />
       <Button type="button" variant="outline" size="sm" onClick={copy}>
         {copied ? (

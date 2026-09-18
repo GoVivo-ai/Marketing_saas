@@ -137,6 +137,7 @@ export default async function ContactQueuePage({
           q,
           start: resolved.start,
           end: resolved.end,
+          bucket: filter === "waiting" ? null : filter,
         }),
         getQueueAdsetOptions(active.id),
         getQueueGeoOptions(active.id),
@@ -176,16 +177,9 @@ export default async function ContactQueuePage({
     ),
   ].sort() as string[];
 
-  // Clicking a stat tile filters the working queue to that bucket. The tiles
-  // keep showing the full totals; only the queue below narrows.
-  const viewData = filter
-    ? {
-        ...queue,
-        items: queue.items.filter((i) =>
-          filter === "priority" ? i.priorityMatch : i.due === filter,
-        ),
-      }
-    : queue;
+  // Clicking a stat tile filters the working queue to that bucket (done in
+  // the query, before its cap). The tiles keep showing the full totals.
+  const viewData = queue;
 
   const hrefWith = (f: string | null) => {
     const p = new URLSearchParams();
@@ -333,11 +327,11 @@ export default async function ContactQueuePage({
         <div className="flex items-center gap-3 text-sm">
           <span className="font-medium">
             {filter === "follow_up"
-              ? `Showing follow-ups only (${viewData.items.length})`
+              ? `Showing follow-ups only (${queue.followUpCount})`
               : filter === "new"
-                ? `Showing new leads only (${viewData.items.length})`
+                ? `Showing new leads only (${queue.newCount})`
                 : filter === "priority"
-                  ? `Showing priority leads only (${viewData.items.length})`
+                  ? `Showing priority leads only (${queue.priorityCount})`
                   : `Showing waiting leads (${queue.waiting.length})`}
           </span>
           <Link href={hrefWith(null)} className="text-primary hover:underline">

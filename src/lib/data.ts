@@ -2159,6 +2159,12 @@ export async function getContactQueue(
     /** Restrict to leads created inside this window (inclusive). */
     start?: Date | null;
     end?: Date | null;
+    /**
+     * Only one bucket in `items` (the counts still cover the whole queue).
+     * Applied before the cap, so a bucket buried under 100 higher-ranked
+     * leads still shows up when the agent asks for it.
+     */
+    bucket?: "new" | "follow_up" | "priority" | null;
   } = {},
 ): Promise<ContactQueueData> {
   // Someone else's live claim keeps the lead out of THIS agent's queue — the
@@ -2421,8 +2427,14 @@ export async function getContactQueue(
 
   waiting.sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
 
+  const shown = opts.bucket
+    ? items.filter((i) =>
+        opts.bucket === "priority" ? i.priorityMatch : i.due === opts.bucket,
+      )
+    : items;
+
   return {
-    items: items.slice(0, QUEUE_CAP),
+    items: shown.slice(0, QUEUE_CAP),
     total: items.length,
     newCount: items.filter((i) => i.due === "new").length,
     followUpCount: items.filter((i) => i.due === "follow_up").length,

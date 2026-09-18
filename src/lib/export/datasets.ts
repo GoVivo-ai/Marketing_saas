@@ -14,7 +14,7 @@ import { getAgentPerformance } from "@/lib/agent-report";
 import { CC_STATUS_LABEL, isCcStatus } from "@/lib/cc";
 import { leadSourceLabel } from "@/lib/lead-source";
 import { resolveDateRange } from "@/lib/date-range";
-import type { ExportTable } from "./table";
+import type { CellValue, ExportTable } from "./table";
 
 /**
  * Every downloadable view, keyed by the dataset name in the URL. Each builder
@@ -36,6 +36,28 @@ export type ExportDataset = (typeof EXPORT_DATASETS)[number];
 
 export function isExportDataset(v: string): v is ExportDataset {
   return EXPORT_DATASETS.includes(v as ExportDataset);
+}
+
+/** Columns that identify a person directly; dropped from non-admin downloads. */
+const PERSONAL_COLUMNS = new Set(["phone", "email"]);
+
+/**
+ * The same table without contact details. The lead ID column stays, so a
+ * file handed to an analyst can still be joined back to Martek — that was
+ * the whole problem with sharing a phone-less spreadsheet before.
+ */
+export function stripPersonalData(table: ExportTable): ExportTable {
+  const columns = table.columns.filter((c) => !PERSONAL_COLUMNS.has(c.key));
+  const drop = (row: Record<string, CellValue>) =>
+    Object.fromEntries(
+      Object.entries(row).filter(([k]) => !PERSONAL_COLUMNS.has(k)),
+    );
+  return {
+    ...table,
+    columns,
+    rows: table.rows.map(drop),
+    totals: table.totals ? drop(table.totals) : undefined,
+  };
 }
 
 /** Leads/pipeline downloads are capped so one click can't pull a million rows. */
@@ -129,6 +151,7 @@ export async function buildExportTable(
         title: `${workspaceName} — Leads`,
         subtitle: `${range.label} · ${page.total} leads`,
         columns: [
+          { key: "id", label: "Lead ID", width: 14 },
           { key: "name", label: "Name", width: 16 },
           { key: "email", label: "Email", width: 20 },
           { key: "phone", label: "Phone", width: 12 },
@@ -140,6 +163,7 @@ export async function buildExportTable(
           { key: "createdAt", label: "Received", width: 10 },
         ],
         rows: page.rows.map((l) => ({
+          id: l.id,
           name: l.name,
           email: l.email === "—" ? "" : l.email,
           phone: l.phone === "—" ? "" : l.phone,
@@ -175,6 +199,7 @@ export async function buildExportTable(
         title: `${workspaceName} — Pipeline`,
         subtitle: `${range.label} · by ${dateBy === "stage" ? "stage entry" : "lead creation"} · ${rows.length} leads`,
         columns: [
+          { key: "id", label: "Lead ID", width: 14 },
           { key: "name", label: "Name", width: 16 },
           { key: "stage", label: "Stage", width: 14 },
           { key: "ccStatus", label: "Compliance", width: 13 },
@@ -210,6 +235,7 @@ export async function buildExportTable(
         title: `${workspaceName} — Drivers`,
         subtitle: `${dir.total} drivers`,
         columns: [
+          { key: "id", label: "Driver ID", width: 14 },
           { key: "mdd", label: "MDD", width: 9 },
           { key: "name", label: "Driver", width: 18 },
           { key: "status", label: "Status", width: 10 },
@@ -225,6 +251,7 @@ export async function buildExportTable(
           { key: "lastInteractionAt", label: "Last touch", width: 10 },
         ],
         rows: dir.drivers.map((d) => ({
+          id: d.id,
           mdd: d.mdd ?? "",
           name: d.name,
           status: d.status,

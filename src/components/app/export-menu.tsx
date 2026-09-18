@@ -35,6 +35,7 @@ export function ExportMenu({
   dataset,
   label = "Export",
   formats = ["csv", "xlsx", "pdf"],
+  access = "full",
 }: {
   /** Dataset segment of /api/export/<dataset>. */
   dataset: "campaigns" | "leads" | "pipeline" | "dispatch" | "calls" | "agents";
@@ -45,8 +46,15 @@ export function ExportMenu({
    * here and keeps that button.
    */
   formats?: ("csv" | "xlsx" | "pdf")[];
+  /**
+   * What the server will hand this user (lib/permissions exportAccess):
+   * "none" renders nothing, "plain" says up front that contact details are
+   * left out so nobody is surprised by the file.
+   */
+  access?: "full" | "plain" | "none";
 }) {
   const searchParams = useSearchParams();
+  if (access === "none") return null;
 
   const href = (format: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -63,7 +71,12 @@ export function ExportMenu({
         <Download className="h-3.5 w-3.5" />
         {label}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-56">
+        {access === "plain" && (
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">
+            Without phone or email — only admins download contact details.
+          </p>
+        )}
         {FORMATS.filter((f) => formats.includes(f.value)).map(
           ({ value, label: name, hint, Icon }) => (
             <DropdownMenuItem

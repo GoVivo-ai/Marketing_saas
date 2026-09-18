@@ -33,6 +33,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { RoleMatrix } from "@/components/app/role-matrix";
 
 export const dynamic = "force-dynamic";
 
@@ -232,6 +233,8 @@ export default async function TeamPage() {
           </CardContent>
         </Card>
       </div>
+
+      <RoleMatrix />
     </div>
   );
 }
@@ -342,6 +345,8 @@ async function ClientTeam({ userId }: { userId: string }) {
           )}
         </CardContent>
       </Card>
+
+      <RoleMatrix />
     </div>
   );
 }

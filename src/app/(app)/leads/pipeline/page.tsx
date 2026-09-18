@@ -4,7 +4,11 @@ import {
   getWorkspaceAgentOptions,
   getWorkspaceGeoOptions,
 } from "@/lib/data";
-import { canManageWorkspace, requireLeadsAccess } from "@/lib/permissions";
+import {
+  canManageWorkspace,
+  exportAccess,
+  requireLeadsAccess,
+} from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 import { PipelineBoard } from "@/components/app/pipeline-board";
 import { AutoRefresh } from "@/components/app/auto-refresh";
@@ -65,6 +69,7 @@ export default async function PipelinePage({
   // Date basis: lead creation (default) or entry into its current stage.
   const dateBy: PipelineDateBasis = sp.by === "stage" ? "stage" : "created";
 
+  const exportMode = await exportAccess(active.id);
   const [pipeline, canManage, geo, agentOptions] = await Promise.all([
     getPipeline(active.id, {
       regions: states,
@@ -132,7 +137,7 @@ export default async function PipelinePage({
             options={agentOptions.map((a) => ({ value: a.id, label: a.name }))}
           />
           <div className="flex items-center gap-1.5">
-            <ExportMenu dataset="pipeline" />
+            <ExportMenu dataset="pipeline" access={exportMode} />
             <DateBasisToggle value={dateBy} />
             <DateRangePicker
               presets={RANGES}

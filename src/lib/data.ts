@@ -2498,9 +2498,29 @@ export interface FunnelStep {
   pctOfPrev: number | null;
 }
 
+/**
+ * The milestones Felipe reads the funnel by (ops meeting 2026-09-18):
+ * received → worked → contacted → … → won. "Worked" is any lead the team
+ * acted on, whatever the outcome — including the ones typified as lost —
+ * so the board's residual counts never hide the effort.
+ */
+export interface FunnelMilestones {
+  received: number;
+  /** Reached the first stage after entry, was touched, or was typified lost. */
+  worked: number;
+  /** Reached the contact stage, answered a touch, or was lost as "Contacted - …". */
+  contacted: number;
+  /** Still at the entry stage with nothing logged. */
+  notWorked: number;
+  won: number;
+  /** contacted / worked, the team's contact-effectiveness rate. */
+  contactRate: number | null;
+}
+
 export interface FunnelReport {
   total: number;
   steps: FunnelStep[];
+  milestones: FunnelMilestones;
   lost: {
     count: number;
     pctOfTotal: number;
@@ -2615,7 +2635,7 @@ export async function getFunnelReport(
   if (opts.cities?.length)
     leadFilters.push(cityFilterSql(opts.cities));
 
-  const [leadRows, moveRows] = await Promise.all([
+  const [leadRows, moveRows, touchRows] = await Promise.all([
     db()
       .select({
         id: schema.leads.id,
@@ -2639,6 +2659,23 @@ export async function getFunnelReport(
       .where(
         and(...leadFilters, eq(schema.leadEvents.type, "status_change")),
       ),
+    // Logged touches: a call or message is work even when the stage never
+    // moved (the agent typified straight to lost, or the move predates the
+    // event log), and an answered one is contact.
+    db()
+      .select({
+        leadId: schema.leadEvents.leadId,
+        payload: schema.leadEvents.payload,
+      })
+      .from(schema.leadEvents)
+      .innerJoin(schema.leads, eq(schema.leadEvents.leadId, schema.leads.id))
+      .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+      .where(
+        and(
+          ...leadFilters,
+          inArray(schema.leadEvents.type, ["call", "sms", "email", "whatsapp"]),
+        ),
+      ),
   ]);
 
   // Furthest position each lead ever reached (current stage + history).
@@ -2661,6 +2698,34 @@ export async function getFunnelReport(
     const p = (m.payload ?? {}) as Record<string, unknown>;
     bump(m.leadId, p.fromStageId);
     bump(m.leadId, p.toStageId);
+  }
+
+  // Credit work the stage history can't show. A lead typified as lost was
+  // worked by definition (1,165 of AlexYah's 1,587 lost leads never passed
+  // through "Attempted" in the log — they went straight to lost); so was any
+  // lead with a logged touch. An answered touch, or a loss recorded as
+  // "Contacted - …", means the conversation happened.
+  const workedStage = path[1];
+  const contactStage =
+    path.slice(1).find((st) => /contact/i.test(st.name) && st !== workedStage) ??
+    path[2];
+  const CONNECTED = new Set(["answered", "replied", "not_interested"]);
+  const touched = new Set<string>();
+  const connected = new Set<string>();
+  for (const t of touchRows) {
+    touched.add(t.leadId);
+    const outcome = ((t.payload ?? {}) as Record<string, unknown>).outcome;
+    if (typeof outcome === "string" && CONNECTED.has(outcome)) connected.add(t.leadId);
+  }
+  const creditAtLeast = (leadId: string, stage: { position: number } | undefined) => {
+    if (!stage) return;
+    if ((maxPos.get(leadId) ?? -1) < stage.position) maxPos.set(leadId, stage.position);
+  };
+  for (const l of leadRows) {
+    const lost = l.disqualL1 != null || (l.stageId != null && lostIds.has(l.stageId));
+    if (lost || touched.has(l.id)) creditAtLeast(l.id, workedStage);
+    if (connected.has(l.id) || (lost && /^contacted\b/i.test(l.disqualL3 ?? "")))
+      creditAtLeast(l.id, contactStage);
   }
 
   const total = leadRows.length;
@@ -2709,9 +2774,26 @@ export async function getFunnelReport(
     reasonCounts.set(key, entry);
   }
 
+  const reached = (stage: { position: number } | undefined) =>
+    stage
+      ? leadRows.filter((l) => (maxPos.get(l.id) ?? -1) >= stage.position).length
+      : 0;
+  const worked = reached(workedStage);
+  const contacted = reached(contactStage);
+  const wonStage = path.find((st) => st.kind === "won");
+  const milestones: FunnelMilestones = {
+    received: total,
+    worked,
+    contacted,
+    notWorked: total - worked,
+    won: reached(wonStage),
+    contactRate: worked > 0 ? Math.round((contacted / worked) * 1000) / 10 : null,
+  };
+
   return {
     total,
     steps,
+    milestones,
     lost: {
       count: lostLeads.length,
       pctOfTotal:

@@ -36,6 +36,9 @@ const RANGES = [
 ];
 const DEFAULT_RANGE = "all";
 
+const pct = (n: number, of: number) =>
+  of > 0 ? Math.round((n / of) * 1000) / 10 : 0;
+
 const planned = [
   {
     icon: FileBarChart,
@@ -148,6 +151,52 @@ export default async function ReportsPage({
         </div>
       </div>
 
+      {/* ── The milestones: how the period's leads actually flowed ──── */}
+      {funnel && funnel.total > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {[
+            {
+              label: "Leads received",
+              value: funnel.milestones.received,
+              hint: resolved.label,
+            },
+            {
+              label: "Worked",
+              value: funnel.milestones.worked,
+              hint: `${pct(funnel.milestones.worked, funnel.total)}% of received · ${funnel.milestones.notWorked} not yet`,
+            },
+            {
+              label: "Contacted",
+              value: funnel.milestones.contacted,
+              hint:
+                funnel.milestones.contactRate != null
+                  ? `${funnel.milestones.contactRate}% of worked answered`
+                  : "—",
+            },
+            {
+              label: funnel.steps.length > 2 ? funnel.steps[funnel.steps.length - 2].name : "Last stage",
+              value: funnel.steps.length > 2 ? funnel.steps[funnel.steps.length - 2].count : 0,
+              hint: `${pct(funnel.steps.length > 2 ? funnel.steps[funnel.steps.length - 2].count : 0, funnel.total)}% of received`,
+            },
+            {
+              label: funnel.steps[funnel.steps.length - 1]?.kind === "won" ? funnel.steps[funnel.steps.length - 1].name : "Won",
+              value: funnel.milestones.won,
+              hint: `${pct(funnel.milestones.won, funnel.total)}% of received`,
+            },
+          ].map((k) => (
+            <Card key={k.label} className="py-4">
+              <CardContent className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {k.label}
+                </p>
+                <p className="text-2xl font-semibold tabular-nums">{k.value}</p>
+                <p className="text-xs text-muted-foreground">{k.hint}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-3">
         {/* ── The 4-stage funnel ─────────────────────────────────────── */}
         <Card className="lg:col-span-2">
@@ -157,8 +206,11 @@ export default async function ReportsPage({
               Lead funnel
             </CardTitle>
             <CardDescription>
-              How many leads ever reached each stage · {resolved.label} ·{" "}
-              {funnel?.total ?? 0} leads
+              How many leads ever reached each stage, not where they sit today
+              · {resolved.label} · {funnel?.total ?? 0}{" "}
+              leads. A lead typified
+              as lost counts as worked; one lost as &quot;Contacted&quot; or
+              with an answered call counts as contacted.
             </CardDescription>
           </CardHeader>
           <CardContent>

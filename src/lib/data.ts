@@ -1275,9 +1275,39 @@ export async function getLeadStageOptions(
 }
 
 /** Distinct lead cities — the spreadsheet's "Area" slicing for the inbox. */
+/**
+ * The areas a workspace advertises to: the ad sets' cities as Meta names
+ * them. Leads type whatever they like ("Clark County", "ZIP 89101"), so a
+ * list built from their answers is noisy and never matches the plan; the
+ * ad set city is the normalised name the team configured. A workspace with
+ * no ad sets (manual or portal leads only) falls back to the leads' cities.
+ */
 export async function getLeadCityOptions(
   workspaceId: string,
 ): Promise<string[]> {
+  const dedupe = (names: (string | null)[]) => {
+    const byKey = new Map<string, string>();
+    for (const n of names) {
+      const t = n?.trim();
+      if (!t) continue;
+      const k = t.toLowerCase();
+      if (!byKey.has(k)) byKey.set(k, t);
+    }
+    return [...byKey.values()].sort((a, b) => a.localeCompare(b));
+  };
+
+  const adsetCities = await db()
+    .selectDistinct({ city: schema.adsets.cityName })
+    .from(schema.adsets)
+    .where(
+      and(
+        eq(schema.adsets.workspaceId, workspaceId),
+        isNotNull(schema.adsets.cityName),
+      ),
+    );
+  const fromAdsets = dedupe(adsetCities.map((r) => r.city));
+  if (fromAdsets.length) return fromAdsets;
+
   const rows = await db()
     .selectDistinct({ city: schema.leads.geoCity })
     .from(schema.leads)
@@ -1287,10 +1317,7 @@ export async function getLeadCityOptions(
         isNotNull(schema.leads.geoCity),
       ),
     );
-  return rows
-    .map((r) => r.city as string)
-    .filter((c) => c.trim() !== "")
-    .sort((a, b) => a.localeCompare(b));
+  return dedupe(rows.map((r) => r.city));
 }
 
 /**
@@ -1338,7 +1365,9 @@ export async function getLeadsPage(
   if (end) filters.push(lte(schema.leads.createdAt, end));
   if (campaignId) filters.push(eq(schema.leads.campaignId, campaignId));
   if (stageId) filters.push(eq(schema.leads.stageId, stageId));
-  if (city) filters.push(eq(schema.leads.geoCity, city));
+  // An area is the lead's own city, its ad set's city or the area it applied
+  // to — the same rule the queue and the pipeline use.
+  if (city) filters.push(cityFilterSql([city]));
   if (source) filters.push(eq(schema.leads.source, source));
   // Find a specific lead by name, email or phone (case-insensitive substring).
   if (q) {
@@ -1352,9 +1381,11 @@ export async function getLeadsPage(
   }
   const where = and(...filters);
 
+  // The area filter reads the ad set's city, so the count joins it too.
   const [{ total }] = await db()
     .select({ total: sql<number>`count(*)::int` })
     .from(schema.leads)
+    .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
     .where(where);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));

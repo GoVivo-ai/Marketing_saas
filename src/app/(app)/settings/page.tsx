@@ -29,6 +29,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/app/submit-button";
+import { SyncAlexYahButton } from "@/components/app/sync-alexyah-button";
 import {
   Card,
   CardContent,
@@ -39,6 +40,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
+// The AlexYah "Sync now" action runs a full backfill on its first use.
+export const maxDuration = 300;
 
 const upcomingPlatforms = [
   { name: "Google Ads", description: "Search, Display, YouTube and Performance Max", detail: "Phase 2" },
@@ -125,6 +128,10 @@ export default async function ConnectionsPage() {
   const openaiPreview =
     isDatabaseConfigured() && platformAdmin
       ? await getSecretPreview("openai_api_key")
+      : null;
+  const alexyahPreview =
+    isDatabaseConfigured() && platformAdmin
+      ? await getSecretPreview("alexyah_api_key")
       : null;
   const ready = isDatabaseConfigured() && Boolean(metaToken);
   let accounts: { externalId: string; name: string; currency: string }[] = [];
@@ -355,6 +362,31 @@ export default async function ConnectionsPage() {
                   />
                   <Button size="sm" type="submit">Save</Button>
                 </form>
+              </div>
+            )}
+            {platformAdmin && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4">
+                <div className="min-w-44">
+                  <p className="text-sm font-medium">AlexYah API key</p>
+                  <p className="text-xs text-muted-foreground">Driver applications · syncs nightly</p>
+                  {alexyahPreview ? (
+                    <Badge variant="secondary" className="mt-1">{alexyahPreview}</Badge>
+                  ) : (
+                    <Badge variant="outline" className="mt-1">Not configured</Badge>
+                  )}
+                </div>
+                <form action={savePlatformSecret} className="flex flex-1 items-center gap-2">
+                  <input type="hidden" name="key" value="alexyah_api_key" />
+                  <Input
+                    name="value"
+                    type="password"
+                    placeholder={alexyahPreview ? "Replace key…" : "INTEGRATIONS_API_KEY"}
+                    className="max-w-md"
+                    required
+                  />
+                  <Button size="sm" type="submit">Save</Button>
+                </form>
+                <SyncAlexYahButton disabled={!alexyahPreview} />
               </div>
             )}
           </CardContent>

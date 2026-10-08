@@ -5,6 +5,7 @@ import { db, schema, isDatabaseConfigured } from "@/lib/db";
 import { syncConnection } from "@/lib/sync";
 import { scorePendingLeads } from "@/lib/ai/lead-scoring";
 import { syncAllCallLogs } from "@/lib/call-log-sync";
+import { syncAlexYahApplications } from "@/lib/alexyah-sync";
 
 export const maxDuration = 300;
 
@@ -64,6 +65,17 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // AlexYah's hiring portal has no webhook, so new driver applications reach
+  // the pipeline here. Runs before scoring so they get scored tonight too.
+  let alexyah: unknown = null;
+  try {
+    alexyah = await syncAlexYahApplications("alexyah");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[cron/sync] AlexYah sync failed:", message);
+    alexyah = { error: message };
+  }
+
   // Drain pending AI scores so no lead stays unscored (also retries failures).
   const workspaceIds = [...new Set(activeConnections.map((c) => c.workspaceId))];
   const scored: Record<
@@ -91,7 +103,7 @@ export async function GET(req: NextRequest) {
     callLog = { error: err instanceof Error ? err.message : String(err) };
   }
 
-  return NextResponse.json({ synced: results.length, results, scored, callLog });
+  return NextResponse.json({ synced: results.length, results, alexyah, scored, callLog });
 }
 
 export const POST = GET;

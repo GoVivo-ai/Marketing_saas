@@ -361,6 +361,8 @@ export function LeadInfoEditor({
             )}
           </p>
           <LeadContactActions
+            leadId={lead.id}
+            leadName={lead.name}
             phone={lead.phone}
             hasPhone={lead.phone !== "—"}
             email={lead.email}

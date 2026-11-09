@@ -20,6 +20,9 @@ import {
   isAgentOnly,
 } from "@/lib/permissions";
 import { RingCentralConnectCard } from "@/components/app/ringcentral-connect-card";
+import { MailConnectCard } from "@/components/app/mail-connect-card";
+import { getMailAccount } from "@/lib/mail-accounts";
+import { configuredMailProviders } from "@/lib/integrations/mail";
 import {
   getScoreAutomation,
   getScoreAutomationUsage,
@@ -77,6 +80,9 @@ export default async function GeneralSettingsPage() {
   // Agents manage their own password and their own RingCentral connection —
   // never workspace configuration. The personal RC link is what lets the
   // platform mirror their call log into the Agent Activity report.
+  const mailAccount = userId ? await getMailAccount(userId) : null;
+  const mailProviders = configuredMailProviders();
+
   if (await isAgentOnly()) {
     const agentRcConnected = userId
       ? await isRingCentralConnected(userId)
@@ -92,7 +98,7 @@ export default async function GeneralSettingsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
           <p className="text-sm text-muted-foreground">
-            Account security & calling
+            Account security, calling & email
           </p>
         </div>
         <div className="grid max-w-4xl gap-4 lg:grid-cols-2">
@@ -119,6 +125,7 @@ export default async function GeneralSettingsPage() {
               envConfigured={agentRcEnvConfigured}
             />
           </Suspense>
+          <MailConnectCard account={mailAccount} providers={mailProviders} />
         </div>
         {showApiAccess && (
           <section className="space-y-3">
@@ -360,8 +367,8 @@ export default async function GeneralSettingsPage() {
 
       <section className="space-y-3">
         <SectionHeading
-          title="Calling & messaging"
-          description="Call and text leads straight from the pipeline. RingCentral runs in the in-app dialer; Dialpad is available as an alternative."
+          title="Calling, messaging & email"
+          description="Call, text and email leads straight from the pipeline. RingCentral runs in the in-app dialer; Dialpad is available as an alternative; email goes out from your own Gmail or Outlook."
         />
         <div className="grid gap-4 lg:grid-cols-2">
           <Suspense>
@@ -379,6 +386,7 @@ export default async function GeneralSettingsPage() {
               fromNumber={dpTokens?.fromNumber ?? null}
             />
           </Suspense>
+          <MailConnectCard account={mailAccount} providers={mailProviders} />
         </div>
         <Card>
           <CardHeader>

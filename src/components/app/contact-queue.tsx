@@ -30,6 +30,7 @@ import {
 import { useSoftphoneContext } from "@/components/app/softphone";
 import { LeadActivity } from "@/components/app/lead-activity";
 import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
+import { EmailComposeDialog } from "@/components/app/email-compose-dialog";
 import {
   addLeadNote,
   getLeadDetail,
@@ -861,12 +862,23 @@ export function ContactQueue({
     if (!dialerSms(current.phone)) toast.error(NEEDS_DIALER);
   };
 
-  // Opens the default mail client (e.g. Outlook) with the lead's address —
-  // the email counterpart of the post-call SMS option. No dialer needed.
+  // Compose in-app from the agent's own Gmail/Outlook; the dialog offers to
+  // connect one (or falls back to the mail app) when nothing is linked yet.
+  const [composeOpen, setComposeOpen] = useState(false);
   const onEmail = () => {
     if (!current?.email) return;
     setChannel("email");
-    window.location.href = `mailto:${current.email}`;
+    setComposeOpen(true);
+  };
+
+  // The send already logged "email · sent" on the server — treat it like the
+  // chip of the same name: count it, remember it, move to the next lead.
+  const onEmailSent = (eventId: string | null) => {
+    if (!current) return;
+    const item = current;
+    setDone((n) => n + 1);
+    setWorked((list) => [{ item, outcome: "sent" as const, eventId }, ...list].slice(0, 20));
+    advance();
   };
 
   /** Deletes the mis-logged touch and puts the lead back at the front. */
@@ -1379,6 +1391,16 @@ export function ContactQueue({
       </div>
 
       {/* Full lead detail as a slide-over — the queue stays behind it. */}
+      {current && (
+        <EmailComposeDialog
+          open={composeOpen}
+          onOpenChange={setComposeOpen}
+          leadId={current.id}
+          leadName={current.name}
+          to={current.email}
+          onSent={onEmailSent}
+        />
+      )}
       <LeadDetailSheet
         lead={detail}
         onClose={() => setDetail(null)}

@@ -797,6 +797,29 @@ export const callLogs = pgTable(
 );
 
 /**
+ * The email account a user sends from inside the platform — their own Gmail
+ * or Outlook, connected by OAuth, one per user. Leads see and reply to the
+ * agent's real address; nothing is relayed through a shared sender. Tokens
+ * are AES-256-GCM encrypted like the telephony ones on `users`.
+ */
+export const mailAccounts = pgTable("mail_accounts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(), // gmail | outlook
+  address: text("address").notNull(),
+  displayName: text("display_name"),
+  accessTokenEnc: text("access_token_enc").notNull(),
+  refreshTokenEnc: text("refresh_token_enc").notNull(),
+  tokenExpiresAt: timestamp("token_expires_at").notNull(),
+  connectedAt: timestamp("connected_at").notNull().defaultNow(),
+  /** Last send/refresh failure, surfaced in Settings so a dead link is visible. */
+  lastError: text("last_error"),
+});
+
+/**
  * RingCentral extension → platform user.
  *
  * The account-level call log names the caller only by extension id, so

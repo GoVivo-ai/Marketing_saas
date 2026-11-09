@@ -82,6 +82,8 @@ function eventTitle(item: LeadActivityItem): string {
   if (item.type === "note") return "Note";
   if (item.type === "status_change") return item.text ?? "Stage changed";
   if (item.type === "disqualified") return "Disqualified";
+  if (item.type === "email" && !item.manual && item.outcome === "sent")
+    return "Email sent from the platform";
   const channel = CHANNEL_LABEL[item.type as OutreachChannel] ?? item.type;
   const outcome = item.outcome ? OUTCOME_LABEL[item.outcome] : null;
   const prefix = item.manual ? channel : `${channel} (platform)`;
@@ -118,6 +120,16 @@ export function LeadActivity({ leadId }: { leadId: string }) {
       active = false;
     };
   }, [leadId]);
+
+  // Sibling components (e.g. the Email button) announce new touches here.
+  useEffect(() => {
+    const onRefresh = (e: Event) => {
+      const detail = (e as CustomEvent<{ leadId?: string }>).detail;
+      if (!detail?.leadId || detail.leadId === leadId) void load();
+    };
+    window.addEventListener("lead-activity:refresh", onRefresh);
+    return () => window.removeEventListener("lead-activity:refresh", onRefresh);
+  }, [leadId, load]);
 
   const onAddNote = () =>
     startNote(async () => {

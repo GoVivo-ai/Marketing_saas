@@ -18,39 +18,56 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { EmailComposeDialog } from "@/components/app/email-compose-dialog";
 
 const NEEDS_DIALER =
   "Open the RingCentral dialer (bottom-right) and sign in first.";
 
 export function LeadContactActions({
+  leadId,
+  leadName,
   phone,
   hasPhone,
   email,
 }: {
+  leadId: string;
+  leadName: string;
   /** Lead phone in E.164 (e.g. +57…); the dialer places the call in-browser. */
   phone: string | null;
   hasPhone: boolean;
-  /** Lead email; the Email button opens the user's mail client (e.g. Outlook). */
+  /** Lead email; the Email button composes from the user's own Gmail/Outlook. */
   email?: string | null;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
 
   const address = email && email !== "—" ? email : null;
 
-  // Email doesn't need the dialer — a mailto: link opens the default mail
-  // client (Outlook et al.) with the lead's address ready to go.
+  // Email doesn't need the dialer — it goes out from the agent's connected
+  // mailbox (the dialog handles connecting one, or falls back to mailto:).
   const emailButton = (
-    <Button
-      size="sm"
-      variant="outline"
-      disabled={!address}
-      onClick={() => {
-        if (address) window.location.href = `mailto:${address}`;
-      }}
-    >
-      <Mail className="mr-1 h-3.5 w-3.5" />
-      Email
-    </Button>
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!address}
+        onClick={() => setComposeOpen(true)}
+      >
+        <Mail className="mr-1 h-3.5 w-3.5" />
+        Email
+      </Button>
+      <EmailComposeDialog
+        open={composeOpen}
+        onOpenChange={setComposeOpen}
+        leadId={leadId}
+        leadName={leadName}
+        to={address}
+        onSent={() =>
+          // The Activity timeline lives in a sibling; nudge it to reload.
+          window.dispatchEvent(new CustomEvent("lead-activity:refresh", { detail: { leadId } }))
+        }
+      />
+    </>
   );
 
   if (!isDialerConfigured) {

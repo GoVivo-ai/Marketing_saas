@@ -3,8 +3,9 @@
  * and the Settings editor. Pure functions, no DB.
  *
  * Syntax:
- *   {first_name}  {name}  {city}  {state}  {campaign}
- *   {agent_name}  {agent_phone}  {agent_email}
+ *   {first_name}  {last_name}  {name}  {city}  {state}  {campaign}
+ *   {company}  — the workspace / organization name
+ *   {agent_name}  {agent_first_name}  {agent_phone}  {agent_email}
  *   {if city=Stockton}…{else}…{/if}   — city match, case-insensitive,
  *                                       "contains" so "Stockton, CA" works
  *
@@ -30,6 +31,8 @@ export interface TemplateVars {
   city?: string | null;
   state?: string | null;
   campaign?: string | null;
+  /** The workspace / organization the agent writes for. */
+  company?: string | null;
   agentName?: string | null;
   agentPhone?: string | null;
   agentEmail?: string | null;
@@ -38,11 +41,14 @@ export interface TemplateVars {
 /** What the Settings editor lists as available placeholders. */
 export const TEMPLATE_PLACEHOLDERS: { token: string; hint: string }[] = [
   { token: "{first_name}", hint: "Lead's first name" },
+  { token: "{last_name}", hint: "Lead's last name" },
   { token: "{name}", hint: "Lead's full name" },
   { token: "{city}", hint: "Lead's city (or the ad set's target city)" },
   { token: "{state}", hint: "Lead's state / region" },
   { token: "{campaign}", hint: "Campaign name" },
-  { token: "{agent_name}", hint: "Your name" },
+  { token: "{company}", hint: "Your organization's name" },
+  { token: "{agent_name}", hint: "Your full name" },
+  { token: "{agent_first_name}", hint: "Your first name" },
   { token: "{agent_phone}", hint: "Your RingCentral number" },
   { token: "{agent_email}", hint: "Your email" },
   { token: "{if city=Stockton}…{else}…{/if}", hint: "Different text for one city" },
@@ -54,6 +60,7 @@ export const SAMPLE_VARS: Required<TemplateVars> = {
   city: "San Jose",
   state: "CA",
   campaign: "Drivers – Bay Area",
+  company: "Acme Transportation",
   agentName: "Maria Lopez",
   agentPhone: "510 962-4394",
   agentEmail: "maria@example.com",
@@ -61,6 +68,11 @@ export const SAMPLE_VARS: Required<TemplateVars> = {
 
 function firstName(full: string | null | undefined): string {
   return (full ?? "").trim().split(/\s+/)[0] ?? "";
+}
+
+function lastName(full: string | null | undefined): string {
+  const parts = (full ?? "").trim().split(/\s+/).filter(Boolean);
+  return parts.length > 1 ? parts.slice(1).join(" ") : "";
 }
 
 /** "—" and other dash-only placeholders the UI uses for "no value". */
@@ -81,11 +93,14 @@ export function renderTemplate(text: string, vars: TemplateVars): string {
   );
   const map: Record<string, string> = {
     first_name: firstName(clean(vars.name)),
+    last_name: lastName(clean(vars.name)),
     name: clean(vars.name),
     city,
     state: clean(vars.state),
     campaign: clean(vars.campaign),
+    company: clean(vars.company),
     agent_name: clean(vars.agentName),
+    agent_first_name: firstName(clean(vars.agentName)),
     agent_phone: clean(vars.agentPhone),
     agent_email: clean(vars.agentEmail),
   };

@@ -1,8 +1,10 @@
 /**
  * Seeds AlexYah's recruiting messages as message templates — the texts the
  * team had in Outlook macros and the SMS generator page, now pickable from
- * the Contact Queue. Upserts by (workspace, channel, name), so re-running
- * refreshes the bodies without duplicating rows.
+ * the Contact Queue. The brand is never written out: {company} resolves to
+ * the workspace's name, so the same texts seed a demo or another client.
+ * Upserts by (workspace, channel, name), so re-running refreshes the bodies
+ * without duplicating rows.
  * Run: npx tsx scripts/seed-alexyah-templates.ts [workspace-slug]
  */
 process.loadEnvFile(".env.local");
@@ -20,25 +22,25 @@ const SMS: { name: string; body: string }[] = [
   {
     name: "Follow-up",
     body:
-      "Hi {first_name}! Quick update on driving opportunities in {city}, CA - AlexYah Transportation still has rides available in your area, paying $20 - $30+ per ride. You can make between $1,200 and $2,400*/month. Spots are filling up and we didn't want you to miss out. Still interested? Let's set up a quick call. This is {agent_name}, and you can call me back at this number.",
+      "Hi {first_name}! Quick update on driving opportunities in {city}, CA - {company} still has rides available in your area, paying $20 - $30+ per ride. You can make between $1,200 and $2,400*/month. Spots are filling up and we didn't want you to miss out. Still interested? Let's set up a quick call. This is {agent_name}, and you can call me back at this number.",
   },
   {
     name: "Short offer",
-    body: `Hi {first_name}, this is {agent_name} from Alexyah Transportation. We have student rides available in {city}, Mon-Fri (${SCHEDULE_SHORT}). Pay is $20 - $30+ per ride, and you can make between $1,200 and $2,400*/month. Ready to start? Reply with a photo of the FRONT of your Driver License. Thank you!`,
+    body: `Hi {first_name}, this is {agent_name} from {company}. We have student rides available in {city}, Mon-Fri (${SCHEDULE_SHORT}). Pay is $20 - $30+ per ride, and you can make between $1,200 and $2,400*/month. Ready to start? Reply with a photo of the FRONT of your Driver License. Thank you!`,
   },
   {
     name: "Full offer",
-    body: `Hi {first_name}, this is {agent_name} from Alexyah Transportation. We have student transportation rides available in {city}, Mon-Fri. ${SCHEDULE_FULL} Pay per ride: $20 (1-5 mi), $25 (6-9 mi), $30 (10 mi), and $30 + $1.00/mile (10+ mi). Requirements: clean background check with fingerprinting, drug test, vehicle 2012 or newer, age 21+, driver's license and registration. Alexyah covers onboarding costs. To get started, reply with a photo of the FRONT of your Driver License. Thank you!`,
+    body: `Hi {first_name}, this is {agent_name} from {company}. We have student transportation rides available in {city}, Mon-Fri. ${SCHEDULE_FULL} Pay per ride: $20 (1-5 mi), $25 (6-9 mi), $30 (10 mi), and $30 + $1.00/mile (10+ mi). Requirements: clean background check with fingerprinting, drug test, vehicle 2012 or newer, age 21+, driver's license and registration. {company} covers onboarding costs. To get started, reply with a photo of the FRONT of your Driver License. Thank you!`,
   },
 ];
 
 const EMAIL: { name: string; subject: string; body: string }[] = [
   {
     name: "Job offer",
-    subject: "Earn $1,200 - $2,400*/month driving in your community with AlexYah Transportation",
+    subject: "Earn $1,200 - $2,400*/month driving in your community with {company}",
     body: `Hi {first_name},
 
-Thank you for your interest in driving with AlexYah Transportation. We provide contracted student transportation for local school districts, and we currently have rides available in {city}.
+Thank you for your interest in driving with {company}. We provide contracted student transportation for local school districts, and we currently have rides available in {city}.
 
 EARN $1,200 - $2,400* / MONTH
 
@@ -57,7 +59,7 @@ REQUIREMENTS
 - Vehicle 2012 or newer
 - Age 21 or older
 - Valid driver's license and registration
-Alexyah covers the onboarding costs.
+{company} covers the onboarding costs.
 
 YOUR NEXT STEP
 1. Reply to this email with a photo of the FRONT of your Driver License.
@@ -67,16 +69,16 @@ Questions? Call or text me at {agent_phone}.
 
 Best regards,
 {agent_name}
-AlexYah Transportation
+{company}
 {agent_phone}
 {agent_email}`,
   },
   {
     name: "Welcome / Next steps",
-    subject: "Welcome to Alexyah Transportation - Next Steps",
+    subject: "Welcome to {company} - Next Steps",
     body: `Hi {first_name},
 
-Welcome to Alexyah Transportation! We're glad to have you on board for rides in {city}.
+Welcome to {company}! We're glad to have you on board for rides in {city}.
 
 Here is your road to driving:
 
@@ -84,10 +86,10 @@ STEP 1 - Finish your checklist
 Log in to Contractor Compliance (CC) and complete your A1 tasks. Your CC page shows 17 items: you complete 9, we help you with 5, and EverDriven checks the last 3.
 
 STEP 2 - Watch for the drug test email
-You'll receive an email with the subject "Start your EverDriven Technologies, LLC drug screening". Check your inbox, Spam and Promotions. Forward it right away to alexyahiring@gmail.com and we'll help you book the test closest to you. This appointment cannot be rescheduled.
+You'll receive an email with the subject "Start your EverDriven Technologies, LLC drug screening". Check your inbox, Spam and Promotions. Forward it right away to {agent_email} and we'll help you book the test closest to you. This appointment cannot be rescheduled.
 
 STEP 3 - Take 3 online courses
-English Validation (40 min), SafeRide Education (4-4.5 h, within 20 days) and CPR & First Aid. Alexyah pays for all of them - do NOT pay for any course yourself. Your login arrives in a separate email.
+English Validation (40 min), SafeRide Education (4-4.5 h, within 20 days) and CPR & First Aid. {company} pays for all of them - do NOT pay for any course yourself. Your login arrives in a separate email.
 
 THE GOAL - Start driving!
 When all 17 items are done, you're ready to hit the road.
@@ -100,7 +102,7 @@ Questions? Call me at {agent_phone} or reply to this email.
 
 Best regards,
 {agent_name}
-AlexYah Transportation
+{company}
 {agent_phone}
 {agent_email}`,
   },

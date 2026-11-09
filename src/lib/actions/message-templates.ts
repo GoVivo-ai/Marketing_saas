@@ -26,6 +26,8 @@ export interface MessageTemplate {
 
 /** Who's writing — fills {agent_*} in the picker. */
 export interface AgentVars {
+  /** The active workspace's name — fills {company}. */
+  company: string | null;
   agentName: string | null;
   agentPhone: string | null;
   agentEmail: string | null;
@@ -47,7 +49,11 @@ export async function listMessageTemplates(
   const userId = session?.user?.id;
   if (!userId) throw new Error("Unauthorized");
   const { active } = await getWorkspaceContext();
-  if (!active) return { templates: [], agent: { agentName: null, agentPhone: null, agentEmail: null } };
+  if (!active)
+    return {
+      templates: [],
+      agent: { company: null, agentName: null, agentPhone: null, agentEmail: null },
+    };
 
   const [rows, user, mail] = await Promise.all([
     db()
@@ -85,6 +91,7 @@ export async function listMessageTemplates(
   return {
     templates: rows.map((r) => ({ ...r, channel: r.channel as TemplateChannel })),
     agent: {
+      company: active.name,
       agentName: user?.name ?? session?.user?.name ?? null,
       agentPhone: formatPhoneForText(user?.rcFromNumber ?? user?.dpFromNumber) || null,
       // Prefer the mailbox they actually send from.

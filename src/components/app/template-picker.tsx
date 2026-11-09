@@ -63,6 +63,7 @@ export function fillTemplate(
     city: lead.city,
     state: lead.state,
     campaign: lead.campaign,
+    company: agent?.company,
     agentName: agent?.agentName,
     agentPhone: agent?.agentPhone,
     agentEmail: agent?.agentEmail,

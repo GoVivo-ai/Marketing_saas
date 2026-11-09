@@ -175,7 +175,7 @@ export function PhonePanel({ phone, ui }: { phone: Softphone; ui: PhoneUi }) {
   );
 }
 
-export function statusTitle(phone: Softphone): string {
+function statusTitle(phone: Softphone): string {
   switch (phone.status) {
     case "registered":
       return `Ready${phone.extensionNumber ? ` · ext ${phone.extensionNumber}` : ""}`;
@@ -188,7 +188,7 @@ export function statusTitle(phone: Softphone): string {
   }
 }
 
-export function StatusDot({ phone, className }: { phone: Softphone; className?: string }) {
+function StatusDot({ phone, className }: { phone: Softphone; className?: string }) {
   return (
     <span
       className={cn(
@@ -212,7 +212,7 @@ function connectRingCentral() {
   )}`;
 }
 
-export function NotConnected() {
+function NotConnected() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
@@ -231,7 +231,7 @@ export function NotConnected() {
   );
 }
 
-export function Failed({ phone }: { phone: Softphone }) {
+function Failed({ phone }: { phone: Softphone }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
       <AlertTriangle className="h-8 w-8 text-destructive" />
@@ -283,7 +283,7 @@ function Body({ phone, ui }: { phone: Softphone; ui: PhoneUi }) {
   );
 }
 
-export function Keypad({ phone, ui }: { phone: Softphone; ui: PhoneUi }) {
+function Keypad({ phone, ui }: { phone: Softphone; ui: PhoneUi }) {
   const number = ui.number;
   const [dialing, setDialing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -388,16 +388,7 @@ export function Keypad({ phone, ui }: { phone: Softphone; ui: PhoneUi }) {
   );
 }
 
-export function Recent({
-  phone,
-  ui,
-  linkLeads = true,
-}: {
-  phone: Softphone;
-  ui: PhoneUi;
-  /** Lead names open the lead's page — off in the mobile app, which has none. */
-  linkLeads?: boolean;
-}) {
+function Recent({ phone, ui }: { phone: Softphone; ui: PhoneUi }) {
   const [calls, setCalls] = useState<RecentCall[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -455,12 +446,12 @@ export function Recent({
             />
             <div className="min-w-0 flex-1">
               <p className={cn("truncate text-sm", c.missed && "text-destructive")}>
-                {c.leadId && c.leadName && linkLeads ? (
+                {c.leadId && c.leadName ? (
                   <Link href={`/leads?lead=${c.leadId}`} className="hover:underline" title="Open lead">
                     {c.leadName}
                   </Link>
                 ) : (
-                  c.leadName ?? prettyNumber(c.number || "Unknown")
+                  prettyNumber(c.number || "Unknown")
                 )}
               </p>
               <p className="truncate text-[11px] text-muted-foreground">
@@ -499,7 +490,7 @@ export function Recent({
   );
 }
 
-export function Messages({ ui }: { ui: PhoneUi }) {
+function Messages({ ui }: { ui: PhoneUi }) {
   const [text, setText] = useState("");
   const [sending, startSend] = useTransition();
   const to = ui.number;
@@ -568,7 +559,7 @@ export function Messages({ ui }: { ui: PhoneUi }) {
 
 // ── In-call screen ───────────────────────────────────────────────────────────
 
-export function InCall({ phone }: { phone: Softphone }) {
+function InCall({ phone }: { phone: Softphone }) {
   const call = phone.call!;
   const elapsed = useElapsed(call.answeredAt);
   const [showKeys, setShowKeys] = useState(false);

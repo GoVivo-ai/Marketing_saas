@@ -22,13 +22,11 @@ import {
   ListChecks,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  dialerCall,
-  dialerSms,
-  isDialerConfigured,
-} from "@/components/app/ringcentral-dialer";
+import { usePhoneUi, useSoftphoneContext } from "@/components/app/softphone";
 import { LeadActivity } from "@/components/app/lead-activity";
 import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
+import { EmailComposeDialog } from "@/components/app/email-compose-dialog";
+import { SmsComposeDialog } from "@/components/app/sms-compose-dialog";
 import {
   addLeadNote,
   getLeadDetail,
@@ -64,9 +62,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-
-const NEEDS_DIALER =
-  "Open the RingCentral dialer (bottom-right) and sign in first.";
 
 /**
  * The in-progress session is mirrored to localStorage so accidentally leaving
@@ -686,6 +681,8 @@ export function ContactQueue({
 }) {
   const [items, setItems] = useState(data.items);
   const [channel, setChannel] = useState<OutreachChannel>("call");
+  const softphone = useSoftphoneContext();
+  const phoneUi = usePhoneUi();
   const [showHistory, setShowHistory] = useState(false);
   const [logging, startLog] = useTransition();
   const [done, setDone] = useState(0);
@@ -836,21 +833,49 @@ export function ContactQueue({
   const onCall = () => {
     if (!current?.phone) return;
     setChannel("call");
-    if (!dialerCall(current.phone)) toast.error(NEEDS_DIALER);
+    // Every call goes through the Vivo phone. No RingCentral connected → open
+    // the phone on its Connect screen rather than let the call fail silently.
+    if (softphone?.status === "registered") {
+      phoneUi?.open();
+      softphone.dial(current.phone).catch((e: unknown) =>
+        toast.error(e instanceof Error ? e.message : "Could not place the call"),
+      );
+      return;
+    }
+    if (softphone?.status === "connecting") {
+      toast.error("Your phone is still connecting — try again in a moment.");
+      return;
+    }
+    phoneUi?.open();
+    toast.error("Connect your RingCentral in the phone to call from here.");
   };
 
+  // SMS is written in-app and sent from the agent's own connected number
+  // (the softphone's RingCentral connection), templates included.
+  const [smsOpen, setSmsOpen] = useState(false);
   const onSms = () => {
     if (!current?.phone) return;
     setChannel("sms");
-    if (!dialerSms(current.phone)) toast.error(NEEDS_DIALER);
+    setSmsOpen(true);
   };
 
-  // Opens the default mail client (e.g. Outlook) with the lead's address —
-  // the email counterpart of the post-call SMS option. No dialer needed.
+  // Compose in-app from the agent's own Gmail/Outlook; the dialog offers to
+  // connect one (or falls back to the mail app) when nothing is linked yet.
+  const [composeOpen, setComposeOpen] = useState(false);
   const onEmail = () => {
     if (!current?.email) return;
     setChannel("email");
-    window.location.href = `mailto:${current.email}`;
+    setComposeOpen(true);
+  };
+
+  // The send (email or SMS) already logged "· sent" on the server — treat it
+  // like the chip of the same name: count it, remember it, move to the next lead.
+  const onEmailSent = (eventId: string | null) => {
+    if (!current) return;
+    const item = current;
+    setDone((n) => n + 1);
+    setWorked((list) => [{ item, outcome: "sent" as const, eventId }, ...list].slice(0, 20));
+    advance();
   };
 
   /** Deletes the mis-logged touch and puts the lead back at the front. */
@@ -1122,51 +1147,31 @@ export function ContactQueue({
                 <>
                   {/* Reach out … */}
                   <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-                    {isDialerConfigured ? (
-                      <>
-                        <Button size="sm" disabled={!current.phone} onClick={onCall}>
-                          <PhoneCall className="mr-1.5 h-3.5 w-3.5" />
-                          Call
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!current.phone}
-                          onClick={onSms}
-                        >
-                          <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
-                          SMS
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!current.email}
-                          onClick={onEmail}
-                        >
-                          <Mail className="mr-1.5 h-3.5 w-3.5" />
-                          Email
-                        </Button>
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          Logging as {CHANNEL_LABEL[channel]}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!current.email}
-                          onClick={onEmail}
-                        >
-                          <Mail className="mr-1.5 h-3.5 w-3.5" />
-                          Email
-                        </Button>
-                        <p className="text-xs text-muted-foreground">
-                          The in-app dialer isn&apos;t configured — log the outcome of
-                          calls made outside the platform below.
-                        </p>
-                      </>
-                    )}
+                    <Button size="sm" disabled={!current.phone} onClick={onCall}>
+                      <PhoneCall className="mr-1.5 h-3.5 w-3.5" />
+                      Call
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!current.phone}
+                      onClick={onSms}
+                    >
+                      <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                      SMS
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!current.email}
+                      onClick={onEmail}
+                    >
+                      <Mail className="mr-1.5 h-3.5 w-3.5" />
+                      Email
+                    </Button>
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      Logging as {CHANNEL_LABEL[channel]}
+                    </span>
                   </div>
 
                   {/* … then one click to log what happened and move on. */}
@@ -1363,6 +1368,36 @@ export function ContactQueue({
       </div>
 
       {/* Full lead detail as a slide-over — the queue stays behind it. */}
+      {current && (
+        <>
+          <EmailComposeDialog
+            open={composeOpen}
+            onOpenChange={setComposeOpen}
+            leadId={current.id}
+            leadName={current.name}
+            to={current.email}
+            lead={{
+              city: current.geo?.leadCity ?? current.geo?.targetCity ?? null,
+              state: current.geo?.leadRegion ?? null,
+              campaign: current.campaign,
+            }}
+            onSent={onEmailSent}
+          />
+          <SmsComposeDialog
+            open={smsOpen}
+            onOpenChange={setSmsOpen}
+            leadId={current.id}
+            lead={{
+              name: current.name,
+              city: current.geo?.leadCity ?? current.geo?.targetCity ?? null,
+              state: current.geo?.leadRegion ?? null,
+              campaign: current.campaign,
+            }}
+            phone={current.phone}
+            onSent={onEmailSent}
+          />
+        </>
+      )}
       <LeadDetailSheet
         lead={detail}
         onClose={() => setDetail(null)}

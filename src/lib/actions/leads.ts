@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { sendMailAs } from "@/lib/mail-accounts";
+import { MailError, MailNotConnectedError } from "@/lib/integrations/mail";
 import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
@@ -11,6 +13,7 @@ import { resolveLeadRegion } from "@/lib/lead-region";
 import {
   placeCall,
   sendText,
+  getActiveProvider,
   normalizeE164,
   NoProviderConnectedError,
 } from "@/lib/integrations/telephony";
@@ -33,7 +36,7 @@ import {
 } from "@/lib/outreach";
 
 export type LeadContactResult =
-  | { ok: true }
+  | { ok: true; eventId?: string }
   | {
       ok: false;
       reason: "no_phone" | "bad_phone" | "not_connected" | "error";
@@ -514,6 +517,12 @@ export async function getLeadActivity(
       const path = [p.l1, p.l2, p.l3].filter(Boolean).join(" › ");
       const note = (p.note as string) ?? "";
       text = note ? `${path}\n${note}` : path || null;
+    } else if (e.type === "email" && typeof p.subject === "string") {
+      // Sent through the platform: subject on top, then the body, trimmed so
+      // a long email doesn't swallow the timeline.
+      const body = typeof p.text === "string" ? p.text.trim() : "";
+      const preview = body.length > 600 ? `${body.slice(0, 600).trimEnd()}…` : body;
+      text = preview ? `${p.subject}\n${preview}` : p.subject;
     } else {
       // call / sms / email / whatsapp — prefer the agent's comment, fall back
       // to the SMS body for texts placed through the platform.
@@ -700,6 +709,80 @@ export async function logLeadOutreach(
     return { ok: true, eventId: event.id };
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Emails the lead from the agent's own connected mailbox (Gmail/Outlook) and
+ * logs it as an outbound "email · sent" touch, so the queue moves on exactly
+ * as it would after the agent clicked "Email / SMS sent" by hand. The copy
+ * lives in the agent's Sent folder; the lead's timeline keeps subject + body.
+ */
+export async function sendLeadEmail(
+  leadId: string,
+  input: { subject: string; body: string },
+): Promise<LeadLogResult> {
+  if (await isDemoSession()) return { ok: false, message: DEMO_BLOCKED_MSG };
+  const { userId, lead } = await requireLeadAccess(leadId);
+  const subject = input.subject.trim();
+  const body = input.body.trim();
+  if (!subject) return { ok: false, message: "Add a subject." };
+  if (subject.length > 200) return { ok: false, message: "Subject is too long (200 chars max)." };
+  if (!body) return { ok: false, message: "Write something in the email." };
+  if (body.length > 10_000) return { ok: false, message: "Email is too long (10,000 chars max)." };
+
+  const [row] = await db()
+    .select({ email: schema.leads.email })
+    .from(schema.leads)
+    .where(eq(schema.leads.id, leadId))
+    .limit(1);
+  const to = row?.email?.trim() ?? "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to))
+    return { ok: false, message: "This lead has no valid email address." };
+
+  let sent: Awaited<ReturnType<typeof sendMailAs>>;
+  try {
+    sent = await sendMailAs(userId, { to, subject, text: body });
+  } catch (err) {
+    if (err instanceof MailNotConnectedError || err instanceof MailError)
+      return { ok: false, message: err.message };
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+
+  try {
+    const [event] = await db()
+      .insert(schema.leadEvents)
+      .values({
+        leadId,
+        userId,
+        type: "email",
+        payload: {
+          manual: false,
+          outcome: "sent",
+          subject,
+          text: body,
+          to,
+          from: sent.from,
+          provider: sent.provider,
+          messageId: sent.messageId,
+        },
+      })
+      .returning({ id: schema.leadEvents.id });
+    if (lead.callBackAt)
+      await db()
+        .update(schema.leads)
+        .set({ callBackAt: null })
+        .where(eq(schema.leads.id, leadId));
+    await maybeAutoAdvance(lead, userId, "sent");
+    revalidatePath("/leads");
+    revalidatePath("/leads/pipeline");
+    return { ok: true, eventId: event.id };
+  } catch (err) {
+    // The email already left: tell the agent the log failed, not the send.
+    return {
+      ok: false,
+      message: `Email sent, but it couldn't be logged: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 }
 
@@ -1147,18 +1230,9 @@ export async function smsLead(
     return { ok: false, reason: "bad_phone" };
   }
 
+  let res: Awaited<ReturnType<typeof sendText>>;
   try {
-    const res = await sendText(userId, to, body);
-    await db().insert(schema.leadEvents).values({
-      leadId,
-      userId,
-      type: "sms",
-      payload: { to, text: body, messageId: res.id, via: res.via },
-    });
-    await maybeAutoAdvance(lead, userId);
-    revalidatePath("/leads");
-    revalidatePath("/leads/pipeline");
-    return { ok: true };
+    res = await sendText(userId, to, body);
   } catch (err) {
     if (err instanceof NoProviderConnectedError)
       return { ok: false, reason: "not_connected" };
@@ -1166,6 +1240,42 @@ export async function smsLead(
       ok: false,
       reason: "error",
       message: err instanceof Error ? err.message : String(err),
+    };
+  }
+  // Same bookkeeping as an in-app email: logged as a sent touch, callback
+  // cleared, funnel advanced. The message already left, so a logging failure
+  // is reported as exactly that.
+  try {
+    const [event] = await db()
+      .insert(schema.leadEvents)
+      .values({
+        leadId,
+        userId,
+        type: "sms",
+        payload: {
+          manual: false,
+          outcome: "sent",
+          to,
+          text: body,
+          messageId: res.id,
+          via: res.via,
+        },
+      })
+      .returning({ id: schema.leadEvents.id });
+    if (lead.callBackAt)
+      await db()
+        .update(schema.leads)
+        .set({ callBackAt: null })
+        .where(eq(schema.leads.id, leadId));
+    await maybeAutoAdvance(lead, userId, "sent");
+    revalidatePath("/leads");
+    revalidatePath("/leads/pipeline");
+    return { ok: true, eventId: event.id };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: `SMS sent, but it couldn't be logged: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 }
@@ -1211,4 +1321,12 @@ export async function searchPipelineLeads(
     end: filters.end ? new Date(filters.end) : null,
     dateBy: filters.dateBy === "stage" ? "stage" : "created",
   });
+}
+
+/** Whether the current user can send SMS from the platform (RingCentral or Dialpad connected). */
+export async function canSendSmsInApp(): Promise<boolean> {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return false;
+  return (await getActiveProvider(userId)) !== null;
 }

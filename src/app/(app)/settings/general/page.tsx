@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { and, eq, isNotNull, ne, or } from "drizzle-orm";
-import { Building2, KeyRound, Users, ImageIcon, Phone, Zap } from "lucide-react";
+import { Building2, KeyRound, Users, ImageIcon, Phone, Zap, FileText } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
@@ -20,6 +20,9 @@ import {
   isAgentOnly,
 } from "@/lib/permissions";
 import { RingCentralConnectCard } from "@/components/app/ringcentral-connect-card";
+import { MailConnectCard } from "@/components/app/mail-connect-card";
+import { getMailAccount } from "@/lib/mail-accounts";
+import { configuredMailProviders } from "@/lib/integrations/mail";
 import {
   getScoreAutomation,
   getScoreAutomationUsage,
@@ -77,6 +80,9 @@ export default async function GeneralSettingsPage() {
   // Agents manage their own password and their own RingCentral connection —
   // never workspace configuration. The personal RC link is what lets the
   // platform mirror their call log into the Agent Activity report.
+  const mailAccount = userId ? await getMailAccount(userId) : null;
+  const mailProviders = configuredMailProviders();
+
   if (await isAgentOnly()) {
     const agentRcConnected = userId
       ? await isRingCentralConnected(userId)
@@ -92,7 +98,7 @@ export default async function GeneralSettingsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
           <p className="text-sm text-muted-foreground">
-            Account security & calling
+            Account security, calling & email
           </p>
         </div>
         <div className="grid max-w-4xl gap-4 lg:grid-cols-2">
@@ -119,6 +125,7 @@ export default async function GeneralSettingsPage() {
               envConfigured={agentRcEnvConfigured}
             />
           </Suspense>
+          <MailConnectCard account={mailAccount} providers={mailProviders} />
         </div>
         {showApiAccess && (
           <section className="space-y-3">
@@ -355,13 +362,32 @@ export default async function GeneralSettingsPage() {
               />
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4 text-primary" />
+                Message templates
+              </CardTitle>
+              <CardDescription>
+                Ready-made SMS and email texts agents pick from the Contact
+                Queue and the lead page. Placeholders fill in the lead&apos;s
+                city and the agent&apos;s name and number.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button size="sm" variant="outline" render={<Link href="/settings/templates" />}>
+                Manage templates
+              </Button>
+            </CardContent>
+          </Card>
         </section>
       )}
 
       <section className="space-y-3">
         <SectionHeading
-          title="Calling & messaging"
-          description="Call and text leads straight from the pipeline. RingCentral runs in the in-app dialer; Dialpad is available as an alternative."
+          title="Calling, messaging & email"
+          description="Call, text and email leads straight from the pipeline. RingCentral powers the Vivo phone at the bottom-right of every page; Dialpad is available as an alternative; email goes out from your own Gmail or Outlook."
         />
         <div className="grid gap-4 lg:grid-cols-2">
           <Suspense>
@@ -379,19 +405,19 @@ export default async function GeneralSettingsPage() {
               fromNumber={dpTokens?.fromNumber ?? null}
             />
           </Suspense>
+          <MailConnectCard account={mailAccount} providers={mailProviders} />
         </div>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Phone className="h-4 w-4 text-primary" />
-              In-app dialer (RingCentral Embeddable)
+              Vivo phone
             </CardTitle>
             <CardDescription>
-              Independently of the connection above, the in-app dialer at the
-              bottom-right of any page lets agents call/SMS through the
-              browser — sign in once with your RingCentral account inside the
-              widget. The connection above is what powers automated SMS and
-              server-side click-to-call.
+              The phone at the bottom-right of every page runs on the
+              RingCentral connection above: keypad, incoming and outgoing
+              calls, recent calls and SMS, all from your own number. Every
+              call and text is logged on the matching lead automatically.
             </CardDescription>
           </CardHeader>
         </Card>

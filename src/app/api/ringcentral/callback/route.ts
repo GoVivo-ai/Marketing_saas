@@ -5,8 +5,16 @@ import { setRingCentralTokens } from "@/lib/settings";
 
 /** RingCentral OAuth callback: validates state, exchanges code, stores tokens. */
 export async function GET(req: NextRequest) {
-  const back = (rc: string) =>
-    NextResponse.redirect(new URL(`/settings/general?rc=${rc}`, req.url));
+  // Back to the page the agent connected from (set by /start), else Settings.
+  const ret = req.cookies.get("rc_oauth_return")?.value;
+  const target = ret && /^\/(?!\/)[^\s]*$/.test(ret) ? ret : "/settings/general";
+  const back = (rc: string) => {
+    const url = new URL(target, req.url);
+    url.searchParams.set("rc", rc);
+    const res = NextResponse.redirect(url);
+    res.cookies.delete("rc_oauth_return");
+    return res;
+  };
 
   const session = await auth();
   if (!session?.user?.id) return NextResponse.redirect(new URL("/login", req.url));

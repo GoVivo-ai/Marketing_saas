@@ -28,6 +28,43 @@ export interface GeoCity extends LatLng {
   region: string | null;
 }
 
+interface NominatimHit {
+  lat: string;
+  lon: string;
+  /** "city" | "town" | "county" | "state" | … — what the place actually is. */
+  addresstype?: string;
+  type?: string;
+  address?: Record<string, string>;
+}
+
+/** Nominatim result kinds that are a populated place rather than a region. */
+const PLACE_TYPES = new Set([
+  "city",
+  "town",
+  "village",
+  "hamlet",
+  "municipality",
+  "suburb",
+  "borough",
+  "locality",
+  "neighbourhood",
+  "census-designated place",
+]);
+
+/**
+ * Nominatim ranks by importance, so "San Bernardino, California" answers with
+ * San Bernardino COUNTY (a pin in the Mojave, 85 mi from the city) before the
+ * city itself. Ad sets target cities, so prefer the first populated place —
+ * unless the name itself asks for a county ("Douglas County").
+ */
+export function pickPlace<T extends NominatimHit>(hits: T[], city: string): T | undefined {
+  if (!hits.length) return undefined;
+  if (/\bcounty\b/i.test(city)) return hits[0];
+  return (
+    hits.find((h) => PLACE_TYPES.has((h.addresstype ?? h.type ?? "").toLowerCase())) ?? hits[0]
+  );
+}
+
 /**
  * Resolve a city to coordinates. Returns null when nothing is found so callers
  * can persist the ad set without a map pin rather than failing the sync.
@@ -41,15 +78,11 @@ export async function geocodeCity(
   if (!q) return null;
   await throttle();
   try {
-    const url = `${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&addressdetails=1&limit=1`;
+    const url = `${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&addressdetails=1&limit=5`;
     const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
     if (!res.ok) return null;
-    const data = (await res.json()) as Array<{
-      lat: string;
-      lon: string;
-      address?: Record<string, string>;
-    }>;
-    const hit = data[0];
+    const data = (await res.json()) as NominatimHit[];
+    const hit = pickPlace(data, city);
     if (!hit) return null;
     return {
       lat: Number(hit.lat),

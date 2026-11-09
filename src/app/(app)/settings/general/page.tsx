@@ -387,7 +387,7 @@ export default async function GeneralSettingsPage() {
       <section className="space-y-3">
         <SectionHeading
           title="Calling, messaging & email"
-          description="Call, text and email leads straight from the pipeline. RingCentral runs in the in-app dialer; Dialpad is available as an alternative; email goes out from your own Gmail or Outlook."
+          description="Call, text and email leads straight from the pipeline. RingCentral powers the Vivo phone at the bottom-right of every page; Dialpad is available as an alternative; email goes out from your own Gmail or Outlook."
         />
         <div className="grid gap-4 lg:grid-cols-2">
           <Suspense>
@@ -411,14 +411,13 @@ export default async function GeneralSettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Phone className="h-4 w-4 text-primary" />
-              In-app dialer (RingCentral Embeddable)
+              Vivo phone
             </CardTitle>
             <CardDescription>
-              Independently of the connection above, the in-app dialer at the
-              bottom-right of any page lets agents call/SMS through the
-              browser — sign in once with your RingCentral account inside the
-              widget. The connection above is what powers automated SMS and
-              server-side click-to-call.
+              The phone at the bottom-right of every page runs on the
+              RingCentral connection above: keypad, incoming and outgoing
+              calls, recent calls and SMS, all from your own number. Every
+              call and text is logged on the matching lead automatically.
             </CardDescription>
           </CardHeader>
         </Card>

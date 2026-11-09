@@ -15,10 +15,10 @@ import { db, schema } from "@/lib/db";
 /**
  * Whether these numbers are the whole truth.
  *
- * `call_logs` has two possible writers: the RingCentral Embeddable widget,
+ * `call_logs` has two possible writers: the Vivo phone (our own softphone),
  * which posts each call from the agent's browser, and `syncAllCallLogs`,
  * which pulls the authoritative log over OAuth. Nobody has connected OAuth
- * yet, so today only the widget writes — and it misses whatever happens
+ * yet, so today only the phone writes — and it misses whatever happens
  * outside the browser tab (a measured ~20% on 2026-09-03, skewed towards the
  * long calls, which are exactly the ones the KPIs care about).
  *

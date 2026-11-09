@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { PhoneCall, MessageSquare, Mail } from "lucide-react";
-import { dialerCall, isDialerConfigured } from "@/components/app/ringcentral-dialer";
+import { usePhoneUi, useSoftphoneContext } from "@/components/app/softphone";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,9 +16,6 @@ import {
 } from "@/components/ui/dialog";
 import { EmailComposeDialog } from "@/components/app/email-compose-dialog";
 import { SmsComposeDialog } from "@/components/app/sms-compose-dialog";
-
-const NEEDS_DIALER =
-  "Open the RingCentral dialer (bottom-right) and sign in first.";
 
 export function LeadContactActions({
   leadId,
@@ -45,6 +42,8 @@ export function LeadContactActions({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [smsOpen, setSmsOpen] = useState(false);
+  const softphone = useSoftphoneContext();
+  const phoneUi = usePhoneUi();
   const leadVars = { name: leadName, city, state, campaign };
   const refreshActivity = () =>
     // The Activity timeline lives in a sibling; nudge it to reload.
@@ -80,7 +79,7 @@ export function LeadContactActions({
   const number = phone && phone !== "—" ? phone : null;
 
   // SMS goes out from the agent's own connected RingCentral/Dialpad number
-  // (the softphone's connection), so it doesn't need the embedded dialer.
+  // (the Vivo phone's connection).
   const smsButton = (
     <>
       <Button
@@ -103,24 +102,24 @@ export function LeadContactActions({
     </>
   );
 
-  if (!isDialerConfigured) {
-    return (
-      <div className="space-y-2">
-        <div className="flex flex-wrap gap-2">
-          {smsButton}
-          {emailButton}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          The in-app dialer isn&apos;t configured yet.
-        </p>
-      </div>
-    );
-  }
-
+  // Calls go through the Vivo phone. Not connected yet → open it on its
+  // Connect screen rather than fail silently.
   const placeCall = () => {
     if (!number) return;
     setConfirmOpen(false);
-    if (!dialerCall(number)) toast.error(NEEDS_DIALER);
+    if (!softphone || softphone.status === "unconfigured" || softphone.status === "failed") {
+      phoneUi?.open();
+      toast.error("Connect your RingCentral in the phone to call from here.");
+      return;
+    }
+    if (softphone.status === "connecting") {
+      toast.error("Your phone is still connecting — try again in a moment.");
+      return;
+    }
+    phoneUi?.open();
+    softphone.dial(number).catch((e: unknown) =>
+      toast.error(e instanceof Error ? e.message : "Could not place the call"),
+    );
   };
 
   return (

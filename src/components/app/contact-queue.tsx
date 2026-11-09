@@ -22,8 +22,7 @@ import {
   ListChecks,
 } from "lucide-react";
 import { toast } from "sonner";
-import { dialerCall, isDialerConfigured } from "@/components/app/ringcentral-dialer";
-import { useSoftphoneContext } from "@/components/app/softphone";
+import { usePhoneUi, useSoftphoneContext } from "@/components/app/softphone";
 import { LeadActivity } from "@/components/app/lead-activity";
 import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
 import { EmailComposeDialog } from "@/components/app/email-compose-dialog";
@@ -63,9 +62,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-
-const NEEDS_DIALER =
-  "Open the RingCentral dialer (bottom-right) and sign in first.";
 
 /**
  * The in-progress session is mirrored to localStorage so accidentally leaving
@@ -686,6 +682,7 @@ export function ContactQueue({
   const [items, setItems] = useState(data.items);
   const [channel, setChannel] = useState<OutreachChannel>("call");
   const softphone = useSoftphoneContext();
+  const phoneUi = usePhoneUi();
   const [showHistory, setShowHistory] = useState(false);
   const [logging, startLog] = useTransition();
   const [done, setDone] = useState(0);
@@ -836,9 +833,10 @@ export function ContactQueue({
   const onCall = () => {
     if (!current?.phone) return;
     setChannel("call");
-    // Our own softphone when the agent has connected RingCentral; the
-    // embedded widget for everyone else, until they do.
+    // Every call goes through the Vivo phone. No RingCentral connected → open
+    // the phone on its Connect screen rather than let the call fail silently.
     if (softphone?.status === "registered") {
+      phoneUi?.open();
       softphone.dial(current.phone).catch((e: unknown) =>
         toast.error(e instanceof Error ? e.message : "Could not place the call"),
       );
@@ -848,9 +846,8 @@ export function ContactQueue({
       toast.error("Your phone is still connecting — try again in a moment.");
       return;
     }
-    // Softphone down: the provider has put the widget back, but it needs a
-    // sign-in of its own, so say that rather than let the call fail silently.
-    if (!dialerCall(current.phone)) toast.error(NEEDS_DIALER);
+    phoneUi?.open();
+    toast.error("Connect your RingCentral in the phone to call from here.");
   };
 
   // SMS is written in-app and sent from the agent's own connected number
@@ -1150,51 +1147,31 @@ export function ContactQueue({
                 <>
                   {/* Reach out … */}
                   <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-                    {isDialerConfigured ? (
-                      <>
-                        <Button size="sm" disabled={!current.phone} onClick={onCall}>
-                          <PhoneCall className="mr-1.5 h-3.5 w-3.5" />
-                          Call
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!current.phone}
-                          onClick={onSms}
-                        >
-                          <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
-                          SMS
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!current.email}
-                          onClick={onEmail}
-                        >
-                          <Mail className="mr-1.5 h-3.5 w-3.5" />
-                          Email
-                        </Button>
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          Logging as {CHANNEL_LABEL[channel]}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!current.email}
-                          onClick={onEmail}
-                        >
-                          <Mail className="mr-1.5 h-3.5 w-3.5" />
-                          Email
-                        </Button>
-                        <p className="text-xs text-muted-foreground">
-                          The in-app dialer isn&apos;t configured — log the outcome of
-                          calls made outside the platform below.
-                        </p>
-                      </>
-                    )}
+                    <Button size="sm" disabled={!current.phone} onClick={onCall}>
+                      <PhoneCall className="mr-1.5 h-3.5 w-3.5" />
+                      Call
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!current.phone}
+                      onClick={onSms}
+                    >
+                      <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                      SMS
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!current.email}
+                      onClick={onEmail}
+                    >
+                      <Mail className="mr-1.5 h-3.5 w-3.5" />
+                      Email
+                    </Button>
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      Logging as {CHANNEL_LABEL[channel]}
+                    </span>
                   </div>
 
                   {/* … then one click to log what happened and move on. */}

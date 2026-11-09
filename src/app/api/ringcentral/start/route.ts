@@ -36,5 +36,9 @@ export async function GET(req: NextRequest) {
   };
   res.cookies.set("rc_oauth_state", state, cookieOpts);
   res.cookies.set("rc_oauth_verifier", verifier, cookieOpts);
+  // Where to land afterwards (the Vivo phone connects from any page). Only a
+  // same-origin path is accepted; anything else falls back to Settings.
+  const ret = req.nextUrl.searchParams.get("return") ?? "";
+  if (/^\/(?!\/)[^\s]*$/.test(ret)) res.cookies.set("rc_oauth_return", ret, cookieOpts);
   return res;
 }

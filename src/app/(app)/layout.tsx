@@ -92,7 +92,7 @@ export default async function AppLayout({
     // The softphone wraps the whole app so any page can reach it — the Call
     // button in the Contact Queue reads it through context. Mounted as a
     // sibling it registered fine but was invisible to every consumer.
-    <SoftphoneProvider connected={softphone} workspaceId={active?.id ?? "none"}>
+    <SoftphoneProvider connected={softphone}>
       <div className="flex h-screen overflow-hidden">
         <AppSidebar
           workspaces={workspaces}

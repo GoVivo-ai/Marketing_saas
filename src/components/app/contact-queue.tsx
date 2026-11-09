@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { addHours, format, formatDistanceToNow, setHours, setMinutes, startOfTomorrow } from "date-fns";
+import { addDays, addHours, format, formatDistanceToNow, setHours, setMinutes, startOfTomorrow } from "date-fns";
 import {
   PhoneCall,
   MessageSquare,
@@ -35,6 +35,7 @@ import {
   logLeadOutreach,
   markLeadCcActivated,
   markLeadInterested,
+  parkLeadForLater,
   releaseLead,
   setLeadDisqual,
   undoLeadOutreach,
@@ -127,10 +128,30 @@ const FOLLOWUP_REASONS = [
   "Requested info by email / SMS",
   "Requested a callback",
   "Email Sent / SMS Sent",
+  "Not now — follow up later",
 ] as const;
 
 /** "Requested a callback" asks WHEN — the queue parks the lead until then. */
 const CALLBACK_REASON = "Requested a callback";
+
+/**
+ * "Not now — follow up later" also asks when, but in weeks: the lead isn't
+ * interested at the moment (car in the shop, only afternoons…) and goes to
+ * the holding stage (Future Follow-Up) until that date.
+ */
+const LATER_REASON = "Not now — follow up later";
+
+/** One-click dates for "follow up later" — weeks and months, not hours. */
+function laterPresets(): { label: string; at: Date }[] {
+  const at = (days: number) => setMinutes(setHours(addDays(new Date(), days), 9), 0);
+  return [
+    { label: "In 1 week", at: at(7) },
+    { label: "In 2 weeks", at: at(14) },
+    { label: "In 1 month", at: at(30) },
+    { label: "In 2 months", at: at(60) },
+    { label: "In 3 months", at: at(90) },
+  ];
+}
 
 /** One-click callback times; "Custom" opens a date-time field. */
 function callbackPresets(): { label: string; at: Date }[] {
@@ -187,12 +208,29 @@ function AnswerFollowUp({
   const [saving, startSave] = useTransition();
   const [pending, setPending] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  /** "Requested a callback" picked — asking for the time. */
-  const [askingWhen, setAskingWhen] = useState(false);
+  /** "Requested a callback" / "follow up later" picked — asking for the date. */
+  const [askingWhen, setAskingWhen] = useState<null | "callback" | "later">(null);
   const [customAt, setCustomAt] = useState("");
 
   const schedule = (at: Date) =>
     startSave(async () => {
+      if (askingWhen === "later") {
+        setPending(LATER_REASON);
+        const r = await parkLeadForLater(leadId, {
+          at: at.toISOString(),
+          note: note.trim() || undefined,
+        });
+        setPending(null);
+        if (!r.ok) {
+          toast.error(r.message);
+          return;
+        }
+        toast.success(
+          `Moved to ${r.stageName} — back on ${format(at, "EEE MMM d")}.`,
+        );
+        onDone();
+        return;
+      }
       setPending(CALLBACK_REASON);
       const r = await scheduleLeadCallback(leadId, {
         at: at.toISOString(),
@@ -210,7 +248,11 @@ function AnswerFollowUp({
   const pick = (reason: string) =>
     startSave(async () => {
       if (reason === CALLBACK_REASON) {
-        setAskingWhen(true);
+        setAskingWhen("callback");
+        return;
+      }
+      if (reason === LATER_REASON) {
+        setAskingWhen("later");
         return;
       }
       setPending(reason);
@@ -269,10 +311,15 @@ function AnswerFollowUp({
            remembering instead of the agent. */
         <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Call back when?
+            {askingWhen === "later" ? "Follow up when?" : "Call back when?"}
           </p>
+          {askingWhen === "later" && (
+            <p className="text-xs text-muted-foreground">
+              The lead moves to the holding stage and stays out of the queue until then.
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
-            {callbackPresets().map((p) => (
+            {(askingWhen === "later" ? laterPresets() : callbackPresets()).map((p) => (
               <Button
                 key={p.label}
                 size="sm"
@@ -281,7 +328,7 @@ function AnswerFollowUp({
                 className="h-8 font-normal"
                 onClick={() => schedule(p.at)}
               >
-                {saving && pending === CALLBACK_REASON ? (
+                {saving && (pending === CALLBACK_REASON || pending === LATER_REASON) ? (
                   <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                 ) : null}
                 {p.label}
@@ -303,14 +350,14 @@ function AnswerFollowUp({
               className="h-8"
               onClick={() => schedule(new Date(customAt))}
             >
-              Set callback
+              {askingWhen === "later" ? "Set date" : "Set callback"}
             </Button>
             <Button
               size="sm"
               variant="ghost"
               disabled={saving}
               className="h-8 text-muted-foreground"
-              onClick={() => setAskingWhen(false)}
+              onClick={() => setAskingWhen(null)}
             >
               Back
             </Button>

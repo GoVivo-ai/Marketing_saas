@@ -445,6 +445,13 @@ export const stages = pgTable(
      * contact queue instead of resurfacing as follow-ups.
      */
     workable: boolean("workable").notNull().default(true),
+    /**
+     * A holding stage ("Future Follow-Up"): leads that aren't interested right
+     * now but should be contacted later (car in the shop, only afternoons…).
+     * They stay out of the contact queue until their call_back_at comes due,
+     * then return as a due follow-up. Never climbed by the auto-advance.
+     */
+    parked: boolean("parked").notNull().default(false),
     position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

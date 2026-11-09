@@ -127,6 +127,18 @@ export function StageManager({
                 />
                 Queue
               </label>
+              <label
+                className="flex shrink-0 cursor-pointer items-center gap-1 text-xs text-muted-foreground"
+                title="Checked: a holding stage (e.g. Future Follow-Up). Leads moved here wait until their callback date, then come back to the queue as a due follow-up. Never climbed automatically."
+              >
+                <input
+                  type="checkbox"
+                  name={`parked:${s.id}`}
+                  defaultChecked={s.parked}
+                  className="h-3.5 w-3.5 accent-primary"
+                />
+                Hold
+              </label>
 
               <div className="ml-auto flex items-center gap-0.5">
                 <Button

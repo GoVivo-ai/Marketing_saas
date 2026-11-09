@@ -15,6 +15,7 @@ import {
 } from "@dnd-kit/core";
 import { toast } from "sonner";
 import {
+  Clock,
   Phone,
   Sparkles,
   GripVertical,
@@ -450,6 +451,8 @@ function StageColumn({
   // The compliance column: open but out of the queue. Sub-status badges only
   // make sense here — a lead moved back out keeps cc_status as history.
   const isCcColumn = stage.kind === "open" && !stage.workable;
+  // The holding column: cards show when they're due back.
+  const isHoldColumn = stage.parked;
   return (
     <div
       className={`flex h-full w-72 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/40 shadow-sm transition-colors ${
@@ -539,6 +542,7 @@ function StageColumn({
             key={card.id}
             card={card}
             showCc={isCcColumn}
+            showHold={isHoldColumn}
             opening={openingId === card.id}
             onClick={() => onCardClick(card)}
           />
@@ -565,11 +569,13 @@ function StageColumn({
 function LeadCard({
   card,
   showCc = false,
+  showHold = false,
   onClick,
   opening = false,
 }: {
   card: PipelineCard;
   showCc?: boolean;
+  showHold?: boolean;
   onClick: () => void;
   opening?: boolean;
 }) {
@@ -591,6 +597,7 @@ function LeadCard({
       <LeadCardContent
         card={card}
         showCc={showCc}
+        showHold={showHold}
         dragHandle={
           <span
             {...listeners}
@@ -611,16 +618,20 @@ function LeadCard({
 function LeadCardContent({
   card,
   showCc = false,
+  showHold = false,
   overlay = false,
   dragHandle,
 }: {
   card: PipelineCard;
   /** Render the CC sub-status badge (only inside the compliance column). */
   showCc?: boolean;
+  /** Render the "back on <date>" badge (only inside the holding column). */
+  showHold?: boolean;
   overlay?: boolean;
   dragHandle?: React.ReactNode;
 }) {
   const cc = showCc && isCcStatus(card.ccStatus) ? card.ccStatus : null;
+  const backOn = showHold && card.callBackAt ? new Date(card.callBackAt) : null;
   return (
     <div
       className={`rounded-lg border bg-card p-3 shadow-sm select-none ${
@@ -644,6 +655,21 @@ function LeadCardContent({
               style={{ color: CC_STATUS_COLOR[cc], borderColor: `${CC_STATUS_COLOR[cc]}66` }}
             >
               {CC_STATUS_LABEL[cc]}
+            </span>
+          )}
+          {backOn && (
+            <span
+              className={`mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${
+                backOn.getTime() <= Date.now()
+                  ? "border-amber-500/50 text-amber-600 dark:text-amber-400"
+                  : "text-muted-foreground"
+              }`}
+              title={`Follow up on ${backOn.toLocaleString()}`}
+            >
+              <Clock className="h-3 w-3" />
+              {backOn.getTime() <= Date.now()
+                ? "Due now"
+                : `Back ${backOn.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
             </span>
           )}
           <div className="mt-2 flex items-center gap-2">

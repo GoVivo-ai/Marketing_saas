@@ -1578,6 +1578,8 @@ export interface Stage {
   kind: string;
   /** Whether leads here still need outreach (false → out of the queue). */
   workable: boolean;
+  /** Holding stage: leads wait here until their callback date. */
+  parked: boolean;
   position: number;
 }
 
@@ -1599,6 +1601,8 @@ export interface PipelineCard {
   ownerName: string | null;
   /** The agent who last worked the lead — shown as an initial on the card. */
   agentName: string | null;
+  /** When the lead asked to be contacted again (shown in the holding column). */
+  callBackAt: Date | null;
   createdAt: Date;
 }
 
@@ -1747,6 +1751,7 @@ function pipelineCardQuery() {
       aiScore: schema.leads.aiScore,
       stageId: schema.leads.stageId,
       ccStatus: schema.leads.ccStatus,
+      callBackAt: schema.leads.callBackAt,
       ownerName: schema.users.name,
       // Whoever logged the lead's most recent event — the "worked by" initial
       // on the card when nobody owns it. Correlated per card, but each column
@@ -1784,6 +1789,7 @@ function mapPipelineCard(
     ccStatus: r.ccStatus,
     ownerName: r.ownerName,
     agentName: r.agentName,
+    callBackAt: r.callBackAt,
     createdAt: r.createdAt,
   };
 }
@@ -1836,6 +1842,7 @@ export async function getPipeline(
       color: schema.stages.color,
       kind: schema.stages.kind,
       workable: schema.stages.workable,
+      parked: schema.stages.parked,
       position: schema.stages.position,
     })
     .from(schema.stages)
@@ -2093,9 +2100,14 @@ function queueCandidateWhere(workspaceId: string) {
     isNull(schema.leads.disqualL1),
     // Workable open stages only — a non-workable stage (e.g. "In Contractor
     // Compliance") means the lead is being handled outside the outreach loop.
+    // A holding stage counts too: its leads carry a callback date, and the
+    // queue parks them until then (see the callBackAt branch below).
     or(
       isNull(schema.leads.stageId),
-      and(eq(schema.stages.kind, "open"), eq(schema.stages.workable, true)),
+      and(
+        eq(schema.stages.kind, "open"),
+        or(eq(schema.stages.workable, true), eq(schema.stages.parked, true)),
+      ),
     ),
   );
 }

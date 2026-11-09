@@ -65,16 +65,20 @@ export async function saveStages(formData: FormData) {
     const kind = ["open", "won", "lost"].includes(rawKind) ? rawKind : s.kind;
     // Checkbox: present = agents keep working leads here (contact queue).
     const workable = formData.has(`workable:${s.id}`);
+    // Checkbox: present = a holding stage; leads wait here until their
+    // callback date, then return to the queue.
+    const parked = formData.has(`parked:${s.id}`);
     if (!name) continue; // never blank out a stage name
     if (
       name !== s.name ||
       color !== s.color ||
       kind !== s.kind ||
-      workable !== s.workable
+      workable !== s.workable ||
+      parked !== s.parked
     ) {
       await db()
         .update(schema.stages)
-        .set({ name, color, kind, workable })
+        .set({ name, color, kind, workable, parked })
         .where(eq(schema.stages.id, s.id));
     }
   }

@@ -131,15 +131,17 @@ async function maybeAutoAdvance(
       position: schema.stages.position,
       kind: schema.stages.kind,
       workable: schema.stages.workable,
+      parked: schema.stages.parked,
     })
     .from(schema.stages)
     .where(eq(schema.stages.workspaceId, lead.workspaceId))
     .orderBy(asc(schema.stages.position));
   const current = stages.find((s) => s.id === lead.stageId);
   if (!current || current.kind !== "open") return;
-  // Out of the queue (Contractor Compliance) → out of the ladder's reach.
-  if (!current.workable) return;
-  const ladder = stages.filter((s) => s.kind === "open" && s.workable);
+  // Out of the queue (Contractor Compliance) or on hold (Future Follow-Up)
+  // → out of the ladder's reach; the agent decides where it goes next.
+  if (!current.workable || current.parked) return;
+  const ladder = stages.filter((s) => s.kind === "open" && s.workable && !s.parked);
   const currentRung = ladder.findIndex((s) => s.id === current.id) + 1;
   if (currentRung === 0) return;
 
@@ -191,6 +193,7 @@ export async function moveLeadToStage(
       workspaceId: schema.stages.workspaceId,
       kind: schema.stages.kind,
       workable: schema.stages.workable,
+      parked: schema.stages.parked,
       position: schema.stages.position,
     })
     .from(schema.stages)
@@ -199,6 +202,10 @@ export async function moveLeadToStage(
   if (!stage || stage.workspaceId !== lead.workspaceId)
     return { ok: false, reason: "invalid_stage" };
   if (lead.stageId === stageId) return { ok: true };
+  // Dropped into the holding column without a date: come back in 30 days
+  // unless a future callback is already set. The queue's "follow up later"
+  // flow picks the date explicitly instead.
+  const intoHold = stage.parked;
 
   // Dragging into the compliance column starts its sub-pipeline: a lead with
   // no cc_status yet begins at "activated" (a returning one keeps its state).
@@ -214,6 +221,11 @@ export async function moveLeadToStage(
           ? {
               ccStatus: sql`coalesce(cc_status, 'activated')`,
               assignedToId: sql`coalesce(assigned_to_id, ${userId})`,
+            }
+          : {}),
+        ...(intoHold
+          ? {
+              callBackAt: sql`case when call_back_at > now() then call_back_at else now() + interval '30 days' end`,
             }
           : {}),
         status: deriveStatus(stage.kind, stage.position),
@@ -310,6 +322,80 @@ export async function releaseLead(leadId: string): Promise<void> {
 export type LeadCcResult =
   | { ok: true; stageName: string }
   | { ok: false; message: string };
+
+/**
+ * "Not interested right now — try again later": moves the lead to the
+ * workspace's holding stage (the one flagged `parked`, e.g. Future
+ * Follow-Up) and sets when it should come back. Until then the queue leaves
+ * it alone; on the date it returns as a due follow-up. Logged on the lead so
+ * the reason (car in the shop, afternoons only…) shows in its history.
+ */
+export async function parkLeadForLater(
+  leadId: string,
+  input: { at: string; note?: string },
+): Promise<LeadCcResult> {
+  const at = new Date(input.at);
+  if (Number.isNaN(at.getTime())) return { ok: false, message: "Pick a valid date." };
+  if (at.getTime() < Date.now() - 60_000)
+    return { ok: false, message: "The follow-up date is in the past." };
+  const note = input.note?.trim() || null;
+  if (note && note.length > 2000)
+    return { ok: false, message: "Note is too long (2000 chars max)." };
+  const { userId, lead } = await requireLeadAccess(leadId);
+  const [target] = await db()
+    .select({
+      id: schema.stages.id,
+      name: schema.stages.name,
+      kind: schema.stages.kind,
+      position: schema.stages.position,
+    })
+    .from(schema.stages)
+    .where(and(eq(schema.stages.workspaceId, lead.workspaceId), eq(schema.stages.parked, true)))
+    .orderBy(asc(schema.stages.position))
+    .limit(1);
+  if (!target)
+    return {
+      ok: false,
+      message: "No holding stage configured — check “Hold” on a stage in Edit stages first.",
+    };
+  try {
+    await db()
+      .update(schema.leads)
+      .set({
+        stageId: target.id,
+        callBackAt: at,
+        status: deriveStatus(target.kind, target.position),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.leads.id, leadId));
+    const when = at.toLocaleString("en-US", { dateStyle: "medium" });
+    const events: (typeof schema.leadEvents.$inferInsert)[] = [
+      {
+        leadId,
+        userId,
+        type: "note",
+        payload: {
+          text: `Follow up later — back on ${when}${note ? ` — ${note}` : ""}`,
+          callbackAt: at.toISOString(),
+        },
+      },
+    ];
+    if (lead.stageId !== target.id)
+      events.unshift({
+        leadId,
+        userId,
+        type: "status_change",
+        payload: { fromStageId: lead.stageId, toStageId: target.id, reason: "parked" },
+      });
+    await db().insert(schema.leadEvents).values(events);
+    revalidatePath("/leads");
+    revalidatePath("/leads/pipeline");
+    revalidatePath("/leads/queue");
+    return { ok: true, stageName: target.name };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
 
 /**
  * Marks a lead as activated in Contractor Compliance: moves it to the

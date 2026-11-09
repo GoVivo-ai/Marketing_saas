@@ -10,6 +10,7 @@ import { VivoLogo } from "@/components/app/vivo-logo";
 import { LocalDateTime } from "@/components/app/local-datetime";
 import { AppSidebar } from "@/components/app/sidebar";
 import { ThemeToggle } from "@/components/app/theme-toggle";
+import { CallbackBell } from "@/components/app/callback-bell";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Toaster } from "@/components/ui/sonner";
@@ -155,6 +156,7 @@ export default async function AppLayout({
               </div>
             )}
           <header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b px-6">
+            {active && <CallbackBell />}
             <ThemeToggle />
             <div className="text-right leading-tight">
               <p className="text-sm font-medium">{session.user.name}</p>

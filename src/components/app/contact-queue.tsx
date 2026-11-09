@@ -42,6 +42,7 @@ import {
 } from "@/lib/actions/leads";
 import { RCA_LEVEL1, rcaLevel2, rcaLevel3, isValidRcaPath } from "@/lib/rca";
 import type { CcStatus } from "@/lib/cc";
+import { callbackUrgency, URGENCY_BG } from "@/lib/callback-urgency";
 import { DISQUAL_PREFILL, OUTCOME_CHIPS } from "@/lib/outreach";
 import type { OutreachChannel, OutreachOutcome } from "@/lib/outreach";
 import type { ContactQueueData, LeadRow, QueueItem } from "@/lib/data";
@@ -670,16 +671,19 @@ function DueBadge({
   callBackAt?: Date | null;
 }) {
   const at = callBackAt ? new Date(callBackAt) : null;
+  // A callback takes the shared urgency colour (grey → amber → orange → red)
+  // so the badge matches the header bell.
+  const urgency = at ? callbackUrgency(at) : null;
   return (
     <Badge variant="outline" className="gap-1.5 font-normal">
       <span
         className={cn(
           "h-1.5 w-1.5 rounded-full",
-          due === "follow_up" ? "bg-amber-500" : "bg-success",
+          urgency ? URGENCY_BG[urgency] : due === "follow_up" ? "bg-amber-500" : "bg-success",
         )}
       />
       {at
-        ? `Callback due · ${format(at, "EEE h:mm a")}`
+        ? `Callback ${urgency === "due" ? "due" : "at"} · ${format(at, "EEE h:mm a")}`
         : due === "follow_up"
           ? "Follow-up due"
           : "New lead"}

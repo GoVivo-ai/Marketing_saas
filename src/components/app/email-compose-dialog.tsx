@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { ExternalLink, Loader2, Mail, Plug, Send } from "lucide-react";
 import { getMyMailAccount, type MyMailAccount } from "@/lib/actions/mail";
 import { sendLeadEmail } from "@/lib/actions/leads";
 import { MAIL_PROVIDER_LABEL, type MailProvider } from "@/lib/integrations/mail";
 import { useMailConnectToast } from "@/components/app/mail-connect-toast";
-import { TemplatePicker, type LeadVars } from "@/components/app/template-picker";
+import { ComposeTools, insertAtCursor, type LeadVars } from "@/components/app/template-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -118,6 +118,17 @@ function ComposeBody({
   }, [leadName]);
 
   const canSend = Boolean(me?.account && to && subject.trim() && body.trim());
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  // A chip drops the real value where the agent is typing in the body.
+  const insert = (value: string) => {
+    const { text: next, cursor } = insertAtCursor(areaRef.current, body, value);
+    setBody(next);
+    requestAnimationFrame(() => {
+      areaRef.current?.focus();
+      areaRef.current?.setSelectionRange(cursor, cursor);
+    });
+  };
 
   const send = () =>
     startSend(async () => {
@@ -195,13 +206,14 @@ function ComposeBody({
               Last attempt failed: {me.account.lastError}
             </p>
           )}
-          <TemplatePicker
+          <ComposeTools
             channel="email"
             lead={{ name: leadName, ...lead }}
             onPick={(f) => {
               if (f.subject) setSubject(f.subject);
               setBody(f.body);
             }}
+            onInsert={insert}
           />
           <Input
             value={subject}
@@ -211,6 +223,7 @@ function ComposeBody({
             autoFocus
           />
           <textarea
+            ref={areaRef}
             value={body}
             onChange={(e) => setBody(e.target.value)}
             maxLength={10_000}

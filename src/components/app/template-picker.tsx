@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, FileText, Loader2 } from "lucide-react";
+import { ChevronDown, FileText, Loader2, Plus } from "lucide-react";
 import {
   listMessageTemplates,
   type AgentVars,
@@ -12,6 +12,7 @@ import {
   type TemplateChannel,
   type TemplateVars,
 } from "@/lib/message-templates";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -32,10 +33,11 @@ export interface LeadVars {
 }
 
 /** Loads the workspace's templates for a channel plus the agent's signature. */
-export function useMessageTemplates(channel: TemplateChannel) {
+export function useMessageTemplates(channel: TemplateChannel | null) {
   const [templates, setTemplates] = useState<MessageTemplate[] | null>(null);
   const [agent, setAgent] = useState<AgentVars | null>(null);
   useEffect(() => {
+    if (!channel) return;
     let active = true;
     listMessageTemplates(channel)
       .then((r) => {
@@ -85,13 +87,17 @@ export function TemplatePicker({
   lead,
   onPick,
   size = "sm",
+  data,
 }: {
   channel: TemplateChannel;
   lead: LeadVars;
   onPick: (filled: { subject: string; body: string }, template: MessageTemplate) => void;
   size?: "sm" | "xs";
+  /** Already-loaded templates (from ComposeTools); loads its own otherwise. */
+  data?: ReturnType<typeof useMessageTemplates>;
 }) {
-  const { templates, agent, loading } = useMessageTemplates(channel);
+  const own = useMessageTemplates(data ? null : channel);
+  const { templates, agent, loading } = data ?? own;
   if (loading)
     return (
       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
@@ -136,5 +142,108 @@ export function TemplatePicker({
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * One-click values for a message written on the spot: the lead's name and
+ * city, the organization, the agent's own name, number and email. Each chip
+ * inserts the real value where the cursor is — no placeholder syntax for the
+ * agent to learn. Chips without a value (no city, no phone) aren't shown.
+ */
+export function InsertChips({
+  lead,
+  agent,
+  onInsert,
+  className,
+}: {
+  lead: LeadVars;
+  agent: AgentVars | null;
+  onInsert: (value: string) => void;
+  className?: string;
+}) {
+  const first = (lead.name ?? "").trim().split(/\s+/)[0] ?? "";
+  const rest = (lead.name ?? "").trim().split(/\s+/).slice(1).join(" ");
+  const agentFirst = (agent?.agentName ?? "").trim().split(/\s+/)[0] ?? "";
+  const chips: { label: string; value: string | null | undefined }[] = [
+    { label: "First name", value: first },
+    { label: "Last name", value: rest },
+    { label: "City", value: lead.city },
+    { label: "State", value: lead.state },
+    { label: "Campaign", value: lead.campaign },
+    { label: "Company", value: agent?.company },
+    { label: "My name", value: agentFirst },
+    { label: "My phone", value: agent?.agentPhone },
+    { label: "My email", value: agent?.agentEmail },
+  ];
+  const visible = chips.filter((c) => (c.value ?? "").trim() && c.value !== "—");
+  if (visible.length === 0) return null;
+  return (
+    <div className={cn("flex flex-wrap items-center gap-1", className)}>
+      <span className="mr-0.5 text-[11px] text-muted-foreground">Insert:</span>
+      {visible.map((c) => (
+        <button
+          key={c.label}
+          type="button"
+          onClick={() => onInsert(c.value!.trim())}
+          title={`Insert "${c.value!.trim()}"`}
+          className="inline-flex items-center gap-0.5 rounded-md border bg-muted/40 px-1.5 py-0.5 text-[11px] hover:bg-muted"
+        >
+          <Plus className="h-2.5 w-2.5 opacity-60" />
+          {c.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Inserts `value` at the textarea's cursor (replacing a selection), pads it
+ * with spaces when it lands against a word, and returns the new text plus
+ * where the cursor should go. Pure, so both dialogs share it.
+ */
+export function insertAtCursor(
+  el: HTMLTextAreaElement | HTMLInputElement | null,
+  current: string,
+  value: string,
+): { text: string; cursor: number } {
+  const start = el?.selectionStart ?? current.length;
+  const end = el?.selectionEnd ?? current.length;
+  const before = current.slice(0, start);
+  const after = current.slice(end);
+  const lead = before && !/\s$/.test(before) ? " " : "";
+  const trail = after && !/^[\s,.!?]/.test(after) ? " " : "";
+  const inserted = `${lead}${value}${trail}`;
+  return { text: before + inserted + after, cursor: start + inserted.length };
+}
+
+/**
+ * The compose toolbar both dialogs share: the template picker (when the
+ * workspace has templates) and the insert chips for ad-hoc messages. Loads
+ * the templates and the agent's values once.
+ */
+export function ComposeTools({
+  channel,
+  lead,
+  onPick,
+  onInsert,
+  right,
+}: {
+  channel: TemplateChannel;
+  lead: LeadVars;
+  onPick: (filled: { subject: string; body: string }, template: MessageTemplate) => void;
+  onInsert: (value: string) => void;
+  /** Something to show at the right end of the first row (e.g. a counter). */
+  right?: React.ReactNode;
+}) {
+  const data = useMessageTemplates(channel);
+  return (
+    <div className="space-y-1.5">
+      <div className="flex min-h-7 items-center justify-between gap-2">
+        <TemplatePicker channel={channel} lead={lead} onPick={onPick} data={data} />
+        {right}
+      </div>
+      <InsertChips lead={lead} agent={data.agent} onInsert={onInsert} />
+    </div>
   );
 }

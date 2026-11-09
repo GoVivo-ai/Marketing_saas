@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Loader2, MessageSquare, Plug, Send } from "lucide-react";
 import { canSendSmsInApp, smsLead } from "@/lib/actions/leads";
 import { smsSegments } from "@/lib/message-templates";
-import { TemplatePicker, type LeadVars } from "@/components/app/template-picker";
+import { ComposeTools, insertAtCursor, type LeadVars } from "@/components/app/template-picker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -87,6 +87,17 @@ function ComposeBody({
 
   const seg = smsSegments(text);
   const ready = Boolean(canSend && phone && text.trim());
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  // A chip drops the real value where the agent is typing.
+  const insert = (value: string) => {
+    const { text: next, cursor } = insertAtCursor(areaRef.current, text, value);
+    setText(next);
+    requestAnimationFrame(() => {
+      areaRef.current?.focus();
+      areaRef.current?.setSelectionRange(cursor, cursor);
+    });
+  };
 
   const send = () =>
     startSend(async () => {
@@ -153,23 +164,25 @@ function ComposeBody({
               </Button>
             </div>
           )}
-          <div className="flex items-center justify-between gap-2">
-            <TemplatePicker
-              channel="sms"
-              lead={lead}
-              onPick={(f) => setText(f.body)}
-            />
-            <span
-              className={cn(
-                "text-xs text-muted-foreground",
-                seg.segments > 3 && "text-amber-600 dark:text-amber-400",
-              )}
-            >
-              {seg.chars} chars · {seg.segments} SMS
-              {seg.unicode ? " · special characters" : ""}
-            </span>
-          </div>
+          <ComposeTools
+            channel="sms"
+            lead={lead}
+            onPick={(f) => setText(f.body)}
+            onInsert={insert}
+            right={
+              <span
+                className={cn(
+                  "text-xs text-muted-foreground",
+                  seg.segments > 3 && "text-amber-600 dark:text-amber-400",
+                )}
+              >
+                {seg.chars} chars · {seg.segments} SMS
+                {seg.unicode ? " · special characters" : ""}
+              </span>
+            }
+          />
           <textarea
+            ref={areaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             maxLength={1600}

@@ -22,7 +22,7 @@ import {
   ListChecks,
 } from "lucide-react";
 import { toast } from "sonner";
-import { usePhoneUi, useSoftphoneContext } from "@/components/app/softphone";
+import { useDialNumber } from "@/components/app/softphone";
 import { LeadActivity } from "@/components/app/lead-activity";
 import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
 import { EmailComposeDialog } from "@/components/app/email-compose-dialog";
@@ -681,8 +681,7 @@ export function ContactQueue({
 }) {
   const [items, setItems] = useState(data.items);
   const [channel, setChannel] = useState<OutreachChannel>("call");
-  const softphone = useSoftphoneContext();
-  const phoneUi = usePhoneUi();
+  const dialNumber = useDialNumber();
   const [showHistory, setShowHistory] = useState(false);
   const [logging, startLog] = useTransition();
   const [done, setDone] = useState(0);
@@ -833,21 +832,9 @@ export function ContactQueue({
   const onCall = () => {
     if (!current?.phone) return;
     setChannel("call");
-    // Every call goes through the Vivo phone. No RingCentral connected → open
-    // the phone on its Connect screen rather than let the call fail silently.
-    if (softphone?.status === "registered") {
-      phoneUi?.open();
-      softphone.dial(current.phone).catch((e: unknown) =>
-        toast.error(e instanceof Error ? e.message : "Could not place the call"),
-      );
-      return;
-    }
-    if (softphone?.status === "connecting") {
-      toast.error("Your phone is still connecting — try again in a moment.");
-      return;
-    }
-    phoneUi?.open();
-    toast.error("Connect your RingCentral in the phone to call from here.");
+    // Every call goes through the Vivo phone; it opens on its Connect screen
+    // when no RingCentral is connected rather than failing silently.
+    dialNumber(current.phone);
   };
 
   // SMS is written in-app and sent from the agent's own connected number

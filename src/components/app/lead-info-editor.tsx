@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { updateLeadInfo } from "@/lib/actions/leads";
 import { LeadContactActions } from "@/components/app/lead-contact-actions";
+import { useDialNumber } from "@/components/app/softphone";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -128,6 +129,7 @@ export function LeadInfoEditor({
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [saving, startSave] = useTransition();
+  const dialNumber = useDialNumber();
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -353,9 +355,14 @@ export function LeadInfoEditor({
           <p className="flex items-center gap-2">
             <Phone className="size-4 shrink-0 text-muted-foreground" />
             {lead.phone !== "—" ? (
-              <a href={`tel:${lead.phone}`} className="hover:underline">
+              <button
+                type="button"
+                onClick={() => dialNumber(lead.phone)}
+                className="hover:underline"
+                title="Call with the Vivo phone"
+              >
                 {lead.phone}
-              </a>
+              </button>
             ) : (
               <span className="text-muted-foreground">No phone</span>
             )}

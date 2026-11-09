@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { toast } from "sonner";
 import { PhoneCall, MessageSquare, Mail } from "lucide-react";
-import { usePhoneUi, useSoftphoneContext } from "@/components/app/softphone";
+import { useDialNumber } from "@/components/app/softphone";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -42,8 +41,7 @@ export function LeadContactActions({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [smsOpen, setSmsOpen] = useState(false);
-  const softphone = useSoftphoneContext();
-  const phoneUi = usePhoneUi();
+  const dialNumber = useDialNumber();
   const leadVars = { name: leadName, city, state, campaign };
   const refreshActivity = () =>
     // The Activity timeline lives in a sibling; nudge it to reload.
@@ -102,24 +100,12 @@ export function LeadContactActions({
     </>
   );
 
-  // Calls go through the Vivo phone. Not connected yet → open it on its
-  // Connect screen rather than fail silently.
+  // Calls go through the Vivo phone (it opens on its Connect screen when no
+  // RingCentral is connected yet).
   const placeCall = () => {
     if (!number) return;
     setConfirmOpen(false);
-    if (!softphone || softphone.status === "unconfigured" || softphone.status === "failed") {
-      phoneUi?.open();
-      toast.error("Connect your RingCentral in the phone to call from here.");
-      return;
-    }
-    if (softphone.status === "connecting") {
-      toast.error("Your phone is still connecting — try again in a moment.");
-      return;
-    }
-    phoneUi?.open();
-    softphone.dial(number).catch((e: unknown) =>
-      toast.error(e instanceof Error ? e.message : "Could not place the call"),
-    );
+    dialNumber(number);
   };
 
   return (

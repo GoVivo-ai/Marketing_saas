@@ -86,6 +86,23 @@ function providerConfig(provider: MailProvider): ProviderConfig | null {
   };
 }
 
+/**
+ * Entra "admin consent" URL for the Outlook registration. Organizations that
+ * block user consent (the "Need admin approval" screen) have an admin open
+ * this once; afterwards every user in that tenant can connect Outlook.
+ * Null when Outlook isn't configured.
+ */
+export function outlookAdminConsentUrl(redirectUri: string, state: string): string | null {
+  const cfg = providerConfig("outlook");
+  if (!cfg) return null;
+  const tenant = process.env.MS_MAIL_TENANT ?? "common";
+  const u = new URL(`https://login.microsoftonline.com/${tenant}/adminconsent`);
+  u.searchParams.set("client_id", cfg.clientId);
+  u.searchParams.set("redirect_uri", redirectUri);
+  u.searchParams.set("state", state);
+  return u.toString();
+}
+
 export function isMailProviderConfigured(provider: MailProvider): boolean {
   return providerConfig(provider) !== null;
 }

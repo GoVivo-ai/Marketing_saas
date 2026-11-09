@@ -28,13 +28,25 @@ export async function GET(
     return res;
   };
 
+  const sp = req.nextUrl.searchParams;
+
+  // Entra admin consent comes back here too (admin_consent=True&tenant=…).
+  // The admin is usually the client's IT person, with no account on the
+  // platform, so answer with a plain page instead of bouncing them to login.
+  if (sp.has("admin_consent")) {
+    const granted = sp.get("admin_consent") === "True" && !sp.get("error");
+    return new NextResponse(adminConsentPage(granted, sp.get("error_description")), {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+
   const session = await auth();
   if (!session?.user?.id) return NextResponse.redirect(new URL("/login", req.url));
 
   const { provider } = await ctx.params;
   if (!isMailProvider(provider)) return back("error");
 
-  const sp = req.nextUrl.searchParams;
   if (sp.get("error")) return back(sp.get("error") === "access_denied" ? "denied" : "error");
 
   const code = sp.get("code");
@@ -55,4 +67,15 @@ export async function GET(
     console.error("[mail] connect failed", err);
     return back("error");
   }
+}
+
+function adminConsentPage(granted: boolean, detail: string | null): string {
+  const esc = (v: string) => v.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+  const title = granted ? "Permission granted" : "Permission not granted";
+  const body = granted
+    ? "Martech By Vivo can now send email on behalf of the people in your organization who connect their Outlook. You can close this window — your team can connect Outlook from the platform right away."
+    : `The permission was not granted.${detail ? ` Microsoft said: ${esc(detail)}` : ""} You can close this window and try again from the link you were given.`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} · Martech By Vivo</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f4f4f4;color:#1f2937}main{max-width:28rem;background:#fff;border-radius:16px;padding:2rem;box-shadow:0 10px 30px rgba(0,0,0,.08)}h1{font-size:1.25rem;margin:0 0 .5rem;color:${granted ? "#047a52" : "#b3261e"}}p{line-height:1.5;margin:0}</style></head>
+<body><main><h1>${title}</h1><p>${body}</p></main></body></html>`;
 }

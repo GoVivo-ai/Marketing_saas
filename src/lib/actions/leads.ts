@@ -1021,12 +1021,16 @@ export async function setLeadDisqual(
       payload: { l1: input.l1, l2: input.l2, l3: input.l3, note },
     });
 
-    // A disqualified lead also leaves the open pipeline: move it to the
-    // first lost-kind stage so the Kanban matches the queue's verdict.
+    // A disqualified lead also leaves the open pipeline: move it to a
+    // lost-kind stage so the Kanban matches the queue's verdict. Out-of-area
+    // leads get their own lost column when the workspace has one (named
+    // "Outside Current Service Area" or similar) — they aren't uninterested,
+    // just unreachable today, and get re-contacted if operations expand.
     // fromStageId lets clearLeadDisqual walk it back on re-open.
     const stages = await db()
       .select({
         id: schema.stages.id,
+        name: schema.stages.name,
         kind: schema.stages.kind,
         position: schema.stages.position,
       })
@@ -1034,8 +1038,12 @@ export async function setLeadDisqual(
       .where(eq(schema.stages.workspaceId, lead.workspaceId))
       .orderBy(asc(schema.stages.position));
     const currentKind = stages.find((s) => s.id === lead.stageId)?.kind;
-    const lost = stages.find((s) => s.kind === "lost");
-    if (lost && (lead.stageId == null || currentKind === "open")) {
+    const lost = lostStageFor(stages, input.l2);
+    if (
+      lost &&
+      (lead.stageId == null || currentKind === "open" ||
+        (currentKind === "lost" && lead.stageId !== lost.id))
+    ) {
       await db()
         .update(schema.leads)
         .set({ stageId: lost.id, status: "lost", updatedAt: new Date() })
@@ -1058,6 +1066,24 @@ export async function setLeadDisqual(
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** RCA level-2 reasons that mean "we don't operate where the lead lives". */
+const OUT_OF_AREA_L2 = /location|coverage/i;
+/** The lost column that keeps out-of-area leads apart from the uninterested. */
+const OUT_OF_AREA_STAGE = /out(side)?\s+(of\s+)?(current\s+)?(operating|service)\s+area|out of area/i;
+
+/** Which lost stage a disqualification lands in — by reason, else the first. */
+function lostStageFor<T extends { name: string; kind: string }>(
+  stages: T[],
+  l2: string,
+): T | undefined {
+  const lost = stages.filter((s) => s.kind === "lost");
+  if (OUT_OF_AREA_L2.test(l2)) {
+    const area = lost.find((s) => OUT_OF_AREA_STAGE.test(s.name));
+    if (area) return area;
+  }
+  return lost.find((s) => !OUT_OF_AREA_STAGE.test(s.name)) ?? lost[0];
 }
 
 /**

@@ -1681,17 +1681,20 @@ export interface PipelineFilters {
 }
 
 /**
- * "This agent worked the lead" = the agent owns it, or logged any event on it
- * (a call, SMS, email, note, stage move, disqualification). Matches the
- * meeting's ask: pick an agent, see everything that agent has managed.
+ * The lead is this agent's: they own it, or — while nobody owns it — they
+ * are the last one who logged an event on it. Exactly the person whose
+ * initial the card shows, so filtering by an agent never surfaces cards
+ * with somebody else's initial (the team's complaint about the old
+ * "anyone who ever touched it" match).
  */
 function agentFilterSql(agents: string[]): SQL<unknown> {
   const ids = sql.join(agents.map((a) => sql`${a}`), sql`, `);
-  return sql`(${schema.leads.assignedToId} in (${ids}) or exists (
-    select 1 from ${schema.leadEvents} e
-    where e.lead_id = ${schema.leads.id}
-      and e.user_id in (${ids})
-  ))`;
+  return sql`coalesce(
+    ${schema.leads.assignedToId},
+    (select e.user_id from ${schema.leadEvents} e
+      where e.lead_id = ${schema.leads.id} and e.user_id is not null
+      order by e.created_at desc limit 1)
+  ) in (${ids})`;
 }
 
 export type PipelineDateBasis = "created" | "stage";

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "ai.govivo.martech",
+      "sha256_cert_fingerprints": [
+        "6F:FF:D3:49:2C:B9:8A:14:65:5F:70:70:21:91:2F:30:37:D9:56:E1:B0:BE:3F:B2:FB:BE:82:D6:D5:1D:1F:42"
+      ]
+    }
+  }
+]

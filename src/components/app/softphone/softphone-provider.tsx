@@ -35,10 +35,16 @@ const PhoneUiContext = createContext<PhoneUi | null>(null);
 
 export function SoftphoneProvider({
   connected,
+  panel = true,
   children,
 }: {
   /** Whether this user has RingCentral connected — no tokens, no phone. */
   connected: boolean;
+  /**
+   * Render the floating handset. The mobile app turns it off: there the phone
+   * IS the screen, drawn by the mobile shell from the same contexts.
+   */
+  panel?: boolean;
   children?: React.ReactNode;
 }) {
   const phone = useSoftphone(connected);
@@ -62,7 +68,7 @@ export function SoftphoneProvider({
     <SoftphoneContext.Provider value={phone}>
       <PhoneUiContext.Provider value={ui}>
         {children}
-        <PhonePanel phone={phone} ui={ui} />
+        {panel && <PhonePanel phone={phone} ui={ui} />}
       </PhoneUiContext.Provider>
     </SoftphoneContext.Provider>
   );

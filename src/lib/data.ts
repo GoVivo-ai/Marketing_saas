@@ -1592,6 +1592,11 @@ export interface PipelineCard {
   stageId: string | null;
   /** Contractor Compliance sub-pipeline state (null outside the CC column). */
   ccStatus: string | null;
+  /**
+   * The lead's fixed owner (set when it entered Contractor Compliance), or
+   * null while nobody owns it. Wins over `agentName` on the card.
+   */
+  ownerName: string | null;
   /** The agent who last worked the lead — shown as an initial on the card. */
   agentName: string | null;
   createdAt: Date;
@@ -1676,16 +1681,17 @@ export interface PipelineFilters {
 }
 
 /**
- * "This agent worked the lead" = the agent logged any event on it (a call,
- * SMS, email, note, stage move, disqualification). Matches the meeting's ask:
- * pick an agent, see everything that agent has managed.
+ * "This agent worked the lead" = the agent owns it, or logged any event on it
+ * (a call, SMS, email, note, stage move, disqualification). Matches the
+ * meeting's ask: pick an agent, see everything that agent has managed.
  */
 function agentFilterSql(agents: string[]): SQL<unknown> {
-  return sql`exists (
+  const ids = sql.join(agents.map((a) => sql`${a}`), sql`, `);
+  return sql`(${schema.leads.assignedToId} in (${ids}) or exists (
     select 1 from ${schema.leadEvents} e
     where e.lead_id = ${schema.leads.id}
-      and e.user_id in (${sql.join(agents.map((a) => sql`${a}`), sql`, `)})
-  )`;
+      and e.user_id in (${ids})
+  ))`;
 }
 
 export type PipelineDateBasis = "created" | "stage";
@@ -1738,9 +1744,10 @@ function pipelineCardQuery() {
       aiScore: schema.leads.aiScore,
       stageId: schema.leads.stageId,
       ccStatus: schema.leads.ccStatus,
+      ownerName: schema.users.name,
       // Whoever logged the lead's most recent event — the "worked by" initial
-      // on the card. Correlated per card, but each column is capped so the
-      // board runs at most ~stages × cap of these tiny index lookups.
+      // on the card when nobody owns it. Correlated per card, but each column
+      // is capped so the board runs at most ~stages × cap of these lookups.
       // NB: literal "leads"."id" — in a SELECT list drizzle renders the
       // column ref without its table prefix, which is ambiguous here.
       agentName: sql<string | null>`(
@@ -1755,6 +1762,7 @@ function pipelineCardQuery() {
     .from(schema.leads)
     .leftJoin(schema.campaigns, eq(schema.leads.campaignId, schema.campaigns.id))
     .leftJoin(schema.adsets, eq(schema.leads.adsetId, schema.adsets.id))
+    .leftJoin(schema.users, eq(schema.leads.assignedToId, schema.users.id))
     .$dynamic();
 }
 
@@ -1771,6 +1779,7 @@ function mapPipelineCard(
     aiScore: r.aiScore,
     stageId: r.stageId,
     ccStatus: r.ccStatus,
+    ownerName: r.ownerName,
     agentName: r.agentName,
     createdAt: r.createdAt,
   };

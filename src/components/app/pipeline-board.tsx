@@ -660,12 +660,16 @@ function LeadCardContent({
             {card.phone !== "—" && (
               <Phone className="h-3.5 w-3.5 text-muted-foreground" />
             )}
-            {card.agentName && (
+            {(card.ownerName ?? card.agentName) && (
               <span
-                title={`Worked by ${card.agentName}`}
+                title={
+                  card.ownerName
+                    ? `Owner: ${card.ownerName}`
+                    : `Worked by ${card.agentName}`
+                }
                 className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-semibold text-secondary-foreground ring-1 ring-border"
               >
-                {agentInitials(card.agentName)}
+                {agentInitials((card.ownerName ?? card.agentName)!)}
               </span>
             )}
           </div>

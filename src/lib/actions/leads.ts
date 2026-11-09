@@ -202,13 +202,20 @@ export async function moveLeadToStage(
 
   // Dragging into the compliance column starts its sub-pipeline: a lead with
   // no cc_status yet begins at "activated" (a returning one keeps its state).
+  // It also fixes the lead's owner: whoever brought it into CC keeps it, no
+  // matter who logs calls or notes on it afterwards.
   const intoCc = stage.kind === "open" && !stage.workable;
   try {
     await db()
       .update(schema.leads)
       .set({
         stageId,
-        ...(intoCc ? { ccStatus: sql`coalesce(cc_status, 'activated')` } : {}),
+        ...(intoCc
+          ? {
+              ccStatus: sql`coalesce(cc_status, 'activated')`,
+              assignedToId: sql`coalesce(assigned_to_id, ${userId})`,
+            }
+          : {}),
         status: deriveStatus(stage.kind, stage.position),
         updatedAt: new Date(),
       })
@@ -354,6 +361,8 @@ export async function markLeadCcActivated(
       .set({
         stageId: target.id,
         ccStatus,
+        // The agent who got the lead into CC owns it from here on.
+        assignedToId: sql`coalesce(assigned_to_id, ${userId})`,
         status: deriveStatus(target.kind, target.position),
         updatedAt: new Date(),
       })

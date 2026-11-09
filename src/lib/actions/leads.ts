@@ -13,6 +13,7 @@ import { resolveLeadRegion } from "@/lib/lead-region";
 import {
   placeCall,
   sendText,
+  getActiveProvider,
   normalizeE164,
   NoProviderConnectedError,
 } from "@/lib/integrations/telephony";
@@ -35,7 +36,7 @@ import {
 } from "@/lib/outreach";
 
 export type LeadContactResult =
-  | { ok: true }
+  | { ok: true; eventId?: string }
   | {
       ok: false;
       reason: "no_phone" | "bad_phone" | "not_connected" | "error";
@@ -1229,18 +1230,9 @@ export async function smsLead(
     return { ok: false, reason: "bad_phone" };
   }
 
+  let res: Awaited<ReturnType<typeof sendText>>;
   try {
-    const res = await sendText(userId, to, body);
-    await db().insert(schema.leadEvents).values({
-      leadId,
-      userId,
-      type: "sms",
-      payload: { to, text: body, messageId: res.id, via: res.via },
-    });
-    await maybeAutoAdvance(lead, userId);
-    revalidatePath("/leads");
-    revalidatePath("/leads/pipeline");
-    return { ok: true };
+    res = await sendText(userId, to, body);
   } catch (err) {
     if (err instanceof NoProviderConnectedError)
       return { ok: false, reason: "not_connected" };
@@ -1248,6 +1240,42 @@ export async function smsLead(
       ok: false,
       reason: "error",
       message: err instanceof Error ? err.message : String(err),
+    };
+  }
+  // Same bookkeeping as an in-app email: logged as a sent touch, callback
+  // cleared, funnel advanced. The message already left, so a logging failure
+  // is reported as exactly that.
+  try {
+    const [event] = await db()
+      .insert(schema.leadEvents)
+      .values({
+        leadId,
+        userId,
+        type: "sms",
+        payload: {
+          manual: false,
+          outcome: "sent",
+          to,
+          text: body,
+          messageId: res.id,
+          via: res.via,
+        },
+      })
+      .returning({ id: schema.leadEvents.id });
+    if (lead.callBackAt)
+      await db()
+        .update(schema.leads)
+        .set({ callBackAt: null })
+        .where(eq(schema.leads.id, leadId));
+    await maybeAutoAdvance(lead, userId, "sent");
+    revalidatePath("/leads");
+    revalidatePath("/leads/pipeline");
+    return { ok: true, eventId: event.id };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      message: `SMS sent, but it couldn't be logged: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 }
@@ -1293,4 +1321,12 @@ export async function searchPipelineLeads(
     end: filters.end ? new Date(filters.end) : null,
     dateBy: filters.dateBy === "stage" ? "stage" : "created",
   });
+}
+
+/** Whether the current user can send SMS from the platform (RingCentral or Dialpad connected). */
+export async function canSendSmsInApp(): Promise<boolean> {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return false;
+  return (await getActiveProvider(userId)) !== null;
 }

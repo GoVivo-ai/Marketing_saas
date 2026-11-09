@@ -22,15 +22,12 @@ import {
   ListChecks,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  dialerCall,
-  dialerSms,
-  isDialerConfigured,
-} from "@/components/app/ringcentral-dialer";
+import { dialerCall, isDialerConfigured } from "@/components/app/ringcentral-dialer";
 import { useSoftphoneContext } from "@/components/app/softphone";
 import { LeadActivity } from "@/components/app/lead-activity";
 import { LeadDetailSheet } from "@/components/app/lead-detail-sheet";
 import { EmailComposeDialog } from "@/components/app/email-compose-dialog";
+import { SmsComposeDialog } from "@/components/app/sms-compose-dialog";
 import {
   addLeadNote,
   getLeadDetail,
@@ -856,10 +853,13 @@ export function ContactQueue({
     if (!dialerCall(current.phone)) toast.error(NEEDS_DIALER);
   };
 
+  // SMS is written in-app and sent from the agent's own connected number
+  // (the softphone's RingCentral connection), templates included.
+  const [smsOpen, setSmsOpen] = useState(false);
   const onSms = () => {
     if (!current?.phone) return;
     setChannel("sms");
-    if (!dialerSms(current.phone)) toast.error(NEEDS_DIALER);
+    setSmsOpen(true);
   };
 
   // Compose in-app from the agent's own Gmail/Outlook; the dialog offers to
@@ -871,8 +871,8 @@ export function ContactQueue({
     setComposeOpen(true);
   };
 
-  // The send already logged "email · sent" on the server — treat it like the
-  // chip of the same name: count it, remember it, move to the next lead.
+  // The send (email or SMS) already logged "· sent" on the server — treat it
+  // like the chip of the same name: count it, remember it, move to the next lead.
   const onEmailSent = (eventId: string | null) => {
     if (!current) return;
     const item = current;
@@ -1392,14 +1392,34 @@ export function ContactQueue({
 
       {/* Full lead detail as a slide-over — the queue stays behind it. */}
       {current && (
-        <EmailComposeDialog
-          open={composeOpen}
-          onOpenChange={setComposeOpen}
-          leadId={current.id}
-          leadName={current.name}
-          to={current.email}
-          onSent={onEmailSent}
-        />
+        <>
+          <EmailComposeDialog
+            open={composeOpen}
+            onOpenChange={setComposeOpen}
+            leadId={current.id}
+            leadName={current.name}
+            to={current.email}
+            lead={{
+              city: current.geo?.leadCity ?? current.geo?.targetCity ?? null,
+              state: current.geo?.leadRegion ?? null,
+              campaign: current.campaign,
+            }}
+            onSent={onEmailSent}
+          />
+          <SmsComposeDialog
+            open={smsOpen}
+            onOpenChange={setSmsOpen}
+            leadId={current.id}
+            lead={{
+              name: current.name,
+              city: current.geo?.leadCity ?? current.geo?.targetCity ?? null,
+              state: current.geo?.leadRegion ?? null,
+              campaign: current.campaign,
+            }}
+            phone={current.phone}
+            onSent={onEmailSent}
+          />
+        </>
       )}
       <LeadDetailSheet
         lead={detail}

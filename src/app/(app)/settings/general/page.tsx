@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { and, eq, isNotNull, ne, or } from "drizzle-orm";
-import { Building2, KeyRound, Users, ImageIcon, Phone, Zap } from "lucide-react";
+import { Building2, KeyRound, Users, ImageIcon, Phone, Zap, FileText } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { getWorkspaceContext } from "@/lib/data";
@@ -360,6 +360,25 @@ export default async function GeneralSettingsPage() {
                 workspaceId={active.id}
                 logoUrl={company.logoUrl}
               />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4 text-primary" />
+                Message templates
+              </CardTitle>
+              <CardDescription>
+                Ready-made SMS and email texts agents pick from the Contact
+                Queue and the lead page. Placeholders fill in the lead&apos;s
+                city and the agent&apos;s name and number.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button size="sm" variant="outline" render={<Link href="/settings/templates" />}>
+                Manage templates
+              </Button>
             </CardContent>
           </Card>
         </section>

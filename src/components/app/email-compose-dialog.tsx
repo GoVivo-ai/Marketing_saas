@@ -7,6 +7,7 @@ import { getMyMailAccount, type MyMailAccount } from "@/lib/actions/mail";
 import { sendLeadEmail } from "@/lib/actions/leads";
 import { MAIL_PROVIDER_LABEL, type MailProvider } from "@/lib/integrations/mail";
 import { useMailConnectToast } from "@/components/app/mail-connect-toast";
+import { TemplatePicker, type LeadVars } from "@/components/app/template-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -42,6 +43,7 @@ export function EmailComposeDialog({
   leadId,
   leadName,
   to,
+  lead,
   onSent,
 }: {
   open: boolean;
@@ -49,6 +51,8 @@ export function EmailComposeDialog({
   leadId: string;
   leadName: string;
   to: string | null;
+  /** City / campaign for template placeholders; name falls back to leadName. */
+  lead?: Omit<LeadVars, "name">;
   /** Called once the email left and was logged on the lead. */
   onSent?: (eventId: string | null) => void;
 }) {
@@ -63,6 +67,7 @@ export function EmailComposeDialog({
             leadId={leadId}
             leadName={leadName}
             to={to}
+            lead={lead}
             onClose={() => onOpenChange(false)}
             onSent={onSent}
           />
@@ -76,12 +81,14 @@ function ComposeBody({
   leadId,
   leadName,
   to,
+  lead,
   onClose,
   onSent,
 }: {
   leadId: string;
   leadName: string;
   to: string | null;
+  lead?: Omit<LeadVars, "name">;
   onClose: () => void;
   onSent?: (eventId: string | null) => void;
 }) {
@@ -188,6 +195,14 @@ function ComposeBody({
               Last attempt failed: {me.account.lastError}
             </p>
           )}
+          <TemplatePicker
+            channel="email"
+            lead={{ name: leadName, ...lead }}
+            onPick={(f) => {
+              if (f.subject) setSubject(f.subject);
+              setBody(f.body);
+            }}
+          />
           <Input
             value={subject}
             onChange={(e) => setSubject(e.target.value)}

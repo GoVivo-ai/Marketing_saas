@@ -820,6 +820,39 @@ export const mailAccounts = pgTable("mail_accounts", {
 });
 
 /**
+ * Reusable outreach messages per workspace — the SMS and email texts agents
+ * pick from the Contact Queue and the lead page instead of retyping them.
+ * Bodies carry placeholders ({first_name}, {city}, {agent_name}, …) and
+ * optional city conditionals; see lib/message-templates.ts. One table for
+ * both channels: `subject` is only meaningful for email.
+ */
+export const messageTemplates = pgTable(
+  "message_templates",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** "sms" | "email" */
+    channel: text("channel").notNull(),
+    name: text("name").notNull(),
+    subject: text("subject"),
+    body: text("body").notNull(),
+    /** Display order in the picker (lower first). */
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdById: text("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("message_template_name_unique").on(t.workspaceId, t.channel, t.name),
+    index("message_template_workspace_idx").on(t.workspaceId, t.channel),
+  ],
+);
+
+/**
  * RingCentral extension → platform user.
  *
  * The account-level call log names the caller only by extension id, so

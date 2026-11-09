@@ -366,6 +366,9 @@ export function LeadInfoEditor({
             phone={lead.phone}
             hasPhone={lead.phone !== "—"}
             email={lead.email}
+            city={lead.geo?.leadCity ?? lead.geo?.targetCity ?? null}
+            state={lead.geo?.leadRegion ?? null}
+            campaign={lead.campaign}
           />
         </div>
       )}

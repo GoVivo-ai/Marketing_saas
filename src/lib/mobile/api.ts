@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
-import { getContactQueue, getWorkspaceContext } from "@/lib/data";
+import { getAgentPerformance } from "@/lib/agent-report";
+import { businessDay, startOfBusinessDay } from "@/lib/business-time";
+import { getContactQueue, getLeadsPage, getPipeline, getWorkspaceContext } from "@/lib/data";
 import { getDailyCallReport, localDay } from "@/lib/call-report";
 import { getMailAccount } from "@/lib/mail-accounts";
 import { isTemplateChannel, renderTemplate } from "@/lib/message-templates";
@@ -139,6 +141,97 @@ export async function handleMobile(req: NextRequest, path: string[]): Promise<Ne
       case "POST sms": {
         const b = await body(req);
         return json(await sendSmsToNumber(str(b.to), str(b.text)));
+      }
+
+      case "POST workspace": {
+        // The active workspace is the same cookie the web's switcher writes.
+        const b = await body(req);
+        const { workspaces } = await getWorkspaceContext();
+        const target = workspaces.find((w) => w.id === str(b.id));
+        if (!target) return fail(403, "Forbidden");
+        const res = json({ ok: true, workspace: { id: target.id, name: target.name } });
+        res.cookies.set("ws", target.slug, {
+          path: "/",
+          sameSite: "lax",
+          secure: req.nextUrl.protocol === "https:",
+          maxAge: 365 * 24 * 3600,
+        });
+        return res;
+      }
+
+      case "GET admin/agents": {
+        const { active } = await getWorkspaceContext();
+        if (!active || !(await canManageWorkspace(active.id))) return fail(403, "Forbidden");
+        // The last N business days, today included.
+        const days = [1, 7, 30].includes(Number(req.nextUrl.searchParams.get("days")))
+          ? Number(req.nextUrl.searchParams.get("days"))
+          : 1;
+        const start = startOfBusinessDay(businessDay(new Date(Date.now() - (days - 1) * 86_400_000)));
+        const report = await getAgentPerformance(active.id, { start, end: new Date() });
+        return json({
+          days,
+          workspace: active.name,
+          totals: report.totals,
+          agents: report.rows.map((r) => ({
+            userId: r.userId,
+            name: r.name,
+            touches: r.touches,
+            outcomes: r.outcomes,
+            leadsWorked: r.leadsWorked,
+            won: r.won,
+            lost: r.lost,
+            medianFirstTouchMin: r.medianFirstTouchMin,
+            calls: r.rcCalls + r.rcOtherCalls,
+            callsConnected: r.rcConnected,
+            talkTimeSec: r.rcTalkTimeSec,
+          })),
+        });
+      }
+
+      case "GET admin/leads": {
+        const { active } = await getWorkspaceContext();
+        if (!active || !(await canManageWorkspace(active.id))) return fail(403, "Forbidden");
+        const q = req.nextUrl.searchParams.get("q")?.trim() || null;
+        const stageId = req.nextUrl.searchParams.get("stage") || null;
+        const today = startOfBusinessDay(businessDay(new Date()));
+        const week = new Date(today.getTime() - 6 * 86_400_000);
+        const [pipeline, queue, list, newToday, newWeek] = await Promise.all([
+          getPipeline(active.id),
+          getContactQueue(active.id),
+          getLeadsPage(active.id, { q, stageId, pageSize: 30 }),
+          getLeadsPage(active.id, { start: today, pageSize: 1 }),
+          getLeadsPage(active.id, { start: week, pageSize: 1 }),
+        ]);
+        return json({
+          workspace: active.name,
+          newToday: newToday.total,
+          newWeek: newWeek.total,
+          queue: {
+            total: queue.total,
+            new: queue.newCount,
+            followUp: queue.followUpCount,
+            priority: queue.priorityCount,
+            waiting: queue.coolingDown,
+          },
+          stages: pipeline.stages.map((st) => ({
+            id: st.id,
+            name: st.name,
+            color: st.color,
+            kind: st.kind,
+            count: pipeline.counts[st.id] ?? 0,
+          })),
+          total: list.total,
+          leads: list.rows.map((l) => ({
+            id: l.id,
+            name: l.name,
+            phone: l.phone,
+            campaign: l.campaign,
+            stageName: l.stageName,
+            stageColor: l.stageColor,
+            score: l.aiScore,
+            createdAt: l.createdAt,
+          })),
+        });
       }
 
       case "GET admin/daily": {

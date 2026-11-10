@@ -1,8 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { getAgentPerformance } from "@/lib/agent-report";
-import { businessDay, startOfBusinessDay } from "@/lib/business-time";
-import { getContactQueue, getLeadsPage, getPipeline, getWorkspaceContext } from "@/lib/data";
+import { businessDay, endOfBusinessDay, startOfBusinessDay } from "@/lib/business-time";
+import {
+  getContactQueue,
+  getLeadRowById,
+  getLeadsPage,
+  getPipeline,
+  getWorkspaceContext,
+} from "@/lib/data";
 import { getDailyCallReport, localDay } from "@/lib/call-report";
 import { getMailAccount } from "@/lib/mail-accounts";
 import { isTemplateChannel, renderTemplate } from "@/lib/message-templates";
@@ -12,6 +18,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { isRingCentralConnected } from "@/lib/settings";
 import {
   claimLead,
+  getLeadActivity,
   logLeadOutreach,
   releaseLead,
   scheduleLeadCallback,
@@ -21,6 +28,7 @@ import {
 } from "@/lib/actions/leads";
 import { listMessageTemplates } from "@/lib/actions/message-templates";
 import { listRecentCalls, lookupLeadByPhone, sendSmsToNumber } from "@/lib/actions/phone";
+import { getWorkspaceActivity, toCsvText } from "./reports";
 import { issueRefreshToken, sessionFromRefreshToken } from "./session";
 
 /**
@@ -184,6 +192,9 @@ export async function handleMobile(req: NextRequest, path: string[]): Promise<Ne
             calls: r.rcCalls + r.rcOtherCalls,
             callsConnected: r.rcConnected,
             talkTimeSec: r.rcTalkTimeSec,
+            byDay: Object.entries(r.byDay)
+              .map(([day, v]) => ({ day, touches: v.touches, calls: v.calls }))
+              .sort((a, b) => a.day.localeCompare(b.day)),
           })),
         });
       }
@@ -191,14 +202,19 @@ export async function handleMobile(req: NextRequest, path: string[]): Promise<Ne
       case "GET admin/leads": {
         const { active } = await getWorkspaceContext();
         if (!active || !(await canManageWorkspace(active.id))) return fail(403, "Forbidden");
-        const q = req.nextUrl.searchParams.get("q")?.trim() || null;
-        const stageId = req.nextUrl.searchParams.get("stage") || null;
+        const sp = req.nextUrl.searchParams;
+        const q = sp.get("q")?.trim() || null;
+        const stageId = sp.get("stage") || null;
+        const page = Math.max(1, Number(sp.get("page")) || 1);
         const today = startOfBusinessDay(businessDay(new Date()));
         const week = new Date(today.getTime() - 6 * 86_400_000);
+        // "Arrived in the last N days"; absent = all time.
+        const days = Number(sp.get("days"));
+        const since = days > 0 ? new Date(today.getTime() - (days - 1) * 86_400_000) : null;
         const [pipeline, queue, list, newToday, newWeek] = await Promise.all([
           getPipeline(active.id),
           getContactQueue(active.id),
-          getLeadsPage(active.id, { q, stageId, pageSize: 30 }),
+          getLeadsPage(active.id, { q, stageId, start: since, page, pageSize: 30 }),
           getLeadsPage(active.id, { start: today, pageSize: 1 }),
           getLeadsPage(active.id, { start: week, pageSize: 1 }),
         ]);
@@ -221,6 +237,8 @@ export async function handleMobile(req: NextRequest, path: string[]): Promise<Ne
             count: pipeline.counts[st.id] ?? 0,
           })),
           total: list.total,
+          page: list.page,
+          totalPages: list.totalPages,
           leads: list.rows.map((l) => ({
             id: l.id,
             name: l.name,
@@ -231,6 +249,65 @@ export async function handleMobile(req: NextRequest, path: string[]): Promise<Ne
             score: l.aiScore,
             createdAt: l.createdAt,
           })),
+        });
+      }
+
+      case "GET admin/activity": {
+        const { active } = await getWorkspaceContext();
+        if (!active || !(await canManageWorkspace(active.id))) return fail(403, "Forbidden");
+        const sp = req.nextUrl.searchParams;
+        // One business day, or a from–to range of them; today by default.
+        const isDay = (v: string | null): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+        const today = businessDay(new Date());
+        const from = isDay(sp.get("from")) ? sp.get("from")! : isDay(sp.get("day")) ? sp.get("day")! : today;
+        const to = isDay(sp.get("to")) ? sp.get("to")! : from;
+        const csv = sp.get("format") === "csv";
+        const entries = await getWorkspaceActivity(active.id, {
+          start: startOfBusinessDay(from),
+          end: endOfBusinessDay(to),
+          agentId: sp.get("agent") || null,
+          limit: csv ? 5000 : 500,
+        });
+        if (csv)
+          return json({
+            filename: `activity-${from}${to !== from ? `-to-${to}` : ""}.csv`,
+            csv: toCsvText(
+              ["When", "Agent", "Lead", "Lead ID", "Action", "Outcome", "Detail"],
+              entries.map((e) => [e.at, e.agentName, e.leadName, e.leadId, e.type, e.outcome, e.text]),
+            ),
+          });
+        return json({ from, to, today, workspace: active.name, entries });
+      }
+
+      case "GET admin/leads/export": {
+        const { active } = await getWorkspaceContext();
+        if (!active || !(await canManageWorkspace(active.id))) return fail(403, "Forbidden");
+        const sp = req.nextUrl.searchParams;
+        const days = Number(sp.get("days"));
+        const today = startOfBusinessDay(businessDay(new Date()));
+        const opts = {
+          q: sp.get("q")?.trim() || null,
+          stageId: sp.get("stage") || null,
+          start: days > 0 ? new Date(today.getTime() - (days - 1) * 86_400_000) : null,
+          pageSize: 200,
+        };
+        // Same filters as the list on screen, every page of it (to a ceiling).
+        const rows = [];
+        for (let page = 1; page <= 25; page++) {
+          const chunk = await getLeadsPage(active.id, { ...opts, page });
+          rows.push(...chunk.rows);
+          if (page >= chunk.totalPages) break;
+        }
+        return json({
+          filename: `leads-${businessDay(new Date())}.csv`,
+          count: rows.length,
+          csv: toCsvText(
+            ["Lead ID", "Name", "Phone", "Email", "Stage", "Campaign", "Source", "Score", "Assigned to", "Created"],
+            rows.map((l) => [
+              l.id, l.name, l.phone, l.email, l.stageName, l.campaign, l.source, l.aiScore, l.assignedTo,
+              l.createdAt.toISOString(),
+            ]),
+          ),
         });
       }
 
@@ -268,6 +345,32 @@ export async function handleMobile(req: NextRequest, path: string[]): Promise<Ne
           })),
         });
       }
+    }
+
+    // GET admin/leads/:id — one lead and everything that has happened to it.
+    if (req.method === "GET" && path.length === 3 && path[0] === "admin" && path[1] === "leads") {
+      const { active } = await getWorkspaceContext();
+      if (!active || !(await canManageWorkspace(active.id))) return fail(403, "Forbidden");
+      const lead = await getLeadRowById(active.id, path[2]);
+      if (!lead) return fail(404, "Not found");
+      return json({
+        lead: {
+          id: lead.id,
+          name: lead.name,
+          phone: lead.phone,
+          email: lead.email,
+          campaign: lead.campaign,
+          source: lead.source,
+          stageName: lead.stageName,
+          stageColor: lead.stageColor,
+          score: lead.aiScore,
+          scoreReason: lead.aiReason,
+          suggestedAction: lead.aiSuggestedAction,
+          assignedTo: lead.assignedTo,
+          createdAt: lead.createdAt,
+        },
+        activity: await getLeadActivity(lead.id),
+      });
     }
 
     // POST leads/:id/:action

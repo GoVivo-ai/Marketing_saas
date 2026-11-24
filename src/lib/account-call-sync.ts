@@ -1,4 +1,4 @@
-import { desc, inArray, isNotNull, sql } from "drizzle-orm";
+import { desc, inArray, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import {
   fetchAccountCallLog,
@@ -7,7 +7,7 @@ import {
   jwtAccessToken,
   type RcExtension,
 } from "@/lib/integrations/ringcentral";
-import { phoneKey } from "@/lib/call-log-sync";
+import { buildLeadPhoneIndex } from "@/lib/lead-phone-scope";
 
 /**
  * Account-level call log sync.
@@ -170,28 +170,6 @@ export async function reconcileExtensions(
   return out;
 }
 
-/** phone → newest lead with that number, for attributing calls. */
-async function buildLeadPhoneIndex(): Promise<
-  Map<string, { leadId: string; workspaceId: string }>
-> {
-  const rows = await db()
-    .select({
-      id: schema.leads.id,
-      workspaceId: schema.leads.workspaceId,
-      phone: schema.leads.phone,
-    })
-    .from(schema.leads)
-    .where(isNotNull(schema.leads.phone))
-    .orderBy(desc(schema.leads.createdAt));
-  const index = new Map<string, { leadId: string; workspaceId: string }>();
-  for (const r of rows) {
-    const key = phoneKey(r.phone);
-    if (key && !index.has(key))
-      index.set(key, { leadId: r.id, workspaceId: r.workspaceId });
-  }
-  return index;
-}
-
 /**
  * Pulls the company call log and mirrors it into `call_logs`.
  *
@@ -269,7 +247,7 @@ export async function syncAccountCallLogs(
       continue;
     }
     const counterparty = r.direction === "Inbound" ? r.from : r.to;
-    const lead = leadIndex.get(phoneKey(counterparty) ?? "") ?? null;
+    const lead = await leadIndex.match(counterparty, userId);
     if (lead) report.matchedToLeads++;
     if (known.has(r.id)) report.updated++;
     else report.created++;

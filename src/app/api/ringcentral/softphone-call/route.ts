@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db, schema, isDatabaseConfigured } from "@/lib/db";
-import { matchLeadByPhone } from "@/lib/call-log-sync";
+import { leadWorkspaceScope, matchLeadByPhone } from "@/lib/lead-phone-scope";
+import { getWorkspaceContext } from "@/lib/data";
 
 /**
  * A finished call, reported by our own softphone.
@@ -45,7 +46,9 @@ export async function POST(req: NextRequest) {
     : 0;
   const result = answered ? "Call connected" : b.state === "failed" ? "Failed" : "Missed";
 
-  const lead = await matchLeadByPhone(b.remoteNumber);
+  // Only leads the caller may see; their active workspace first.
+  const { active } = await getWorkspaceContext();
+  const lead = await matchLeadByPhone(b.remoteNumber, await leadWorkspaceScope(userId), active?.id);
 
   await db()
     .insert(schema.callLogs)

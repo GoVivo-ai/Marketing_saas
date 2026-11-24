@@ -1,10 +1,11 @@
 "use server";
 
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { isDemoSession, DEMO_BLOCKED_MSG } from "@/lib/demo";
-import { matchLeadByPhone, phoneKey } from "@/lib/call-log-sync";
+import { leadWorkspaceScope, matchLeadByPhone } from "@/lib/lead-phone-scope";
+import { getWorkspaceContext } from "@/lib/data";
 import {
   sendText,
   normalizeE164,
@@ -32,6 +33,7 @@ export async function listRecentCalls(limit = 30): Promise<RecentCall[]> {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) throw new Error("Unauthorized");
+  const scope = await leadWorkspaceScope(userId);
   const rows = await db()
     .select({
       id: schema.callLogs.id,
@@ -45,7 +47,14 @@ export async function listRecentCalls(limit = 30): Promise<RecentCall[]> {
       leadName: schema.leads.name,
     })
     .from(schema.callLogs)
-    .leftJoin(schema.leads, eq(schema.leads.id, schema.callLogs.leadId))
+    // A lead's name only shows when the user may see that lead's workspace.
+    .leftJoin(
+      schema.leads,
+      and(
+        eq(schema.leads.id, schema.callLogs.leadId),
+        scope ? (scope.length ? inArray(schema.leads.workspaceId, scope) : sql`false`) : undefined,
+      ),
+    )
     .where(eq(schema.callLogs.userId, userId))
     .orderBy(desc(schema.callLogs.startTime))
     .limit(Math.min(Math.max(limit, 1), 100));
@@ -62,7 +71,7 @@ export async function listRecentCalls(limit = 30): Promise<RecentCall[]> {
       missed:
         inbound &&
         (r.durationSec === 0 || /missed|voicemail|no answer|rejected/i.test(result ?? "")),
-      leadId: r.leadId,
+      leadId: r.leadName === null ? null : r.leadId,
       leadName: r.leadName,
     };
   });
@@ -73,16 +82,17 @@ export async function lookupLeadByPhone(
   phone: string,
 ): Promise<{ leadId: string; name: string } | null> {
   const session = await auth();
-  if (!session?.user?.id) throw new Error("Unauthorized");
-  const key = phoneKey(phone);
-  if (!key) return null;
+  const userId = session?.user?.id;
+  if (!userId) throw new Error("Unauthorized");
+  const { active } = await getWorkspaceContext();
+  const match = await matchLeadByPhone(phone, await leadWorkspaceScope(userId), active?.id);
+  if (!match) return null;
   const [lead] = await db()
-    .select({ id: schema.leads.id, name: schema.leads.name })
+    .select({ name: schema.leads.name })
     .from(schema.leads)
-    .where(sql`right(regexp_replace(${schema.leads.phone}, '\\D', '', 'g'), 10) = ${key}`)
-    .orderBy(desc(schema.leads.createdAt))
+    .where(eq(schema.leads.id, match.leadId))
     .limit(1);
-  return lead ? { leadId: lead.id, name: lead.name ?? "Lead" } : null;
+  return { leadId: match.leadId, name: lead?.name ?? "Lead" };
 }
 
 export type SendSmsResult =
@@ -123,7 +133,8 @@ export async function sendSmsToNumber(to: string, text: string): Promise<SendSms
     return { ok: false, reason: "error", message: err instanceof Error ? err.message : String(err) };
   }
 
-  const lead = await matchLeadByPhone(e164);
+  const { active } = await getWorkspaceContext();
+  const lead = await matchLeadByPhone(e164, await leadWorkspaceScope(userId), active?.id);
   if (lead) {
     await db().insert(schema.leadEvents).values({
       leadId: lead.leadId,

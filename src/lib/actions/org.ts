@@ -3,9 +3,9 @@
 import { randomBytes } from "node:crypto";
 import { hash } from "bcryptjs";
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { canManageWorkspace, currentUser } from "@/lib/permissions";
+import { canManageWorkspace, currentUser, isPlatformAdmin } from "@/lib/permissions";
 import { isDemoSession, DEMO_BLOCKED_MSG } from "@/lib/demo";
 import { summarizeCriteria } from "@/lib/ai/lead-scoring";
 
@@ -52,6 +52,24 @@ async function clientMember(
     )
     .limit(1);
   if (!row || row.userRole !== "client") return null;
+
+  // The account is global: editing, resetting or deleting it reaches every
+  // company it belongs to. A company admin may only manage accounts that
+  // belong to their company alone; shared ones need a Vivo admin.
+  const me = await currentUser();
+  if (!isPlatformAdmin(me?.role)) {
+    const [other] = await db()
+      .select({ id: schema.workspaceMembers.id })
+      .from(schema.workspaceMembers)
+      .where(
+        and(
+          eq(schema.workspaceMembers.userId, userId),
+          ne(schema.workspaceMembers.workspaceId, workspaceId),
+        ),
+      )
+      .limit(1);
+    if (other) return null;
+  }
   return { role: row.wsRole };
 }
 

@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
-import { canManageWorkspace } from "@/lib/permissions";
+import { canManageWorkspace, getWorkspaceRole } from "@/lib/permissions";
+import { eq } from "drizzle-orm";
 import { isDemoSession, DEMO_BLOCKED_MSG } from "@/lib/demo";
 
 export interface ScoreAutomationState {
@@ -37,6 +38,10 @@ export async function saveScoreAutomation(
     return { error: "Write the message to send (or the agent script)" };
   if (enabled && action === "sms" && !senderUserId)
     return { error: "Pick who the automated SMS is sent as" };
+  // The SMS goes out on the sender's own line, so it must be someone who
+  // works this workspace: a member of it, or a Vivo agency user.
+  if (senderUserId && !(await canSendForWorkspace(senderUserId, workspaceId)))
+    return { error: "That sender is not part of this workspace" };
 
   const values = {
     enabled,
@@ -58,4 +63,15 @@ export async function saveScoreAutomation(
   revalidatePath("/settings/general");
   revalidatePath("/leads/queue");
   return { success: enabled ? "Automation saved and active." : "Automation saved (disabled)." };
+}
+
+async function canSendForWorkspace(userId: string, workspaceId: string): Promise<boolean> {
+  const [u] = await db()
+    .select({ role: schema.users.role })
+    .from(schema.users)
+    .where(eq(schema.users.id, userId))
+    .limit(1);
+  if (!u) return false;
+  if (u.role === "agency_admin" || u.role === "agency_member" || u.role === "developer") return true;
+  return (await getWorkspaceRole(userId, workspaceId)) !== null;
 }

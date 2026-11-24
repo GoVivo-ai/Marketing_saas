@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { VivoLogo } from "@/components/app/vivo-logo";
+import { LegalLinks } from "@/components/app/legal-links";
 
 const highlights = [
   { icon: BarChart3, text: "Unified campaign performance" },
@@ -215,6 +216,7 @@ export default async function LoginPage({
           <p className="text-center text-xs text-muted-foreground">
             Having trouble signing in? Contact your administrator.
           </p>
+          <LegalLinks className="justify-center" />
         </div>
       </section>
     </main>

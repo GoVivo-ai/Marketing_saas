@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SupportDialog } from "./support-dialog";
+import { LegalLinks } from "./legal-links";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { VivoLogo } from "./vivo-logo";
 import type { WorkspaceInfo } from "@/lib/data";
@@ -281,6 +282,7 @@ export function AppSidebar({
       <nav className="space-y-1 border-t px-3 py-3">
         {showSupport && <SupportDialog />}
         {bottomNav.map((n) => item(n.href, n.label, n.icon))}
+        <LegalLinks className="px-3 pt-2" />
       </nav>
     </aside>
   );

@@ -175,7 +175,11 @@ export async function handleMobile(req: NextRequest, path: string[]): Promise<Ne
           ? Number(req.nextUrl.searchParams.get("days"))
           : 1;
         const start = startOfBusinessDay(businessDay(new Date(Date.now() - (days - 1) * 86_400_000)));
-        const report = await getAgentPerformance(active.id, { start, end: new Date() });
+        const report = await getAgentPerformance(active.id, {
+          start,
+          end: new Date(),
+          includeOtherClients: role !== "client",
+        });
         return json({
           days,
           workspace: active.name,

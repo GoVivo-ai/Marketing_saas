@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { currentUser, isAgentOnly } from "@/lib/permissions";
+import { currentUser } from "@/lib/permissions";
 import { syncAllCallLogs, type CallLogSyncStats } from "@/lib/call-log-sync";
 
 export type SyncCallLogsResult =
@@ -10,12 +10,13 @@ export type SyncCallLogsResult =
 
 /**
  * On-demand RingCentral call-log sync from the Agent Activity report.
- * Any supervisor/admin may trigger it; agents can't reach the report at all,
- * but the guard stands on its own anyway.
+ * The sync walks every RingCentral account on the platform, across all
+ * clients, so only Vivo's own staff may trigger it — never a client user,
+ * whatever their role inside their company.
  */
 export async function syncCallLogsNow(): Promise<SyncCallLogsResult> {
   const u = await currentUser();
-  if (!u || (await isAgentOnly()))
+  if (!u || u.role === "client" || u.role === "operations")
     return { ok: false, message: "You don't have permission to sync calls" };
 
   try {

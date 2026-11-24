@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
   const report = await getAgentPerformance(active.id, {
     start: resolved.start,
     end: resolved.end,
+    includeOtherClients: u.role !== "client",
   });
   const rows =
     agentIds.length > 0

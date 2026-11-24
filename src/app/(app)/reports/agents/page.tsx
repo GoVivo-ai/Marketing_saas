@@ -23,7 +23,7 @@ import { AgentActivityCharts } from "@/components/app/agent-activity-charts";
 import { ExportMenu } from "@/components/app/export-menu";
 import { getWorkspaceContext } from "@/lib/data";
 import { buildDailySeries, getAgentPerformance } from "@/lib/agent-report";
-import { exportAccess, requireFullAccess } from "@/lib/permissions";
+import { currentUser, exportAccess, requireFullAccess } from "@/lib/permissions";
 import { resolveDateRange } from "@/lib/date-range";
 
 export const dynamic = "force-dynamic";
@@ -71,10 +71,12 @@ export default async function AgentActivityPage({
   const { active } = await getWorkspaceContext();
   await requireFullAccess(active?.id);
   const exportMode = active ? await exportAccess(active.id) : "none";
+  const viewer = await currentUser();
   const report = active
     ? await getAgentPerformance(active.id, {
         start: resolved.start,
         end: resolved.end,
+        includeOtherClients: Boolean(viewer && viewer.role !== "client"),
       })
     : null;
 
@@ -122,7 +124,7 @@ export default async function AgentActivityPage({
           {/* The charted PDF below is purpose-built for this report, so the
               menu only offers the data formats. */}
           <ExportMenu dataset="agents" formats={["csv", "xlsx"]} access={exportMode} />
-          <SyncCallsButton />
+          {viewer && viewer.role !== "client" && <SyncCallsButton />}
           <LeadsMultiFilter
             param="agent"
             icon="agent"

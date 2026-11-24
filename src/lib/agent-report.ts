@@ -101,7 +101,16 @@ const median = (xs: number[]): number | null => {
 
 export async function getAgentPerformance(
   workspaceId: string,
-  opts: { start?: Date | null; end?: Date | null } = {},
+  opts: {
+    start?: Date | null;
+    end?: Date | null;
+    /**
+     * Count each agent's calls for other clients (rcOtherCalls). Only Vivo's
+     * own staff may see that: a client must not learn anything about the
+     * work done for other clients, not even a count.
+     */
+    includeOtherClients?: boolean;
+  } = {},
 ): Promise<AgentPerformanceReport> {
   const eventFilters = [
     eq(schema.leads.workspaceId, workspaceId),
@@ -231,7 +240,7 @@ export async function getAgentPerformance(
       r.rcCalls++;
       r.rcTalkTimeSec += c.durationSec;
       if (c.result && CONNECTED_RESULTS.has(c.result)) r.rcConnected++;
-    } else if (rowsById.has(c.userId)) {
+    } else if (opts.includeOtherClients && rowsById.has(c.userId)) {
       row(c.userId).rcOtherCalls++;
     }
   }

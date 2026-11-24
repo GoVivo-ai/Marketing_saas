@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Wrench, LogOut, Sparkles } from "lucide-react";
 import { isDemoEmail } from "@/lib/demo";
+import { hasAcceptedPlatformTerms } from "@/lib/platform-terms";
 import { auth, signOut } from "@/lib/auth";
 import { getWorkspaceContext } from "@/lib/data";
 import { isRingCentralConnected } from "@/lib/settings";
@@ -67,6 +68,16 @@ export default async function AppLayout({
         </form>
       </div>
     );
+  }
+
+  // Clickwrap: nobody uses the app before accepting the current Platform
+  // Terms. The demo account holds sample data only and is exempt.
+  if (
+    session.user.id &&
+    !isDemoEmail(session.user.email) &&
+    !(await hasAcceptedPlatformTerms(session.user.id))
+  ) {
+    redirect("/accept-terms");
   }
 
   const { workspaces, active } = await getWorkspaceContext();

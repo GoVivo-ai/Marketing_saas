@@ -1249,3 +1249,23 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
   }),
   events: many(leadEvents),
 }));
+
+/**
+ * Clickwrap proof for the Platform Terms (legal v1, B11): who accepted which
+ * version, when and from where. One row per acceptance; a new terms version
+ * means a new row. No foreign key on purpose — the record must outlive the
+ * user it belongs to.
+ */
+export const termsAcceptances = pgTable(
+  "terms_acceptances",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull(),
+    email: text("email").notNull(),
+    version: text("version").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    acceptedAt: timestamp("accepted_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("terms_acceptances_user_version_idx").on(t.userId, t.version)],
+);

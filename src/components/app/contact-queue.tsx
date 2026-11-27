@@ -741,6 +741,12 @@ export function ContactQueue({
   /** Set after a connected call — the card offers a follow-up disposition. */
   const [followUp, setFollowUp] = useState(false);
   /**
+   * Channels already sent to the lead on deck (SMS / email). A send doesn't
+   * move on by itself — the agent often texts AND emails the same lead, so the
+   * card stays put until they click "Next lead".
+   */
+  const [sentVia, setSentVia] = useState<OutreachChannel[]>([]);
+  /**
    * The touch that opened the current sub-flow (RCA / follow-up), so its
    * "Back — wrong option" button can undo it and return to the outcome chips.
    */
@@ -864,6 +870,7 @@ export function ContactQueue({
     setDisqualOutcome(null);
     setFollowUp(false);
     setLastEvent(null);
+    setSentVia([]);
   };
 
   /** Jump the queue: bring an Up-next lead to the front to work it now. */
@@ -878,6 +885,7 @@ export function ContactQueue({
     setDisqualOutcome(null);
     setFollowUp(false);
     setLastEvent(null);
+    setSentVia([]);
   };
 
   const onCall = () => {
@@ -908,12 +916,15 @@ export function ContactQueue({
 
   // The send (email or SMS) already logged "· sent" on the server — treat it
   // like the chip of the same name: count it, remember it, move to the next lead.
-  const onEmailSent = (eventId: string | null) => {
+  // It stays on the card so the agent can also use the other channel; "Next
+  // lead" moves on. Counted once per lead however many messages go out.
+  const onSent = (via: OutreachChannel) => (eventId: string | null) => {
     if (!current) return;
     const item = current;
-    setDone((n) => n + 1);
+    if (sentVia.length === 0) setDone((n) => n + 1);
     setWorked((list) => [{ item, outcome: "sent" as const, eventId }, ...list].slice(0, 20));
-    advance();
+    setSentVia((list) => (list.includes(via) ? list : [...list, via]));
+    toast.success(`${CHANNEL_LABEL[via]} sent to ${item.name}.`);
   };
 
   /** Deletes the mis-logged touch and puts the lead back at the front. */
@@ -935,6 +946,7 @@ export function ContactQueue({
         setDisqualOutcome(null);
         setFollowUp(false);
         setLastEvent(null);
+        setSentVia([]);
         toast.success(`Undone — ${item.name} is back at the front of the queue.`);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Couldn't undo. Try again.");
@@ -992,6 +1004,7 @@ export function ContactQueue({
     if (current) releaseLead(current.id).catch(() => {});
     setItems((list) => (list.length > 1 ? [...list.slice(1), list[0]] : list));
     setShowHistory(false);
+    setSentVia([]);
   };
 
   // Full lead detail opens in a side panel — the agent stays in the queue.
@@ -1212,7 +1225,20 @@ export function ContactQueue({
                     </span>
                   </div>
 
-                  {/* … then one click to log what happened and move on. */}
+                  {sentVia.length > 0 ? (
+                    /* Already messaged — the send logged the touch; send the
+                       other channel if needed, then move on. */
+                    <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+                      <CheckCircle2 className="h-4 w-4 text-success" />
+                      <span className="text-sm">
+                        {sentVia.map((c) => CHANNEL_LABEL[c]).join(" + ")} sent
+                      </span>
+                      <Button size="sm" className="ml-auto h-8" onClick={advance}>
+                        Next lead
+                      </Button>
+                    </div>
+                  ) : (
+                  /* … then one click to log what happened and move on. */
                   <div>
                     <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       What happened?
@@ -1237,6 +1263,7 @@ export function ContactQueue({
                       ))}
                     </div>
                   </div>
+                  )}
                 </>
               )}
 
@@ -1419,7 +1446,7 @@ export function ContactQueue({
               state: current.geo?.leadRegion ?? null,
               campaign: current.campaign,
             }}
-            onSent={onEmailSent}
+            onSent={onSent("email")}
           />
           <SmsComposeDialog
             open={smsOpen}
@@ -1432,7 +1459,7 @@ export function ContactQueue({
               campaign: current.campaign,
             }}
             phone={current.phone}
-            onSent={onEmailSent}
+            onSent={onSent("sms")}
           />
         </>
       )}

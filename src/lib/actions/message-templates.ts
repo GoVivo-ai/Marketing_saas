@@ -5,7 +5,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { getWorkspaceContext } from "@/lib/data";
-import { canManageWorkspace } from "@/lib/permissions";
+import { canManageMessageTemplates } from "@/lib/permissions";
 import { isDemoSession, DEMO_BLOCKED_MSG } from "@/lib/demo";
 import { getMailAccount } from "@/lib/mail-accounts";
 import {
@@ -102,7 +102,7 @@ export async function listMessageTemplates(
 
 /** All templates of a workspace, for the Settings editor (managers). */
 export async function listAllMessageTemplates(workspaceId: string): Promise<MessageTemplate[]> {
-  if (!(await canManageWorkspace(workspaceId))) throw new Error("Forbidden");
+  if (!(await canManageMessageTemplates(workspaceId))) throw new Error("Forbidden");
   const rows = await db()
     .select({
       id: schema.messageTemplates.id,
@@ -135,7 +135,7 @@ export async function saveMessageTemplate(
   },
 ): Promise<MessageTemplateResult> {
   const session = await auth();
-  if (!(await canManageWorkspace(workspaceId)))
+  if (!(await canManageMessageTemplates(workspaceId)))
     return { ok: false, error: "You don't have permission to manage this workspace" };
   if (await isDemoSession()) return { ok: false, error: DEMO_BLOCKED_MSG };
   if (!isTemplateChannel(input.channel)) return { ok: false, error: "Pick SMS or Email" };
@@ -202,7 +202,7 @@ export async function deleteMessageTemplate(
   workspaceId: string,
   templateId: string,
 ): Promise<MessageTemplateResult> {
-  if (!(await canManageWorkspace(workspaceId)))
+  if (!(await canManageMessageTemplates(workspaceId)))
     return { ok: false, error: "You don't have permission to manage this workspace" };
   if (await isDemoSession()) return { ok: false, error: DEMO_BLOCKED_MSG };
   await db()

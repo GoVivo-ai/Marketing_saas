@@ -69,6 +69,18 @@ export async function canManageWorkspace(workspaceId: string): Promise<boolean> 
 }
 
 /**
+ * Who may create/edit a workspace's SMS & email templates: everyone who can
+ * manage the workspace, plus Vivo's own agents (agency_member) — they write
+ * the texts the floor sends. Nothing else of the workspace opens up to them.
+ */
+export async function canManageMessageTemplates(workspaceId: string): Promise<boolean> {
+  const u = await currentUser();
+  if (!u) return false;
+  if (u.role === "agency_member") return true;
+  return canManageWorkspace(workspaceId);
+}
+
+/**
  * True when the current user is an agent inside the given workspace: they only
  * get Leads, Contact Queue and Pipeline. Vivo's agency_member accounts ARE the
  * calling agents, so they're agents everywhere; agency admins never are.

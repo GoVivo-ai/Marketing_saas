@@ -18,6 +18,7 @@ import {
   canExportPersonalData,
   currentUser,
   isAgentOnly,
+  canManageMessageTemplates,
 } from "@/lib/permissions";
 import { RingCentralConnectCard } from "@/components/app/ringcentral-connect-card";
 import { MailConnectCard } from "@/components/app/mail-connect-card";
@@ -126,6 +127,25 @@ export default async function GeneralSettingsPage() {
             />
           </Suspense>
           <MailConnectCard account={mailAccount} providers={mailProviders} />
+          {apiWorkspace && (await canManageMessageTemplates(apiWorkspace.id)) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <FileText className="h-4 w-4 text-primary" />
+                  Message templates
+                </CardTitle>
+                <CardDescription>
+                  SMS and email texts for {apiWorkspace.name}, picked from the Contact
+                  Queue and the lead page.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button size="sm" variant="outline" render={<Link href="/settings/templates" />}>
+                  Manage templates
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
         {showApiAccess && (
           <section className="space-y-3">
